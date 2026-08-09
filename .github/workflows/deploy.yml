@@ -27,12 +27,31 @@ jobs:
         with:
           php-version: ${{ env.PHP_VERSION }}
 
-      - name: Prepare deployment
+      - name: Prepare deployment package
         run: |
           echo "Preparing PHP application..."
           if [ -f composer.json ]; then
             composer install --no-dev --prefer-dist --no-progress --no-interaction
           fi
+
+          # Build a clean deployment package. We deliberately exclude:
+          # - .git / .github: no reason for VCS history or workflow
+          #   definitions to ever be reachable on the live web server
+          # - tests/: dev-only, not needed in production
+          # - get_key.php, "New Text Document.txt": one-off debug scripts
+          #   that print real license keys with no auth check — must never
+          #   be web-accessible
+          rm -rf deploy_package
+          mkdir deploy_package
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='deploy_package' \
+            --exclude='get_key.php' \
+            --exclude='New Text Document.txt' \
+            --exclude='htaccess' \
+            ./ deploy_package/
 
       - name: Azure Login
         uses: azure/login@v2
@@ -45,4 +64,4 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: .
+          package: deploy_package
