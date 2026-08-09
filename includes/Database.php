@@ -1,4 +1,5 @@
 <?php
+
 final class Database
 {
     private static ?PDO $instance = null;
@@ -16,14 +17,23 @@ final class Database
             $port = $db['port'] ?? '3306';
             $charset = $db['charset'] ?? 'utf8mb4';
 
+            $sslCa = '/etc/ssl/certs/ca-certificates.crt';
+
             $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}";
 
-            self::$instance = new PDO($dsn, $username, $password, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
-            ]);
+            self::$instance = new PDO(
+                $dsn,
+                $username,
+                $password,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+
+                    PDO::MYSQL_ATTR_SSL_CA => $sslCa,
+                    PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true,
+                ]
+            );
         }
 
         return self::$instance;
