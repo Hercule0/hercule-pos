@@ -11,14 +11,22 @@
  * when a var is unset, and PHP's ?? operator only falls back on null — so
  * a bare `getenv('X') ?? 'default'` silently keeps `false` instead of
  * falling back. This normalizes that.
+ *
+ * Guarded with function_exists() because this file is loaded via plain
+ * `require` (not `require_once`) from several places (Auth::config(),
+ * Database::pdo(), RsaSigner), and some code paths call those more than
+ * once per request — re-declaring the function unconditionally would
+ * fatal with "Cannot redeclare env()" on the second load.
  */
-function env(string $key, $default = null)
-{
-    $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
-    if ($value === false || $value === null || $value === '') {
-        return $default;
+if (!function_exists('env')) {
+    function env(string $key, $default = null)
+    {
+        $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+        if ($value === false || $value === null || $value === '') {
+            return $default;
+        }
+        return $value;
     }
-    return $value;
 }
 
 return [
