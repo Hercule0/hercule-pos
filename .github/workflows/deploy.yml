@@ -34,7 +34,7 @@ jobs:
             composer install --no-dev --prefer-dist --no-progress --no-interaction
           fi
 
-      - name: Azure Login
+      -       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
