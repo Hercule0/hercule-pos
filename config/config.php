@@ -1,21 +1,36 @@
 <?php
 /**
- * Central configuration. Copy this file's values into your actual
- * environment — for a real deployment, pull these from environment
- * variables instead of hardcoding, especially DB_PASS.
+ * Central configuration. Values are pulled from environment variables —
+ * set these in your hosting platform (e.g. Azure App Service ->
+ * Configuration -> Application settings), never hardcode real credentials
+ * here.
  */
+
+/**
+ * Reads an environment variable safely. getenv() returns false (not null)
+ * when a var is unset, and PHP's ?? operator only falls back on null — so
+ * a bare `getenv('X') ?? 'default'` silently keeps `false` instead of
+ * falling back. This normalizes that.
+ */
+function env(string $key, $default = null)
+{
+    $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+    if ($value === false || $value === null || $value === '') {
+        return $default;
+    }
+    return $value;
+}
 
 return [
     'db' => [
-    'driver'   => 'mysql',
-    'host'     => getenv('DB_HOST'),
-    'dbname'   => getenv('DB_NAME'),
-    'username' => getenv('DB_USER'),
-    'password' => getenv('DB_PASS'),
-    'port'     => getenv('DB_PORT') ?: '3306',
-    'charset'  => 'utf8mb4',
-],
-    
+        'driver'   => 'mysql',
+        'host'     => env('DB_HOST'),
+        'dbname'   => env('DB_NAME'),
+        'username' => env('DB_USER'),
+        'password' => env('DB_PASS'),
+        'port'     => env('DB_PORT', '3306'),
+        'charset'  => 'utf8mb4',
+    ],
 
     // RSA keypair used to sign license validation responses. The desktop
     // app (Phase 5) ships with ONLY the public key embedded, and verifies
