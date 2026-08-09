@@ -7,14 +7,14 @@
 
 return [
     'db' => [
-        'driver'   => 'mysql',
-        'host'     => 'wftuqljwesiffol6.cbetxkdyhwsb.us-east-1.rds.amazonaws.com',
-        'dbname'   => 'd7xvzabaym8eabhv',
-        'username' => 'cpxmfa1ha1zwwlip',
-        'password' => 'kp0a1ra4qqqiqhfo',
-        'port'     => '3306',
-        'charset'  => 'utf8mb4',
-    ],
+    'driver'   => 'mysql',
+    'host'     => getenv('DB_HOST'),
+    'dbname'   => getenv('DB_NAME'),
+    'username' => getenv('DB_USER'),
+    'password' => getenv('DB_PASS'),
+    'port'     => getenv('DB_PORT') ?: '3306',
+    'charset'  => 'utf8mb4',
+],
     
 
     // RSA keypair used to sign license validation responses. The desktop
