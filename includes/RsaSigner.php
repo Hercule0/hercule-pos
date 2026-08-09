@@ -37,14 +37,30 @@ final class RsaSigner
      */
     public static function sign(array $payload): array
     {
-        $config = require __DIR__ . '/../config/config.php';
-        $privateKeyPath = $config['rsa']['private_key_path'];
+        // 1. محاولة قراءة المفتاح من إعدادات Azure الآمنة أولاً
+        $privateKeyPem = getenv('LICENSE_PRIVATE_KEY') ?: ($_ENV['LICENSE_PRIVATE_KEY'] ?? null);
 
-        if (!file_exists($privateKeyPath)) {
-            throw new RuntimeException('RSA private key not found. Run RsaSigner::generateKeypair() during setup.');
+        // 2. إذا لم يجد المفتاح في البيئة، يحاول قراءته من الملف (مفيد أثناء التطوير المحلي)
+        if (!$privateKeyPem) {
+            $config = require __DIR__ . '/../config/config.php';
+            $privateKeyPath = $config['rsa']['private_key_path'];
+
+            if (file_exists($privateKeyPath)) {
+                $privateKeyPem = file_get_contents($privateKeyPath);
+            }
         }
 
-        $privateKey = openssl_pkey_get_private(file_get_contents($privateKeyPath));
+        // 3. إذا لم يجد المفتاح في كلا المكانين، يظهر خطأ واضح
+        if (!$privateKeyPem) {
+            throw new RuntimeException('RSA private key not found in Azure Environment Variables or local file.');
+        }
+
+        $privateKey = openssl_pkey_get_private($privateKeyPem);
+        
+        if ($privateKey === false) {
+             throw new RuntimeException('Invalid RSA private key provided.');
+        }
+
         $canonicalJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
 
         openssl_sign($canonicalJson, $signature, $privateKey, OPENSSL_ALGO_SHA256);
