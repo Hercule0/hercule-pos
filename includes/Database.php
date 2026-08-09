@@ -9,26 +9,20 @@ final class Database
             $config = require __DIR__ . '/../config/config.php';
             $db = $config['db'];
 
-            $host = $db['host'] ?? null;
-            $dbname = $db['dbname'] ?? $db['name'] ?? null;
-            $username = $db['username'] ?? $db['user'] ?? null;
-            $password = $db['password'] ?? $db['pass'] ?? null;
+            $host = $db['host'] ?? '';
+            $dbname = $db['dbname'] ?? $db['name'] ?? '';
+            $username = $db['username'] ?? $db['user'] ?? '';
+            $password = $db['password'] ?? $db['pass'] ?? '';
             $port = $db['port'] ?? '3306';
             $charset = $db['charset'] ?? 'utf8mb4';
 
-            if (!$host || !$dbname || !$username) {
-                throw new RuntimeException(
-                    'Database configuration is missing. Check that DB_HOST, DB_NAME, ' .
-                    'DB_USER (and DB_PASS) are set as environment variables on the server.'
-                );
-            }
-
             $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}";
 
-            self::$instance = new PDO($dsn, $username, (string) $password, [
+            self::$instance = new PDO($dsn, $username, $password, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
             ]);
         }
 
