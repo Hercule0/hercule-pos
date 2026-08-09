@@ -1,0 +1,25 @@
+<?php
+require_once __DIR__ . '/includes/Database.php';
+require_once __DIR__ . '/includes/License.php';
+
+$pdo = Database::pdo();
+
+// محاولة إضافة عميل تجريبي (نتجاهل الخطأ إذا كان العميل موجود مسبقاً)
+try {
+    $pdo->exec("INSERT INTO customers (id, name, email) VALUES (1, 'Hercule Test', 'test@hercule.local')");
+} catch (Exception $e) {
+    // العميل موجود
+}
+
+// توليد ترخيص مدى الحياة (Lifetime) لـ 5 أجهزة
+$key = License::issue([
+    'customer_id' => 1,
+    'plan'        => 'lifetime',
+    'max_devices' => 5,
+    'expires_at'  => null
+]);
+
+echo "\n==========================================\n";
+echo " 🚀 YOUR NEW LICENSE KEY:\n";
+echo " " . $key . "\n";
+echo "==========================================\n\n";
