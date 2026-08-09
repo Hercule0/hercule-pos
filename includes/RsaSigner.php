@@ -1,69 +1,100 @@
 <?php
 /**
- * Signs license validation responses with RSA so the desktop app (Phase 5)
- * can verify authenticity using only the embedded public key — no need to
- * trust the transport, and a modified/replayed response is detectable.
+ * RSA signing and verification for license responses.
+ *
+ * Production:
+ * - Private key MUST come from LICENSE_PRIVATE_KEY environment variable.
+ * - The private key is never read from or written to disk.
+ *
+ * The desktop application only needs the public key.
  */
 
 final class RsaSigner
 {
-    /** Generates a new keypair and writes both files. Run once during setup. */
-    public static function generateKeypair(): void
-    {
-        $config = require __DIR__ . '/../config/config.php';
-        $paths = $config['rsa'];
-
-        $res = openssl_pkey_new([
-            'private_key_bits' => 2048,
-            'private_key_type' => OPENSSL_KEYTYPE_RSA,
-        ]);
-
-        if ($res === false) {
-            throw new RuntimeException('Failed to generate RSA keypair: ' . openssl_error_string());
-        }
-
-        openssl_pkey_export($res, $privateKeyPem);
-        $details = openssl_pkey_get_details($res);
-        $publicKeyPem = $details['key'];
-
-        file_put_contents($paths['private_key_path'], $privateKeyPem);
-        chmod($paths['private_key_path'], 0600);
-        file_put_contents($paths['public_key_path'], $publicKeyPem);
-    }
-
     /**
-     * Signs a payload array. Returns the payload plus a base64 signature
-     * of its canonical JSON encoding.
+     * Get the RSA private key from the environment.
+     *
+     * Azure App Service may provide multiline values normally, but this also
+     * handles environments where newline characters were stored as literal
+     * "\n".
      */
-    public static function sign(array $payload): array
+    private static function getPrivateKey(): string
     {
-        // 1. محاولة قراءة المفتاح من إعدادات Azure الآمنة أولاً
-        $privateKeyPem = getenv('LICENSE_PRIVATE_KEY') ?: ($_ENV['LICENSE_PRIVATE_KEY'] ?? null);
+        $privateKeyPem = getenv('LICENSE_PRIVATE_KEY');
 
-        // 2. إذا لم يجد المفتاح في البيئة، يحاول قراءته من الملف (مفيد أثناء التطوير المحلي)
-        if (!$privateKeyPem) {
-            $config = require __DIR__ . '/../config/config.php';
-            $privateKeyPath = $config['rsa']['private_key_path'];
-
-            if (file_exists($privateKeyPath)) {
-                $privateKeyPem = file_get_contents($privateKeyPath);
-            }
+        if ($privateKeyPem === false || trim($privateKeyPem) === '') {
+            $privateKeyPem = $_ENV['LICENSE_PRIVATE_KEY'] ?? '';
         }
 
-        // 3. إذا لم يجد المفتاح في كلا المكانين، يظهر خطأ واضح
-        if (!$privateKeyPem) {
-            throw new RuntimeException('RSA private key not found in Azure Environment Variables or local file.');
+        if (!is_string($privateKeyPem) || trim($privateKeyPem) === '') {
+            throw new RuntimeException(
+                'LICENSE_PRIVATE_KEY environment variable is not configured.'
+            );
+        }
+
+        // Handle escaped newlines if the environment variable contains \n.
+        if (strpos($privateKeyPem, '\n') !== false) {
+            $privateKeyPem = str_replace('\n', "\n", $privateKeyPem);
         }
 
         $privateKey = openssl_pkey_get_private($privateKeyPem);
-        
+
         if ($privateKey === false) {
-             throw new RuntimeException('Invalid RSA private key provided.');
+            throw new RuntimeException(
+                'LICENSE_PRIVATE_KEY is not a valid RSA private key.'
+            );
         }
 
-        $canonicalJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        return $privateKeyPem;
+    }
 
-        openssl_sign($canonicalJson, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    /**
+     * Signs a payload array.
+     *
+     * Returns:
+     * [
+     *     'payload' => [...],
+     *     'signature' => 'base64...'
+     * ]
+     */
+    public static function sign(array $payload): array
+    {
+        $privateKeyPem = self::getPrivateKey();
+
+        $privateKey = openssl_pkey_get_private($privateKeyPem);
+
+        if ($privateKey === false) {
+            throw new RuntimeException(
+                'Failed to load RSA private key.'
+            );
+        }
+
+        $canonicalJson = json_encode(
+            $payload,
+            JSON_UNESCAPED_SLASHES
+        );
+
+        if ($canonicalJson === false) {
+            throw new RuntimeException(
+                'Failed to encode license payload.'
+            );
+        }
+
+        $signature = '';
+
+        $success = openssl_sign(
+            $canonicalJson,
+            $signature,
+            $privateKey,
+            OPENSSL_ALGO_SHA256
+        );
+
+        if (!$success) {
+            throw new RuntimeException(
+                'Failed to generate RSA signature: ' .
+                (openssl_error_string() ?: 'Unknown OpenSSL error')
+            );
+        }
 
         return [
             'payload' => $payload,
@@ -72,21 +103,41 @@ final class RsaSigner
     }
 
     /**
-     * Verifies a signed payload using the PUBLIC key. This is what the
-     * desktop app does — included here so it can be tested server-side too,
-     * but the actual desktop implementation (Phase 5) only ships the
-     * public key, never this whole class.
+     * Verifies a signed payload using the PUBLIC key.
      */
-    public static function verify(array $payload, string $signatureB64, string $publicKeyPem): bool
-    {
+    public static function verify(
+        array $payload,
+        string $signatureB64,
+        string $publicKeyPem
+    ): bool {
         $publicKey = openssl_pkey_get_public($publicKeyPem);
+
         if ($publicKey === false) {
             return false;
         }
-        $canonicalJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
-        $signature = base64_decode($signatureB64);
 
-        $result = openssl_verify($canonicalJson, $signature, $publicKey, OPENSSL_ALGO_SHA256);
+        $canonicalJson = json_encode(
+            $payload,
+            JSON_UNESCAPED_SLASHES
+        );
+
+        if ($canonicalJson === false) {
+            return false;
+        }
+
+        $signature = base64_decode($signatureB64, true);
+
+        if ($signature === false) {
+            return false;
+        }
+
+        $result = openssl_verify(
+            $canonicalJson,
+            $signature,
+            $publicKey,
+            OPENSSL_ALGO_SHA256
+        );
+
         return $result === 1;
     }
 }
