@@ -20,7 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'renew':
             $plan = $_POST['plan'] ?? '';
-            License::renew($licenseId, $plan, $admin);
+            $customDays = null;
+            if ($plan === 'custom') {
+                $customDays = (int) ($_POST['renew_custom_days'] ?? 0);
+                if ($customDays < 1) {
+                    flash_set('Enter a valid number of days (1 or more) for a custom renewal.', 'error');
+                    header("Location: /public/admin/license_detail.php?id={$licenseId}");
+                    exit;
+                }
+            }
+            License::renew($licenseId, $plan, $admin, $customDays);
             flash_set('License renewed.');
             break;
         case 'suspend':
@@ -39,6 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             License::deactivateDevice((int) ($_POST['activation_id'] ?? 0));
             flash_set('Device deactivated — that slot is now free.');
             break;
+        case 'delete':
+            $keyForMessage = $license['license_key'];
+            License::deleteLicense($licenseId);
+            flash_set("License {$keyForMessage} permanently deleted.");
+            header('Location: /public/admin/licenses.php');
+            exit;
     }
     header("Location: /public/admin/license_detail.php?id={$licenseId}");
     exit;
@@ -78,12 +93,17 @@ flash_render();
         <form method="post" class="stacked-form">
             <?= Csrf::field() ?>
             <label>Renew as</label>
-            <select name="plan">
+            <select name="plan" onchange="document.getElementById('renew-custom-days-row').style.display = (this.value === 'custom') ? 'block' : 'none';">
                 <option value="monthly">Monthly</option>
                 <option value="semi_annual">Semi-Annual</option>
                 <option value="annual">Annual</option>
+                <option value="custom">Custom — choose exact days</option>
                 <option value="lifetime">Lifetime</option>
             </select>
+            <div id="renew-custom-days-row" style="display:none;">
+                <label>Duration (days)</label>
+                <input type="number" name="renew_custom_days" min="1" step="1" placeholder="e.g. 1, 2, 7, 90">
+            </div>
             <button type="submit" name="action" value="renew" class="primary-btn">Renew</button>
         </form>
         <div class="action-row">
@@ -103,6 +123,10 @@ flash_render();
                 <button type="submit" name="action" value="revoke" class="danger-btn">Revoke</button>
             </form>
         </div>
+        <form method="post" style="margin-top: 14px;" onsubmit="return confirm('PERMANENTLY DELETE this license, its devices, and its event history? This is irreversible.');">
+            <?= Csrf::field() ?>
+            <button type="submit" name="action" value="delete" class="danger-btn" style="width:100%;">Delete License Permanently</button>
+        </form>
     </div>
 
     <div class="panel panel-wide">
