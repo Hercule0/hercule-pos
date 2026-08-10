@@ -27,6 +27,18 @@ function run(): void
         exit(1);
     }
 
+    // Widen the plan ENUM to include 'custom' for deployments that were
+    // created before the custom-duration feature existed. Wrapped in
+    // try/catch: harmless if it's already applied, and not applicable at
+    // all on SQLite (used only in tests), where plan is a plain TEXT column.
+    try {
+        $pdo->exec("ALTER TABLE licenses MODIFY COLUMN plan
+            ENUM('trial','monthly','semi_annual','annual','custom','lifetime') NOT NULL");
+        echo "Widened licenses.plan ENUM to include 'custom'.\n";
+    } catch (PDOException $e) {
+        // Already applied, or this DB driver doesn't support ENUM (SQLite) — ignore.
+    }
+
     // Seed a default admin user if none exists yet, so the panel is
     // reachable on first deploy. CHANGE THIS PASSWORD IMMEDIATELY.
     $count = (int) $pdo->query('SELECT COUNT(*) FROM admin_users')->fetchColumn();
