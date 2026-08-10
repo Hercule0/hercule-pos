@@ -38,7 +38,7 @@ final class Auth
     {
         self::ensureSession();
         if (!self::isLoggedIn()) {
-            header('Location: /admin/login.php');
+            header('Location: /public/admin/login.php');
             exit;
         }
     }
