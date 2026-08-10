@@ -29,11 +29,23 @@ final class License
     /**
      * Computes the expiry datetime for a plan, relative to now.
      * Returns null for lifetime (never expires).
+     *
+     * @param int|null $customDays Required when $plan === 'custom'. Any
+     *                             positive integer — 1 day, 2 days, 400
+     *                             days, whatever the admin wants.
      */
-    public static function computeExpiry(string $plan, ?DateTime $from = null): ?string
+    public static function computeExpiry(string $plan, ?DateTime $from = null, ?int $customDays = null): ?string
     {
         $from = $from ?? new DateTime();
         $dt = clone $from;
+
+        if ($plan === 'custom') {
+            if ($customDays === null || $customDays < 1) {
+                throw new InvalidArgumentException('Custom plan requires a positive number of days.');
+            }
+            $dt->modify("+{$customDays} days");
+            return $dt->format('Y-m-d H:i:s');
+        }
 
         switch ($plan) {
             case 'trial':
@@ -61,11 +73,21 @@ final class License
      * Issues a brand-new license for a customer.
      * @return array the newly created license row
      */
-    public static function issue(int $customerId, string $plan, int $maxActivations = 1, ?string $notes = null): array
-    {
+    public static function issue(
+        int $customerId,
+        string $plan,
+        int $maxActivations = 1,
+        ?string $notes = null,
+        ?int $customDays = null
+    ): array {
         $pdo = Database::pdo();
         $key = self::generateKey();
-        $expiresAt = self::computeExpiry($plan);
+        $expiresAt = self::computeExpiry($plan, null, $customDays);
+
+        if ($plan === 'custom') {
+            $customNote = "Custom {$customDays}-day plan";
+            $notes = $notes ? "{$customNote} — {$notes}" : $customNote;
+        }
 
         $stmt = $pdo->prepare(
             'INSERT INTO licenses (customer_id, license_key, plan, status, max_activations, expires_at, notes)
@@ -159,7 +181,6 @@ final class License
 
         $existing = self::findActivation((int) $license['id'], $hwid);
         if ($existing) {
-            // Same machine re-activating (e.g. reinstall) — just refresh it.
             $stmt = Database::pdo()->prepare(
                 'UPDATE license_activations SET is_active = 1, last_seen_at = CURRENT_TIMESTAMP, ip_address = ? WHERE id = ?'
             );
@@ -234,8 +255,11 @@ final class License
         }
     }
 
-    /** Extends a license's expiry — e.g. after a renewal payment. */
-    public static function renew(int $licenseId, string $plan, string $adminUsername): array
+    /**
+     * Extends a license's expiry — e.g. after a renewal payment.
+     * @param int|null $customDays Required when $plan === 'custom'.
+     */
+    public static function renew(int $licenseId, string $plan, string $adminUsername, ?int $customDays = null): array
     {
         $license = self::findById($licenseId);
         if (!$license) {
@@ -248,15 +272,17 @@ final class License
             ? new DateTime($license['expires_at'])
             : new DateTime();
 
-        $newExpiry = self::computeExpiry($plan, $base);
+        $newExpiry = self::computeExpiry($plan, $base, $customDays);
         $previousExpiry = $license['expires_at'];
+
+        $note = $plan === 'custom' ? "Renewed as custom ({$customDays} days)" : "Renewed as {$plan}";
 
         $stmt = Database::pdo()->prepare(
             "UPDATE licenses SET plan = ?, expires_at = ?, status = 'active' WHERE id = ?"
         );
         $stmt->execute([$plan, $newExpiry, $licenseId]);
 
-        self::logEvent($licenseId, 'renewed', $previousExpiry, $newExpiry, "Renewed as {$plan}", $adminUsername);
+        self::logEvent($licenseId, 'renewed', $previousExpiry, $newExpiry, $note, $adminUsername);
 
         return self::findById($licenseId);
     }
@@ -287,6 +313,19 @@ final class License
     {
         $stmt = Database::pdo()->prepare('UPDATE license_activations SET is_active = 0 WHERE id = ?');
         $stmt->execute([$activationId]);
+    }
+
+    /**
+     * PERMANENTLY deletes a license and all its history (activations,
+     * subscription events cascade via FK; verification_log rows are kept
+     * as orphaned historical records since they have no FK constraint).
+     * This is different from revoke() — revoke keeps the record and just
+     * blocks future validation; this removes it entirely.
+     */
+    public static function deleteLicense(int $licenseId): void
+    {
+        $stmt = Database::pdo()->prepare('DELETE FROM licenses WHERE id = ?');
+        $stmt->execute([$licenseId]);
     }
 
     private static function log(?int $licenseId, string $licenseKey, ?string $hwid, string $result, ?string $ip): void
