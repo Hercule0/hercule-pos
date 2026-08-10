@@ -19,44 +19,129 @@ final class RsaSigner
      * "\n".
      */
     private static function getPrivateKey(): string
-    {
-        $privateKeyPem = getenv('LICENSE_PRIVATE_KEY');
+{
+    $privateKeyPem = getenv('LICENSE_PRIVATE_KEY');
 
-        if ($privateKeyPem === false || trim($privateKeyPem) === '') {
-            $privateKeyPem = $_ENV['LICENSE_PRIVATE_KEY'] ?? '';
-        }
-
-        if (!is_string($privateKeyPem) || trim($privateKeyPem) === '') {
-            throw new RuntimeException(
-                'LICENSE_PRIVATE_KEY environment variable is not configured.'
-            );
-        }
-
-        // Handle escaped newlines if the environment variable contains \n.
-        if (strpos($privateKeyPem, '\n') !== false) {
-            $privateKeyPem = str_replace('\n', "\n", $privateKeyPem);
-        }
-
-        $privateKey = openssl_pkey_get_private($privateKeyPem);
-
-        if ($privateKey === false) {
-            throw new RuntimeException(
-                'LICENSE_PRIVATE_KEY is not a valid RSA private key.'
-            );
-        }
-
-        return $privateKeyPem;
+    if ($privateKeyPem === false || trim($privateKeyPem) === '') {
+        $privateKeyPem = $_ENV['LICENSE_PRIVATE_KEY'] ?? '';
     }
 
-    /**
-     * Signs a payload array.
-     *
-     * Returns:
-     * [
-     *     'payload' => [...],
-     *     'signature' => 'base64...'
-     * ]
+    if (!is_string($privateKeyPem) || trim($privateKeyPem) === '') {
+        throw new RuntimeException(
+            'LICENSE_PRIVATE_KEY environment variable is not configured.'
+        );
+    }
+
+    $privateKeyPem = trim($privateKeyPem);
+
+    /*
+     * Normalize escaped newlines.
      */
+    $privateKeyPem = str_replace(
+        ["\\r\\n", "\\n", "\\r"],
+        "\n",
+        $privateKeyPem
+    );
+
+    /*
+     * Normalize PEM when Azure stores the entire key in one line.
+     *
+     * Example:
+     * -----BEGIN PRIVATE KEY----- MIIE... -----END PRIVATE KEY-----
+     *
+     * becomes:
+     *
+     * -----BEGIN PRIVATE KEY-----
+     * MIIE...
+     * -----END PRIVATE KEY-----
+     */
+    if (
+        strpos($privateKeyPem, '-----BEGIN PRIVATE KEY-----') !== false &&
+        strpos($privateKeyPem, '-----END PRIVATE KEY-----') !== false
+    ) {
+        $privateKeyPem = preg_replace(
+            '/\s*-----BEGIN PRIVATE KEY-----\s*/',
+            "-----BEGIN PRIVATE KEY-----\n",
+            $privateKeyPem
+        );
+
+        $privateKeyPem = preg_replace(
+            '/\s*-----END PRIVATE KEY-----\s*/',
+            "\n-----END PRIVATE KEY-----\n",
+            $privateKeyPem
+        );
+    }
+
+    /*
+     * Also support traditional RSA PRIVATE KEY format.
+     */
+    if (
+        strpos($privateKeyPem, '-----BEGIN RSA PRIVATE KEY-----') !== false &&
+        strpos($privateKeyPem, '-----END RSA PRIVATE KEY-----') !== false
+    ) {
+        $privateKeyPem = preg_replace(
+            '/\s*-----BEGIN RSA PRIVATE KEY-----\s*/',
+            "-----BEGIN RSA PRIVATE KEY-----\n",
+            $privateKeyPem
+        );
+
+        $privateKeyPem = preg_replace(
+            '/\s*-----END RSA PRIVATE KEY-----\s*/',
+            "\n-----END RSA PRIVATE KEY-----\n",
+            $privateKeyPem
+        );
+    }
+
+    /*
+     * Remove accidental spaces/newlines from the Base64 body,
+     * then wrap it at 64 characters per line.
+     */
+    if (
+        preg_match(
+            '/-----BEGIN PRIVATE KEY-----(.*?)-----END PRIVATE KEY-----/s',
+            $privateKeyPem,
+            $matches
+        )
+    ) {
+        $body = preg_replace('/\s+/', '', $matches[1]);
+        $body = chunk_split($body, 64, "\n");
+
+        $privateKeyPem =
+            "-----BEGIN PRIVATE KEY-----\n" .
+            $body .
+            "-----END PRIVATE KEY-----\n";
+    } elseif (
+        preg_match(
+            '/-----BEGIN RSA PRIVATE KEY-----(.*?)-----END RSA PRIVATE KEY-----/s',
+            $privateKeyPem,
+            $matches
+        )
+    ) {
+        $body = preg_replace('/\s+/', '', $matches[1]);
+        $body = chunk_split($body, 64, "\n");
+
+        $privateKeyPem =
+            "-----BEGIN RSA PRIVATE KEY-----\n" .
+            $body .
+            "-----END RSA PRIVATE KEY-----\n";
+    }
+
+    /*
+     * Validate the normalized key.
+     */
+    $privateKey = openssl_pkey_get_private($privateKeyPem);
+
+    if ($privateKey === false) {
+        $opensslError = openssl_error_string();
+
+        throw new RuntimeException(
+            'LICENSE_PRIVATE_KEY is not a valid RSA private key.' .
+            ($opensslError ? ' OpenSSL: ' . $opensslError : '')
+        );
+    }
+
+    return $privateKeyPem;
+}
     public static function sign(array $payload): array
     {
         $privateKeyPem = self::getPrivateKey();
