@@ -6,6 +6,23 @@ $pdo = Database::pdo();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
+    $formAction = $_POST['form_action'] ?? 'add';
+
+    if ($formAction === 'delete') {
+        $customerId = (int) ($_POST['customer_id'] ?? 0);
+        $nameStmt = $pdo->prepare('SELECT name FROM customers WHERE id = ?');
+        $nameStmt->execute([$customerId]);
+        $name = $nameStmt->fetchColumn();
+
+        $stmt = $pdo->prepare('DELETE FROM customers WHERE id = ?');
+        $stmt->execute([$customerId]);
+
+        flash_set($name ? "Customer \"{$name}\" and all their licenses deleted." : 'Customer deleted.');
+        header('Location: /public/admin/customers.php');
+        exit;
+    }
+
+    // --- Add customer ---
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '') ?: null;
     $phone = trim($_POST['phone'] ?? '') ?: null;
@@ -39,6 +56,7 @@ flash_render();
         <h2>Add Customer</h2>
         <form method="post" class="stacked-form">
             <?= Csrf::field() ?>
+            <input type="hidden" name="form_action" value="add">
             <label>Name *</label>
             <input type="text" name="name" required>
             <label>Email</label>
@@ -63,7 +81,15 @@ flash_render();
                     <td><?= htmlspecialchars($c['phone'] ?? '—') ?></td>
                     <td><?= (int) $c['license_count'] ?></td>
                     <td><?= htmlspecialchars($c['created_at']) ?></td>
-                    <td><a href="/public/admin/licenses.php?customer_id=<?= $c['id'] ?>" class="icon-link">View licenses</a></td>
+                    <td>
+                        <a href="/public/admin/licenses.php?customer_id=<?= $c['id'] ?>" class="icon-link">View licenses</a>
+                        <form method="post" style="display:inline; margin-left:8px;" onsubmit="return confirm('Delete customer &quot;<?= htmlspecialchars($c['name'], ENT_QUOTES) ?>&quot; and ALL <?= (int) $c['license_count'] ?> of their licenses? This is irreversible.');">
+                            <?= Csrf::field() ?>
+                            <input type="hidden" name="form_action" value="delete">
+                            <input type="hidden" name="customer_id" value="<?= $c['id'] ?>">
+                            <button type="submit" class="icon-btn" style="color: var(--danger);">Delete</button>
+                        </form>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             <?php if (empty($customers)): ?>
