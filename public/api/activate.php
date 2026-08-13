@@ -29,6 +29,17 @@ if ($licenseKey === '' || $hwid === '') {
     json_response(['ok' => false, 'error' => 'license_key and hwid are required'], 400);
 }
 
+// License System Upgrade Plan §19 — a SECOND rate limit, scoped to the
+// license key itself (not the caller's IP). Reuses the existing generic
+// RateLimiter with a synthetic identifier and a distinct endpoint label
+// ('activate_by_key' vs 'activate') so this counts in its own window
+// rather than sharing/colliding with the per-IP counter above. This is
+// what stops someone from hammering one stolen/leaked key from many
+// different IPs to route around the per-IP limit.
+if (!RateLimiter::check('key:' . $licenseKey, 'activate_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
+    json_response(['ok' => false, 'error' => 'Too many activation attempts for this license key. Please try again in a few minutes.'], 429);
+}
+
 $result = License::activate($licenseKey, $hwid, client_ip());
 
 if (!$result['ok']) {
