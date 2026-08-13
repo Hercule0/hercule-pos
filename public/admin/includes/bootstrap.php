@@ -28,9 +28,9 @@ function render_header(string $title): void
             <a href="/public/admin/index.php">Dashboard</a>
             <a href="/public/admin/customers.php">Customers</a>
             <a href="/public/admin/licenses.php">Licenses</a>
-            <a href="/public/admin/recovery_requests.php">Password Recovery</a>
-            <a href="/public/admin/change_password.php">Change password</a>
+            <a href="/public/admin/recovery_requests.php">Recovery Requests</a>
             <span class="nav-user">signed in as <?= htmlspecialchars($username) ?></span>
+            <a href="/public/admin/change_password.php">Change password</a>
             <a href="/public/admin/logout.php" class="nav-logout">Log out</a>
         </nav>
         <?php endif; ?>
