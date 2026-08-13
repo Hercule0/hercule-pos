@@ -1,0 +1,8 @@
+/* Additions for the Password Recovery Requests admin page.
+   Append the contents of this file to the end of
+   public/admin/assets/css/style.css (or link it as a second stylesheet). */
+
+.badge-pending { background: rgba(224, 168, 63, 0.15); color: var(--warning); }
+.badge-approved { background: rgba(63, 187, 109, 0.15); color: var(--success); }
+.badge-rejected { background: rgba(240, 87, 93, 0.15); color: var(--danger); }
+.badge-completed { background: rgba(63, 169, 245, 0.15); color: var(--accent); }
