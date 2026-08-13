@@ -61,5 +61,14 @@ return [
         // tight enough to stop someone hammering the endpoint.
         'api_rate_limit_max_requests' => 20,
         'api_rate_limit_window_minutes' => 5,
+
+        // License System Upgrade Plan §19 — a SECOND rate limit, scoped to
+        // the license key itself rather than the caller's IP. Per-IP
+        // limiting alone doesn't stop someone hammering one stolen/leaked
+        // key from a botnet of rotating IPs; this closes that gap. Slightly
+        // more generous than the per-IP window since a single legitimate
+        // customer can retry from the same key across a flaky connection.
+        'key_rate_limit_max_requests' => 30,
+        'key_rate_limit_window_minutes' => 5,
     ],
 ];
