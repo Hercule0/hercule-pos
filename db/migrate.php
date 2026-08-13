@@ -4,7 +4,7 @@
  * يقوم بإنشاء أو تحديث كافة جداول قاعدة البيانات بشكل آمن (Idempotent).
  */
 
-require_once __DIR__ . '/includes/Database.php'; // استدعاء اتصال قاعدة البيانات الخاص بك
+require_once __DIR__ . '/../includes/Database.php'; // تم تعديل المسار هنا بالصعود لالمجلد الرئيسي
 
 try {
     $pdo = Database::pdo();
@@ -156,5 +156,5 @@ try {
     echo "تمت عملية الهجرة (Migration) وتحديث قاعدة البيانات بنجاح تام!";
 
 } catch (\Throwable $e) {
-    echo "حدث خطأ أثناء عملية الهجرة: " . $e.getMessage();
+    echo "حدث خطأ أثناء عملية الهجرة: " . $e->getMessage();
 }
