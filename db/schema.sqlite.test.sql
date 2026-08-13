@@ -80,3 +80,38 @@ CREATE TABLE subscription_events (
     created_by          TEXT,
     created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE license_change_notifications (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    license_key     TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    consumed_at     TEXT NULL
+);
+
+-- Password Change Request System (see PASSWORD_RECOVERY_REQUEST_PLAN.md)
+CREATE TABLE password_recovery_requests (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    license_key         TEXT NOT NULL,
+    hwid                TEXT NOT NULL,
+    requested_username  TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    admin_note          TEXT,
+    token_hash          TEXT NULL,
+    token_expires_at    TEXT NULL,
+    delivered_at        TEXT NULL,
+    used_at             TEXT NULL,
+    reviewed_by         TEXT NULL,
+    reviewed_at         TEXT NULL,
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE recovery_audit_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id      INTEGER NULL,
+    event_type      TEXT NOT NULL,
+    actor           TEXT NULL,
+    ip_address      TEXT NULL,
+    note            TEXT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

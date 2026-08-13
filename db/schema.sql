@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Rate limiting for the public API endpoints (activate.php / validate.php /
--- check_update.php). Separate from login_attempts since these aren't login
--- attempts at all — just a generic "how many times has this IP/key hit
--- this endpoint recently".
+-- check_update.php / recovery_*.php). Separate from login_attempts since
+-- these aren't login attempts at all — just a generic "how many times has
+-- this IP/key hit this endpoint recently".
 CREATE TABLE IF NOT EXISTS api_requests (
     id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     ip_address      VARCHAR(45) NOT NULL,
@@ -117,4 +117,50 @@ CREATE TABLE IF NOT EXISTS license_change_notifications (
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     consumed_at     DATETIME NULL,
     INDEX idx_notif_key_pending (license_key, consumed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- Password Change Request System (see PASSWORD_RECOVERY_REQUEST_PLAN.md)
+-- ============================================================
+-- Tied to license_key + hwid rather than a server-side "users" table,
+-- because Hercule POS is Offline-First: user accounts (admin/manager/
+-- cashier/inventory_manager) live only in each store's local encrypted
+-- SQLite database. This server has authority over licenses/devices, so
+-- that's the identity it verifies here; the actual account/password only
+-- ever changes locally on the client, after this server confirms a valid,
+-- single-use authorization (see includes/PasswordRecovery.php).
+CREATE TABLE IF NOT EXISTS password_recovery_requests (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    license_key         VARCHAR(29) NOT NULL,
+    hwid                VARCHAR(128) NOT NULL,
+    requested_username  VARCHAR(64) NOT NULL,
+    status              ENUM('pending','approved','rejected','expired','completed') NOT NULL DEFAULT 'pending',
+    admin_note          TEXT,
+    -- Only ever the SHA-256 hash of the authorization token is stored —
+    -- the raw token exists only transiently, in the HTTP response bodies
+    -- of approve()/claim(), never at rest.
+    token_hash          VARCHAR(64) NULL,
+    token_expires_at    DATETIME NULL,
+    delivered_at        DATETIME NULL, -- when the client successfully claimed a token
+    used_at             DATETIME NULL, -- when the token was successfully consumed (single-use)
+    reviewed_by         VARCHAR(64) NULL,
+    reviewed_at         DATETIME NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_recovery_license (license_key),
+    INDEX idx_recovery_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Audit trail (plan §11) — every lifecycle event, no passwords ever.
+CREATE TABLE IF NOT EXISTS recovery_audit_log (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    request_id      INT UNSIGNED NULL,
+    event_type      VARCHAR(40) NOT NULL, -- request_created | request_approved | request_rejected |
+                                           -- authorization_claimed | authorization_expired |
+                                           -- password_changed | reset_failed_* | claim_device_mismatch
+    actor           VARCHAR(64) NULL,     -- admin username, when applicable
+    ip_address      VARCHAR(45) NULL,
+    note            VARCHAR(255) NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_recovery_audit_request (request_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
