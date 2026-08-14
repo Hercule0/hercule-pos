@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 Auth::require();
-require_once __DIR__ . '/includes/PasswordRecovery.php';
+require_once __DIR__ . '/../../includes/PasswordRecovery.php';
 
 $pdo = Database::pdo();
 
