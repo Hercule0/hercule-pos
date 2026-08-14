@@ -24,7 +24,16 @@ if (!RateLimiter::check(client_ip(), 'recovery_request', $rateLimitCfg['api_rate
     json_response(['ok' => false, 'error' => 'Too many requests. Please try again in a few minutes.'], 429);
 }
 
-$input = json_input();
+//$input = json_input();
+$rawBody = file_get_contents('php://input');
+
+error_log('[RECOVERY DEBUG] CONTENT TYPE: ' . ($_SERVER['CONTENT_TYPE'] ?? ''));
+error_log('[RECOVERY DEBUG] CONTENT LENGTH: ' . ($_SERVER['CONTENT_LENGTH'] ?? ''));
+error_log('[RECOVERY DEBUG] RAW BODY: ' . $rawBody);
+
+$input = json_decode($rawBody, true);
+
+error_log('[RECOVERY DEBUG] PARSED BODY: ' . json_encode($input));
 $licenseKey = trim($input['license_key'] ?? '');
 $hwid = trim($input['hwid'] ?? '');
 $username = trim($input['username'] ?? '');
