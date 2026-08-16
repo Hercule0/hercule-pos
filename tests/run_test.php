@@ -243,6 +243,31 @@ check('Read-only cannot review recovery requests', !Auth::can('recovery.review')
 check('Read-only cannot export data', !Auth::can('exports.download'));
 
 
+// ================= Managed administrator accounts =================
+Auth::logout();
+$pdo->prepare(
+    'INSERT INTO admin_users (username, password_hash, role, is_active, must_change_password) VALUES (?, ?, ?, ?, ?)'
+)->execute(['disabled-admin', password_hash('temporary-password-123', PASSWORD_DEFAULT), 'support', 0, 0]);
+$disabledLogin = Auth::attemptLogin('disabled-admin', 'temporary-password-123', '6.6.6.6');
+check('Disabled administrator cannot sign in', $disabledLogin['ok'] === false && !Auth::isLoggedIn());
+
+$pdo->prepare('UPDATE admin_users SET is_active = 1, must_change_password = 1 WHERE username = ?')
+    ->execute(['disabled-admin']);
+$temporaryLogin = Auth::attemptLogin('disabled-admin', 'temporary-password-123', '7.7.7.7');
+check('Enabled administrator with temporary password can authenticate', $temporaryLogin['ok'] === true);
+check('Temporary administrator is forced to change password', !empty($_SESSION['must_change_password']));
+check('Administrator can confirm their current password', Auth::confirmCurrentPassword('temporary-password-123'));
+$passwordChanged = Auth::changePassword((int) $_SESSION['admin_id'], 'temporary-password-123', 'new-secure-password-456');
+check('Required password change succeeds', $passwordChanged['ok'] === true);
+check('Password change clears the session requirement', empty($_SESSION['must_change_password']));
+$mustChangeStored = $pdo->query("SELECT must_change_password FROM admin_users WHERE username = 'disabled-admin'")->fetchColumn();
+check('Password change clears the database requirement', (int) $mustChangeStored === 0);
+
+Auth::logout();
+$pdo->exec("DELETE FROM admin_users WHERE username = 'disabled-admin'");
+$pdo->prepare('UPDATE admin_users SET role = ?, is_active = 1 WHERE username = ?')->execute(['owner', 'admin']);
+Auth::attemptLogin('admin', 'correct-horse-battery-staple', '8.8.8.8');
+
 // ================= TOTP and MFA =================
 $_ENV['MFA_ENCRYPTION_KEY'] = str_repeat('test-key-', 8);
 putenv('MFA_ENCRYPTION_KEY=' . $_ENV['MFA_ENCRYPTION_KEY']);

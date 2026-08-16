@@ -2386,3 +2386,30 @@ code, [dir="ltr"] { unicode-bidi: isolate; }
 @media (max-width: 520px) {
     .mfa-recovery-codes { grid-template-columns: 1fr; }
 }
+
+
+/* Administrator management */
+.admin-management-grid { display:grid; grid-template-columns:minmax(280px, .75fr) minmax(0, 1.5fr); gap:1.25rem; align-items:start; }
+.admin-create-card,.admin-account-card { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:1.25rem; }
+.admin-create-card { position:sticky; top:1rem; }
+.admin-create-card h2,.admin-account-card h2 { margin:0 0 1rem; }
+.admin-list { display:grid; gap:1rem; }
+.admin-account-card.is-disabled { opacity:.68; }
+.admin-account-head { display:flex; align-items:center; gap:.85rem; }
+.admin-account-head div { min-width:0; flex:1; }
+.admin-account-head h2 { margin:0; font-size:1.05rem; overflow-wrap:anywhere; }
+.admin-account-head p { margin:.25rem 0 0; color:var(--muted); }
+.admin-security-flags { display:flex; flex-wrap:wrap; gap:.6rem; margin:1rem 0; color:var(--muted); font-size:.88rem; }
+.admin-account-actions { display:grid; gap:.75rem; padding-top:1rem; border-top:1px solid var(--border); }
+.admin-account-actions form { display:grid; grid-template-columns:minmax(110px, .8fr) minmax(130px, 1fr) auto; gap:.55rem; }
+.admin-account-actions input,.admin-account-actions select,.admin-account-actions button { min-height:44px; border-radius:10px; border:1px solid var(--border); padding:.6rem .75rem; background:var(--surface-2); color:var(--text); }
+.admin-account-actions button { cursor:pointer; font-weight:700; }
+.admin-account-actions button.danger { color:var(--danger); border-color:var(--danger); }
+@media (max-width:800px) {
+  .admin-management-grid { grid-template-columns:1fr; }
+  .admin-create-card { position:static; }
+}
+@media (max-width:560px) {
+  .admin-account-actions form { grid-template-columns:1fr; }
+  .admin-account-head .status-pill { display:none; }
+}

@@ -80,6 +80,12 @@ final class Auth
             header('Location: /public/admin/login.php');
             exit;
         }
+
+        $page = basename($_SERVER['PHP_SELF'] ?? '');
+        if (!empty($_SESSION['must_change_password']) && !in_array($page, ['change_password.php', 'logout.php'], true)) {
+            header('Location: /public/admin/change_password.php?required=1');
+            exit;
+        }
     }
 
     /**
@@ -134,7 +140,7 @@ final class Auth
         }
 
         try {
-            $stmt = Database::pdo()->prepare('SELECT id, password_hash, role, totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE username = ?');
+            $stmt = Database::pdo()->prepare('SELECT id, password_hash, role, is_active, must_change_password, totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE username = ?');
             $stmt->execute([$username]);
             $user = $stmt->fetch();
         } catch (PDOException $e) {
@@ -145,6 +151,8 @@ final class Auth
             $user = $stmt->fetch();
             if ($user) {
                 $user['role'] = 'owner';
+                $user['is_active'] = 1;
+                $user['must_change_password'] = 0;
             }
         }
 
@@ -155,7 +163,7 @@ final class Auth
         $hashToCheck = $user['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuVGA5G8B1t2b8lFVOoW8n8W8n8W8n8W8n';
         $passwordOk = password_verify($password, $hashToCheck);
 
-        if (!$user || !$passwordOk) {
+        if (!$user || !$passwordOk || empty($user['is_active'])) {
             self::recordAttempt($username, $ip, false);
             return ['ok' => false, 'error' => 'Invalid username or password.'];
         }
@@ -171,6 +179,7 @@ final class Auth
                 'admin_id' => (int) $user['id'],
                 'username' => $username,
                 'role' => $role,
+                'must_change_password' => !empty($user['must_change_password']),
                 'expires_at' => time() + 300,
                 'failures' => 0,
             ];
@@ -178,11 +187,11 @@ final class Auth
             return ['ok' => false, 'requires_mfa' => true];
         }
 
-        self::finishLogin((int) $user['id'], $username, $role);
+        self::finishLogin((int) $user['id'], $username, $role, !empty($user['must_change_password']));
         return ['ok' => true];
     }
 
-    private static function finishLogin(int $adminId, string $username, string $role): void
+    private static function finishLogin(int $adminId, string $username, string $role, bool $mustChangePassword = false): void
     {
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             session_regenerate_id(true);
@@ -191,6 +200,7 @@ final class Auth
         $_SESSION['admin_id'] = $adminId;
         $_SESSION['admin_username'] = $username;
         $_SESSION['admin_role'] = in_array($role, self::ROLES, true) ? $role : 'read_only';
+        $_SESSION['must_change_password'] = $mustChangePassword;
         $_SESSION['last_activity'] = time();
         $_SESSION['logged_in_at'] = time();
     }
@@ -210,11 +220,11 @@ final class Auth
         }
 
         $stmt = Database::pdo()->prepare(
-            'SELECT totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE id = ?'
+            'SELECT is_active, totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE id = ?'
         );
         $stmt->execute([(int) $pending['admin_id']]);
         $user = $stmt->fetch();
-        if (!$user || empty($user['totp_enabled']) || empty($user['totp_secret'])) {
+        if (!$user || empty($user['is_active']) || empty($user['totp_enabled']) || empty($user['totp_secret'])) {
             unset($_SESSION['mfa_pending']);
             return ['ok' => false, 'error' => 'Two-factor authentication is unavailable.'];
         }
@@ -245,7 +255,7 @@ final class Auth
             return ['ok' => false, 'error' => 'Invalid authentication or recovery code.'];
         }
 
-        self::finishLogin((int) $pending['admin_id'], $pending['username'], $pending['role']);
+        self::finishLogin((int) $pending['admin_id'], $pending['username'], $pending['role'], !empty($pending['must_change_password']));
         return ['ok' => true];
     }
 
@@ -334,6 +344,12 @@ final class Auth
         return (bool) $stmt->fetchColumn();
     }
 
+    public static function confirmCurrentPassword(string $password): bool
+    {
+        self::require();
+        return self::verifyCurrentPassword((int) $_SESSION['admin_id'], $password);
+    }
+
     private static function verifyCurrentPassword(int $adminId, string $password): bool
     {
         $stmt = Database::pdo()->prepare('SELECT password_hash FROM admin_users WHERE id = ?');
@@ -415,8 +431,9 @@ final class Auth
         }
 
         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $update = Database::pdo()->prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?');
+        $update = Database::pdo()->prepare('UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?');
         $update->execute([$newHash, $adminId]);
+        $_SESSION['must_change_password'] = false;
 
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_regenerate_id(true);

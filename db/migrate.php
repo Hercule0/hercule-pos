@@ -55,6 +55,22 @@ if ((int) $roleColumn->fetchColumn() === 0) {
     echo "COLUMN - admin_users.role added (existing admins are owners)\n";
 }
 
+$accountColumns = [
+    'is_active' => 'TINYINT(1) NOT NULL DEFAULT 1',
+    'must_change_password' => 'TINYINT(1) NOT NULL DEFAULT 0',
+];
+foreach ($accountColumns as $columnName => $definition) {
+    $check = $pdo->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+    );
+    $check->execute(['admin_users', $columnName]);
+    if ((int) $check->fetchColumn() === 0) {
+        $pdo->exec("ALTER TABLE admin_users ADD COLUMN {$columnName} {$definition}");
+        echo "COLUMN - admin_users.{$columnName} added\n";
+    }
+}
+
 $mfaColumns = [
     'totp_enabled' => 'TINYINT(1) NOT NULL DEFAULT 0',
     'totp_secret' => 'TEXT NULL',
@@ -93,6 +109,7 @@ foreach ($retentionIndexes as [$tableName, $indexName, $columnName]) {
 
 $tables = [
     'admin_users',
+    'admin_audit_log',
     'login_attempts',
     'api_requests',
     'customers',
