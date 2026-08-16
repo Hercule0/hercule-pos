@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 Auth::require();
+Auth::requirePermission('exports.download');
 
 $pdo = Database::pdo();
 $customerFilter = isset($_GET['customer_id']) ? (int) $_GET['customer_id'] : null;
