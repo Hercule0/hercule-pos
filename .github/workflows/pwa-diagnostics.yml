@@ -1,0 +1,46 @@
+name: Diagnose production PWA
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect production PWA resources
+        shell: bash
+        run: |
+          set -o pipefail
+          base="https://pos-f7gxcvajd5gpf4dg.swedencentral-01.azurewebsites.net/public/admin"
+
+          for resource in             "login.php"             "manifest.json"             "sw.js"             "assets/icons/app-icon-192.png"             "assets/icons/app-icon-512.png"; do
+            echo "::group::$resource"
+            curl --fail --silent --show-error --location               --dump-header - --output "/tmp/$(basename "$resource")"               "$base/$resource"
+            file "/tmp/$(basename "$resource")"
+            echo "::endgroup::"
+          done
+
+          python3 -m json.tool /tmp/manifest.json
+          grep -F '/public/admin/manifest.json' /tmp/login.php
+          grep -F 'navigator.serviceWorker.register' /tmp/login.php /tmp/pwa.js 2>/dev/null || true
+
+      - name: Run Chromium PWA audit
+        shell: bash
+        run: |
+          npx --yes lighthouse@11.7.1             "https://pos-f7gxcvajd5gpf4dg.swedencentral-01.azurewebsites.net/public/admin/login.php"             --only-categories=pwa             --output=json             --output-path=/tmp/lighthouse.json             --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage"             --quiet
+
+          jq '{
+            category: .categories.pwa,
+            manifest: .audits["web-app-manifest"],
+            installable: .audits["installable-manifest"],
+            service_worker: .audits["service-worker"],
+            themed_omnibox: .audits["themed-omnibox"],
+            maskable_icon: .audits["maskable-icon"]
+          }' /tmp/lighthouse.json
