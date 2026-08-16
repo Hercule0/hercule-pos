@@ -17,6 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $admin = Auth::currentUsername() ?? 'admin';
 
+    if ($action === 'delete') {
+        Auth::requirePermission('licenses.delete');
+    } else {
+        Auth::requirePermission('licenses.manage');
+    }
+
     switch ($action) {
         case 'renew':
             $plan = $_POST['plan'] ?? '';
