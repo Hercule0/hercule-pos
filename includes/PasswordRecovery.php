@@ -29,26 +29,52 @@ final class PasswordRecovery
     public static function createRequest(string $licenseKey, string $hwid, string $username, ?string $ip): array
     {
         $pdo = Database::pdo();
+        $pdo->beginTransaction();
 
-        // Duplicate-request guard (checklist §12 "Duplicate recovery request").
-        $stmt = $pdo->prepare(
-            "SELECT id FROM password_recovery_requests
-             WHERE license_key = ? AND requested_username = ? AND status = 'pending'"
-        );
-        $stmt->execute([$licenseKey, $username]);
-        if ($stmt->fetchColumn()) {
-            return ['ok' => false, 'error' => 'يوجد طلب استرجاع معلّق بالفعل لهذا الحساب. يرجى الانتظار حتى تتم مراجعته.'];
+        try {
+            $licenseStmt = $pdo->prepare(
+                "SELECT l.id
+                 FROM licenses l
+                 INNER JOIN license_activations a
+                    ON a.license_id = l.id AND a.hwid = ? AND a.is_active = 1
+                 WHERE l.license_key = ? AND l.status = 'active'
+                   AND (l.expires_at IS NULL OR l.expires_at > CURRENT_TIMESTAMP)
+                 FOR UPDATE"
+            );
+            $licenseStmt->execute([$hwid, $licenseKey]);
+
+            if (!$licenseStmt->fetchColumn()) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'تعذر التحقق من الترخيص والجهاز لهذا الطلب.'];
+            }
+
+            $duplicate = $pdo->prepare(
+                "SELECT id FROM password_recovery_requests
+                 WHERE license_key = ? AND requested_username = ? AND status = 'pending'
+                 LIMIT 1 FOR UPDATE"
+            );
+            $duplicate->execute([$licenseKey, $username]);
+            if ($duplicate->fetchColumn()) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'يوجد طلب استرجاع معلّق بالفعل لهذا الحساب. يرجى الانتظار حتى تتم مراجعته.'];
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO password_recovery_requests (license_key, hwid, requested_username, status) VALUES (?, ?, ?, ?)'
+            );
+            $stmt->execute([$licenseKey, $hwid, $username, 'pending']);
+            $id = (int) $pdo->lastInsertId();
+
+            self::log($id, 'request_created', null, $ip, null);
+            $pdo->commit();
+
+            return ['ok' => true, 'request_id' => $id];
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-
-        $stmt = $pdo->prepare(
-            'INSERT INTO password_recovery_requests (license_key, hwid, requested_username, status) VALUES (?, ?, ?, ?)'
-        );
-        $stmt->execute([$licenseKey, $hwid, $username, 'pending']);
-        $id = (int) $pdo->lastInsertId();
-
-        self::log($id, 'request_created', null, $ip, null);
-
-        return ['ok' => true, 'request_id' => $id];
     }
 
     public static function findById(int $id): ?array
@@ -90,10 +116,6 @@ final class PasswordRecovery
      */
     public static function approve(int $id, string $adminUsername, ?string $note): array
     {
-        $request = self::findById($id);
-        if (!$request) return ['ok' => false, 'error' => 'Request not found.'];
-        if ($request['status'] !== 'pending') return ['ok' => false, 'error' => 'Request is not pending.'];
-
         $token = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $token);
         $expiresAt = (new DateTime())->modify('+' . self::TOKEN_TTL_MINUTES . ' minutes')->format('Y-m-d H:i:s');
@@ -102,27 +124,30 @@ final class PasswordRecovery
             "UPDATE password_recovery_requests
              SET status = 'approved', token_hash = ?, token_expires_at = ?, admin_note = ?,
                  reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
-             WHERE id = ?"
+             WHERE id = ? AND status = 'pending'"
         );
         $stmt->execute([$tokenHash, $expiresAt, $note, $adminUsername, $id]);
 
-        self::log($id, 'request_approved', $adminUsername, null, $note);
+        if ($stmt->rowCount() !== 1) {
+            return ['ok' => false, 'error' => 'Request was already reviewed or does not exist.'];
+        }
 
+        self::log($id, 'request_approved', $adminUsername, null, $note);
         return ['ok' => true, 'token' => $token, 'expires_at' => $expiresAt];
     }
 
     public static function reject(int $id, string $adminUsername, ?string $note): array
     {
-        $request = self::findById($id);
-        if (!$request) return ['ok' => false, 'error' => 'Request not found.'];
-        if ($request['status'] !== 'pending') return ['ok' => false, 'error' => 'Request is not pending.'];
-
         $stmt = Database::pdo()->prepare(
             "UPDATE password_recovery_requests
              SET status = 'rejected', admin_note = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
-             WHERE id = ?"
+             WHERE id = ? AND status = 'pending'"
         );
         $stmt->execute([$note, $adminUsername, $id]);
+
+        if ($stmt->rowCount() !== 1) {
+            return ['ok' => false, 'error' => 'Request was already reviewed or does not exist.'];
+        }
 
         self::log($id, 'request_rejected', $adminUsername, null, $note);
         return ['ok' => true];
@@ -141,33 +166,64 @@ final class PasswordRecovery
      */
     public static function claim(int $id, string $licenseKey, string $hwid, ?string $ip): array
     {
-        $request = self::findById($id);
-        if (!$request || $request['license_key'] !== $licenseKey) {
-            return ['ok' => false, 'error' => 'الطلب غير موجود.'];
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $stmt = $pdo->prepare('SELECT * FROM password_recovery_requests WHERE id = ? FOR UPDATE');
+            $stmt->execute([$id]);
+            $request = $stmt->fetch();
+
+            if (!$request || $request['license_key'] !== $licenseKey) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'الطلب غير موجود.'];
+            }
+            if (!hash_equals($request['hwid'], $hwid)) {
+                self::log($id, 'claim_device_mismatch', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'جهازك الحالي لا يطابق الجهاز الذي أُرسل منه الطلب الأصلي.'];
+            }
+            if ($request['status'] === 'approved' && $request['token_expires_at']
+                && strtotime($request['token_expires_at']) < time()) {
+                $pdo->prepare("UPDATE password_recovery_requests SET status = 'expired' WHERE id = ?")
+                    ->execute([$id]);
+                self::log($id, 'authorization_expired', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'انتهت صلاحية التفويض.'];
+            }
+            if ($request['status'] !== 'approved') {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'الطلب ليس معتمداً حالياً (الحالة: ' . self::arabicStatus($request['status']) . ').'];
+            }
+            if ($request['delivered_at'] !== null) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'تم استلام التفويض مسبقاً.'];
+            }
+
+            $token = bin2hex(random_bytes(32));
+            $tokenHash = hash('sha256', $token);
+            $update = $pdo->prepare(
+                'UPDATE password_recovery_requests
+                 SET token_hash = ?, delivered_at = CURRENT_TIMESTAMP
+                 WHERE id = ? AND status = ? AND delivered_at IS NULL'
+            );
+            $update->execute([$tokenHash, $id, 'approved']);
+
+            if ($update->rowCount() !== 1) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'تعذر استلام التفويض.'];
+            }
+
+            self::log($id, 'authorization_claimed', null, $ip, null);
+            $pdo->commit();
+
+            return ['ok' => true, 'token' => $token, 'expires_at' => $request['token_expires_at']];
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-        if (!hash_equals($request['hwid'], $hwid)) {
-            self::log($id, 'claim_device_mismatch', null, $ip, null);
-            return ['ok' => false, 'error' => 'جهازك الحالي لا يطابق الجهاز الذي أُرسل منه الطلب الأصلي.'];
-        }
-
-        self::expireIfNeeded($id);
-        $request = self::findById($id);
-
-        if ($request['status'] !== 'approved') {
-            return ['ok' => false, 'error' => 'الطلب ليس معتمداً حالياً (الحالة: ' . self::arabicStatus($request['status']) . ').'];
-        }
-
-        $token = bin2hex(random_bytes(32));
-        $tokenHash = hash('sha256', $token);
-
-        $stmt = Database::pdo()->prepare(
-            'UPDATE password_recovery_requests SET token_hash = ?, delivered_at = CURRENT_TIMESTAMP WHERE id = ?'
-        );
-        $stmt->execute([$tokenHash, $id]);
-
-        self::log($id, 'authorization_claimed', null, $ip, null);
-
-        return ['ok' => true, 'token' => $token, 'expires_at' => $request['token_expires_at']];
     }
 
     /**
@@ -179,36 +235,64 @@ final class PasswordRecovery
      */
     public static function reset(int $id, string $licenseKey, string $hwid, string $token, ?string $ip): array
     {
-        $request = self::findById($id);
-        if (!$request || $request['license_key'] !== $licenseKey || !hash_equals($request['hwid'], $hwid)) {
-            self::log($id, 'reset_failed_mismatch', null, $ip, null);
-            return ['ok' => false, 'error' => 'طلب غير صالح.'];
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $stmt = $pdo->prepare('SELECT * FROM password_recovery_requests WHERE id = ? FOR UPDATE');
+            $stmt->execute([$id]);
+            $request = $stmt->fetch();
+
+            if (!$request || $request['license_key'] !== $licenseKey || !hash_equals($request['hwid'], $hwid)) {
+                self::log($id, 'reset_failed_mismatch', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'طلب غير صالح.'];
+            }
+            if ($request['status'] === 'approved' && $request['token_expires_at']
+                && strtotime($request['token_expires_at']) < time()) {
+                $pdo->prepare("UPDATE password_recovery_requests SET status = 'expired' WHERE id = ?")
+                    ->execute([$id]);
+                self::log($id, 'authorization_expired', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'انتهت صلاحية التفويض.'];
+            }
+            if ($request['status'] === 'completed') {
+                self::log($id, 'reset_failed_reused', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'تم استخدام هذا التفويض مسبقاً.'];
+            }
+            if ($request['status'] !== 'approved') {
+                self::log($id, 'reset_failed_bad_status', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'الطلب غير معتمد أو انتهت صلاحيته.'];
+            }
+            if (!$request['token_hash'] || !hash_equals($request['token_hash'], hash('sha256', $token))) {
+                self::log($id, 'reset_failed_bad_token', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'رمز التفويض غير صحيح.'];
+            }
+
+            $update = $pdo->prepare(
+                "UPDATE password_recovery_requests
+                 SET status = 'completed', used_at = CURRENT_TIMESTAMP, token_hash = NULL
+                 WHERE id = ? AND status = 'approved' AND used_at IS NULL"
+            );
+            $update->execute([$id]);
+
+            if ($update->rowCount() !== 1) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'تعذر استخدام التفويض أو تم استخدامه مسبقاً.'];
+            }
+
+            self::log($id, 'password_changed', null, $ip, null);
+            $pdo->commit();
+            return ['ok' => true];
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
-
-        self::expireIfNeeded($id);
-        $request = self::findById($id);
-
-        if ($request['status'] === 'completed') {
-            self::log($id, 'reset_failed_reused', null, $ip, null);
-            return ['ok' => false, 'error' => 'تم استخدام هذا التفويض مسبقاً.'];
-        }
-        if ($request['status'] !== 'approved') {
-            self::log($id, 'reset_failed_bad_status', null, $ip, null);
-            return ['ok' => false, 'error' => 'الطلب غير معتمد أو انتهت صلاحيته (الحالة: ' . self::arabicStatus($request['status']) . ').'];
-        }
-        if (!$request['token_hash'] || !hash_equals($request['token_hash'], hash('sha256', $token))) {
-            self::log($id, 'reset_failed_bad_token', null, $ip, null);
-            return ['ok' => false, 'error' => 'رمز التفويض غير صحيح.'];
-        }
-
-        $stmt = Database::pdo()->prepare(
-            "UPDATE password_recovery_requests SET status = 'completed', used_at = CURRENT_TIMESTAMP WHERE id = ?"
-        );
-        $stmt->execute([$id]);
-
-        self::log($id, 'password_changed', null, $ip, null);
-
-        return ['ok' => true];
     }
 
     /** Lazily flips an approved-but-unclaimed/unused authorization to
