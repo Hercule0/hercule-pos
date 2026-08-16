@@ -7,7 +7,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 ## Production features
 
 - Session-based admin authentication with CSRF protection, strict cookies,
-  idle expiry, login throttling, password changes, and role-based permissions
+  idle expiry, login throttling, password changes, role-based permissions, and encrypted TOTP MFA
 - Mobile-first dashboard, customers, licenses, license details, and recovery
   pages
 - Database-backed search, filtering, and pagination for large admin datasets
@@ -33,6 +33,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - `/public/admin/customers.php`
 - `/public/admin/licenses.php`
 - `/public/admin/recovery_requests.php`
+- `/public/admin/mfa_settings.php`
 
 ### Public API
 
@@ -72,7 +73,12 @@ DB_NAME
 DB_USER
 DB_PASS
 LICENSE_PRIVATE_KEY
+MFA_ENCRYPTION_KEY
 ```
+
+`MFA_ENCRYPTION_KEY` must be at least 32 cryptographically random characters.
+It encrypts administrator TOTP secrets with AES-256-GCM and must remain stable
+across deployments. Losing it prevents existing MFA secrets from being decrypted.
 
 `LICENSE_PRIVATE_KEY` must contain the RSA private key used to sign license
 responses. Keep it only in the Azure application environment. Never commit it
@@ -120,6 +126,9 @@ The suite covers:
 - activation limits and device deactivation
 - RSA signing, verification, and tamper detection
 - login failure throttling
+- RFC 6238 TOTP generation and verification
+- encrypted MFA secret round-trip
+- two-stage login, invalid-code rejection, and one-time recovery-code consumption
 - recovery identity checks
 - duplicate recovery prevention
 - conditional approval/rejection
@@ -144,6 +153,8 @@ column. Role checks are enforced server-side.
 
 - Database access uses PDO prepared statements with emulated prepares disabled.
 - Admin state changes require CSRF tokens.
+- Enabled MFA accounts require password plus TOTP or a one-time recovery code.
+- TOTP secrets are encrypted at rest with AES-256-GCM; recovery codes are password-hashed.
 - Sessions use strict mode, `HttpOnly`, `SameSite=Strict`, HTTPS-aware
   `Secure` cookies, ID rotation, and idle expiration.
 - Admin pages use no-store caching and security headers including CSP, HSTS,
@@ -183,7 +194,7 @@ tests/                   SQLite integration test harness
 
 ## Remaining production work
 
-- MFA/TOTP and an administrator-management interface
+- administrator-management interface and mandatory MFA policy controls
 - automated database backups with a tested restore procedure
 - centralized error monitoring and uptime alerting
 - payment-provider webhooks
