@@ -7,6 +7,7 @@
  */
 
 require_once __DIR__ . '/Database.php';
+require_once __DIR__ . '/Totp.php';
 
 final class Auth
 {
@@ -133,7 +134,7 @@ final class Auth
         }
 
         try {
-            $stmt = Database::pdo()->prepare('SELECT id, password_hash, role FROM admin_users WHERE username = ?');
+            $stmt = Database::pdo()->prepare('SELECT id, password_hash, role, totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE username = ?');
             $stmt->execute([$username]);
             $user = $stmt->fetch();
         } catch (PDOException $e) {
@@ -160,21 +161,185 @@ final class Auth
         }
 
         self::recordAttempt($username, $ip, true);
-        
-        // تم التعديل لمنع خطأ الـ Session ID في بيئة الـ CLI
-        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
-            session_regenerate_id(true); // prevent session fixation
-        }
-        
-        unset($_SESSION['csrf_token']);
-        $_SESSION['admin_id'] = $user['id'];
-        $_SESSION['admin_username'] = $username;
+
         $role = $user['role'] ?? 'read_only';
+        $role = in_array($role, self::ROLES, true) ? $role : 'read_only';
+
+        if (!empty($user['totp_enabled'])) {
+            unset($_SESSION['admin_id'], $_SESSION['admin_username'], $_SESSION['admin_role']);
+            $_SESSION['mfa_pending'] = [
+                'admin_id' => (int) $user['id'],
+                'username' => $username,
+                'role' => $role,
+                'expires_at' => time() + 300,
+                'failures' => 0,
+            ];
+            unset($_SESSION['csrf_token']);
+            return ['ok' => false, 'requires_mfa' => true];
+        }
+
+        self::finishLogin((int) $user['id'], $username, $role);
+        return ['ok' => true];
+    }
+
+    private static function finishLogin(int $adminId, string $username, string $role): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+            session_regenerate_id(true);
+        }
+        unset($_SESSION['csrf_token'], $_SESSION['mfa_pending'], $_SESSION['mfa_setup_secret']);
+        $_SESSION['admin_id'] = $adminId;
+        $_SESSION['admin_username'] = $username;
         $_SESSION['admin_role'] = in_array($role, self::ROLES, true) ? $role : 'read_only';
         $_SESSION['last_activity'] = time();
         $_SESSION['logged_in_at'] = time();
+    }
 
+    /** @return array{ok: bool, error?: string} */
+    public static function verifySecondFactor(string $code): array
+    {
+        self::ensureSession();
+        $pending = $_SESSION['mfa_pending'] ?? null;
+        if (!is_array($pending) || (int) ($pending['expires_at'] ?? 0) < time()) {
+            unset($_SESSION['mfa_pending']);
+            return ['ok' => false, 'error' => 'Your verification session expired. Sign in again.'];
+        }
+        if ((int) ($pending['failures'] ?? 0) >= 5) {
+            unset($_SESSION['mfa_pending']);
+            return ['ok' => false, 'error' => 'Too many invalid codes. Sign in again.'];
+        }
+
+        $stmt = Database::pdo()->prepare(
+            'SELECT totp_enabled, totp_secret, recovery_codes FROM admin_users WHERE id = ?'
+        );
+        $stmt->execute([(int) $pending['admin_id']]);
+        $user = $stmt->fetch();
+        if (!$user || empty($user['totp_enabled']) || empty($user['totp_secret'])) {
+            unset($_SESSION['mfa_pending']);
+            return ['ok' => false, 'error' => 'Two-factor authentication is unavailable.'];
+        }
+
+        $valid = false;
+        try {
+            $valid = Totp::verify(Totp::decrypt($user['totp_secret']), $code);
+        } catch (Throwable $e) {
+            error_log('MFA verification failed: ' . $e->getMessage());
+        }
+
+        $normalized = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $code) ?? '');
+        $recovery = json_decode($user['recovery_codes'] ?? '[]', true);
+        if (!$valid && strlen($normalized) === 10 && is_array($recovery)) {
+            foreach ($recovery as $index => $hash) {
+                if (password_verify($normalized, $hash)) {
+                    $valid = true;
+                    unset($recovery[$index]);
+                    $update = Database::pdo()->prepare('UPDATE admin_users SET recovery_codes = ? WHERE id = ?');
+                    $update->execute([json_encode(array_values($recovery)), (int) $pending['admin_id']]);
+                    break;
+                }
+            }
+        }
+
+        if (!$valid) {
+            $_SESSION['mfa_pending']['failures'] = (int) ($pending['failures'] ?? 0) + 1;
+            return ['ok' => false, 'error' => 'Invalid authentication or recovery code.'];
+        }
+
+        self::finishLogin((int) $pending['admin_id'], $pending['username'], $pending['role']);
         return ['ok' => true];
+    }
+
+    public static function beginMfaSetup(): array
+    {
+        self::require();
+        $secret = Totp::generateSecret();
+        $_SESSION['mfa_setup_secret'] = ['secret' => $secret, 'expires_at' => time() + 600];
+        return [
+            'secret' => $secret,
+            'uri' => Totp::provisioningUri($secret, self::currentUsername() ?? 'admin'),
+        ];
+    }
+
+    /** @return array{ok: bool, error?: string, recovery_codes?: array<int,string>} */
+    public static function enableMfa(string $currentPassword, string $code): array
+    {
+        self::require();
+        $setup = $_SESSION['mfa_setup_secret'] ?? null;
+        if (!is_array($setup) || (int) ($setup['expires_at'] ?? 0) < time()) {
+            return ['ok' => false, 'error' => 'Setup expired. Generate a new secret.'];
+        }
+        if (!self::verifyCurrentPassword((int) $_SESSION['admin_id'], $currentPassword)) {
+            return ['ok' => false, 'error' => 'Current password is incorrect.'];
+        }
+        if (!Totp::verify($setup['secret'], $code)) {
+            return ['ok' => false, 'error' => 'The six-digit code is invalid.'];
+        }
+
+        $codes = [];
+        $hashes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $raw = strtoupper(bin2hex(random_bytes(5)));
+            $codes[] = substr($raw, 0, 5) . '-' . substr($raw, 5);
+            $hashes[] = password_hash($raw, PASSWORD_DEFAULT);
+        }
+
+        try {
+            $encrypted = Totp::encrypt($setup['secret']);
+        } catch (Throwable $e) {
+            error_log('MFA setup failed: ' . $e->getMessage());
+            return ['ok' => false, 'error' => 'MFA encryption is not configured on the server.'];
+        }
+
+        $stmt = Database::pdo()->prepare(
+            'UPDATE admin_users SET totp_enabled = 1, totp_secret = ?, recovery_codes = ? WHERE id = ?'
+        );
+        $stmt->execute([$encrypted, json_encode($hashes), (int) $_SESSION['admin_id']]);
+        unset($_SESSION['mfa_setup_secret']);
+        return ['ok' => true, 'recovery_codes' => $codes];
+    }
+
+    /** @return array{ok: bool, error?: string} */
+    public static function disableMfa(string $currentPassword, string $code): array
+    {
+        self::require();
+        if (!self::verifyCurrentPassword((int) $_SESSION['admin_id'], $currentPassword)) {
+            return ['ok' => false, 'error' => 'Current password is incorrect.'];
+        }
+        $stmt = Database::pdo()->prepare('SELECT totp_secret FROM admin_users WHERE id = ? AND totp_enabled = 1');
+        $stmt->execute([(int) $_SESSION['admin_id']]);
+        $encrypted = $stmt->fetchColumn();
+        if (!$encrypted) {
+            return ['ok' => false, 'error' => 'Two-factor authentication is not enabled.'];
+        }
+        try {
+            $valid = Totp::verify(Totp::decrypt($encrypted), $code);
+        } catch (Throwable $e) {
+            $valid = false;
+        }
+        if (!$valid) {
+            return ['ok' => false, 'error' => 'A valid authenticator code is required.'];
+        }
+        $update = Database::pdo()->prepare(
+            'UPDATE admin_users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = NULL WHERE id = ?'
+        );
+        $update->execute([(int) $_SESSION['admin_id']]);
+        return ['ok' => true];
+    }
+
+    public static function mfaEnabled(): bool
+    {
+        self::require();
+        $stmt = Database::pdo()->prepare('SELECT totp_enabled FROM admin_users WHERE id = ?');
+        $stmt->execute([(int) $_SESSION['admin_id']]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    private static function verifyCurrentPassword(int $adminId, string $password): bool
+    {
+        $stmt = Database::pdo()->prepare('SELECT password_hash FROM admin_users WHERE id = ?');
+        $stmt->execute([$adminId]);
+        $hash = $stmt->fetchColumn();
+        return is_string($hash) && password_verify($password, $hash);
     }
 
     public static function logout(): void
