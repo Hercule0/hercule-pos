@@ -104,7 +104,7 @@ final class Auth
         );
         $stmt->execute([$username, $ip, $success ? 1 : 0]);
 
-        if (random_int(1, 100) === 1) {
+        if (Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' && random_int(1, 100) === 1) {
             $threshold = (new DateTime())->modify('-30 days')->format('Y-m-d H:i:s');
             $cleanup = Database::pdo()->prepare(
                 'DELETE FROM login_attempts WHERE created_at < ? ORDER BY id LIMIT 1000'
