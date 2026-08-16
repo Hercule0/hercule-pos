@@ -22,7 +22,7 @@ function render_header(string $title): void
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=licenses-v2">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=recovery-v2">
 </head>
 <body>
 <div class="shell">
