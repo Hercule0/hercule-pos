@@ -31,72 +31,247 @@ $licenseInfoStmt = $pdo->prepare(
 
 $requests = PasswordRecovery::allList();
 
+$recoveryCounts = ['all' => count($requests), 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'expired' => 0];
+foreach ($requests as &$requestRow) {
+    $licenseInfoStmt->execute([$requestRow['license_key']]);
+    $requestRow['_license_info'] = $licenseInfoStmt->fetch() ?: null;
+    if (isset($recoveryCounts[$requestRow['status']])) {
+        $recoveryCounts[$requestRow['status']]++;
+    }
+}
+unset($requestRow);
+
 render_header('Password Recovery Requests');
 flash_render();
 ?>
 
-<h1>Password Recovery Requests</h1>
-<p class="muted">
-    Requests from Hercule POS users who are locked out of their local admin/cashier
-    account. Use the license/customer and HWID info below to verify identity before
-    approving — you will never see or set their actual password here. Approving
-    issues a short-lived, single-use authorization that only the requesting client
-    can retrieve and consume.
-</p>
-
-<div class="panel panel-wide">
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>ID</th><th>Username</th><th>License / Customer</th>
-                <th>Status</th><th>Requested</th><th>Reviewed</th><th>Actions / Note</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($requests as $r): ?>
-            <?php
-                $licenseInfoStmt->execute([$r['license_key']]);
-                $li = $licenseInfoStmt->fetch();
-            ?>
-            <tr>
-                <td>#<?= (int) $r['id'] ?></td>
-                <td><?= htmlspecialchars($r['requested_username']) ?></td>
-                <td>
-                    <?php if ($li): ?>
-                        <?= htmlspecialchars($li['customer_name']) ?>
-                        <span class="muted">(<?= htmlspecialchars($li['plan']) ?>, <?= htmlspecialchars($li['license_status']) ?>)</span><br>
-                    <?php else: ?>
-                        <em class="muted">license not found</em><br>
-                    <?php endif; ?>
-                    <span class="mono"><?= htmlspecialchars($r['license_key']) ?></span>
-                    <div class="muted" style="font-size:11px;">HWID: <span class="mono"><?= htmlspecialchars($r['hwid']) ?></span></div>
-                </td>
-                <td><span class="badge badge-<?= htmlspecialchars($r['status']) ?>"><?= htmlspecialchars($r['status']) ?></span></td>
-                <td><?= htmlspecialchars($r['created_at']) ?></td>
-                <td>
-                    <?= htmlspecialchars($r['reviewed_at'] ?? '—') ?>
-                    <?= $r['reviewed_by'] ? '<br><span class="muted">by ' . htmlspecialchars($r['reviewed_by']) . '</span>' : '' ?>
-                </td>
-                <td>
-                    <?php if ($r['status'] === 'pending'): ?>
-                        <form method="post">
-                            <?= Csrf::field() ?>
-                            <input type="hidden" name="request_id" value="<?= $r['id'] ?>">
-                            <input type="text" name="note" placeholder="Internal note (optional)" style="width:170px; margin-bottom:6px; display:block;">
-                            <button type="submit" name="action" value="approve" class="icon-btn" style="color: var(--success);">Approve</button>
-                            <button type="submit" name="action" value="reject" class="icon-btn" style="color: var(--danger);">Reject</button>
-                        </form>
-                    <?php else: ?>
-                        <span class="muted"><?= htmlspecialchars($r['admin_note'] ?? '—') ?></span>
-                    <?php endif; ?>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        <?php if (empty($requests)): ?>
-            <tr><td colspan="7" class="muted">No recovery requests yet.</td></tr>
+<div class="recovery-page">
+    <section class="page-hero recovery-hero">
+        <div>
+            <p class="eyebrow">Account security</p>
+            <h1>Recovery requests</h1>
+            <p class="page-subtitle">Review identity signals before approving password recovery.</p>
+        </div>
+        <?php if ($recoveryCounts['pending'] > 0): ?>
+            <span class="pending-summary">
+                <i></i><?= $recoveryCounts['pending'] ?> pending
+            </span>
         <?php endif; ?>
-        </tbody>
-    </table>
+    </section>
+
+    <aside class="recovery-notice">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+        <p><strong>Passwords stay private.</strong> Approval only creates a short-lived, single-use authorization for the requesting device.</p>
+    </aside>
+
+    <section class="recovery-tools" aria-label="Recovery request tools">
+        <label class="app-search" for="recovery-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+            <input id="recovery-search" type="search" placeholder="Search username, customer, or key" autocomplete="off">
+            <kbd id="recovery-result-count"><?= count($requests) ?></kbd>
+        </label>
+        <div class="filter-chips" id="recovery-filters" role="group" aria-label="Filter requests">
+            <?php foreach (['all' => 'All', 'pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected', 'expired' => 'Expired'] as $value => $label): ?>
+                <button type="button" data-recovery-filter="<?= $value ?>" class="<?= $value === 'all' ? 'active' : '' ?>">
+                    <?= $label ?><span><?= $recoveryCounts[$value] ?></span>
+                </button>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <?php if (empty($requests)): ?>
+        <section class="recovery-empty">
+            <span class="empty-illustration">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+            </span>
+            <h2>No recovery requests</h2>
+            <p>New requests from locked-out users will appear here.</p>
+        </section>
+    <?php else: ?>
+        <section class="recovery-list" id="recovery-list" aria-live="polite">
+            <?php foreach ($requests as $r): ?>
+                <?php
+                    $li = $r['_license_info'];
+                    $customerName = $li['customer_name'] ?? 'Unknown customer';
+                    $searchText = implode(' ', [$r['requested_username'], $customerName, $r['license_key'], $r['status']]);
+                ?>
+                <article class="recovery-card status-border-<?= htmlspecialchars($r['status']) ?>" data-recovery-card data-status="<?= htmlspecialchars($r['status']) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
+                    <div class="recovery-card-icon status-icon-<?= htmlspecialchars($r['status']) ?>">
+                        <?php if ($r['status'] === 'pending'): ?>?
+                        <?php elseif ($r['status'] === 'approved'): ?>✓
+                        <?php elseif ($r['status'] === 'rejected'): ?>×
+                        <?php else: ?>!
+                        <?php endif; ?>
+                    </div>
+                    <div class="recovery-card-main">
+                        <div class="recovery-card-title">
+                            <div>
+                                <h2 dir="auto"><?= htmlspecialchars($r['requested_username']) ?></h2>
+                                <span dir="auto"><?= htmlspecialchars($customerName) ?></span>
+                            </div>
+                            <span class="license-status status-<?= htmlspecialchars($r['status']) ?>"><?= htmlspecialchars($r['status']) ?></span>
+                        </div>
+                        <div class="recovery-card-meta">
+                            <span>Request #<?= (int) $r['id'] ?></span>
+                            <span><?= htmlspecialchars(date('M j, Y · H:i', strtotime($r['created_at']))) ?></span>
+                            <?php if ($li): ?><span><?= htmlspecialchars(str_replace('_', ' ', $li['plan'])) ?> plan</span><?php endif; ?>
+                        </div>
+                    </div>
+                    <button type="button" class="recovery-open" data-open-recovery-dialog="recovery-dialog-<?= (int) $r['id'] ?>">
+                        <span><?= $r['status'] === 'pending' ? 'Review' : 'Details' ?></span>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+                    </button>
+                </article>
+
+                <dialog class="app-dialog recovery-dialog" id="recovery-dialog-<?= (int) $r['id'] ?>">
+                    <div class="recovery-dialog-content">
+                        <div class="dialog-header">
+                            <div>
+                                <p class="eyebrow">Recovery request #<?= (int) $r['id'] ?></p>
+                                <h2 dir="auto"><?= htmlspecialchars($r['requested_username']) ?></h2>
+                            </div>
+                            <button type="button" class="dialog-close" data-close-recovery-dialog aria-label="Close">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                            </button>
+                        </div>
+
+                        <div class="recovery-detail-body">
+                            <div class="identity-summary">
+                                <span class="customer-avatar"><?= strtoupper(htmlspecialchars(substr($customerName, 0, 1))) ?></span>
+                                <div>
+                                    <strong dir="auto"><?= htmlspecialchars($customerName) ?></strong>
+                                    <small>
+                                        <?= $li ? htmlspecialchars(str_replace('_', ' ', $li['plan'])) . ' · ' . htmlspecialchars($li['license_status']) : 'License not found' ?>
+                                    </small>
+                                </div>
+                                <span class="license-status status-<?= htmlspecialchars($r['status']) ?>"><?= htmlspecialchars($r['status']) ?></span>
+                            </div>
+
+                            <dl class="recovery-detail-list">
+                                <div>
+                                    <dt>License key</dt>
+                                    <dd><code dir="ltr"><?= htmlspecialchars($r['license_key']) ?></code><button type="button" data-copy-value="<?= htmlspecialchars($r['license_key'], ENT_QUOTES) ?>" aria-label="Copy license key"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5H5v11h3"/></svg></button></dd>
+                                </div>
+                                <div>
+                                    <dt>Hardware ID</dt>
+                                    <dd><code dir="ltr"><?= htmlspecialchars($r['hwid']) ?></code><button type="button" data-copy-value="<?= htmlspecialchars($r['hwid'], ENT_QUOTES) ?>" aria-label="Copy hardware ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5H5v11h3"/></svg></button></dd>
+                                </div>
+                                <div>
+                                    <dt>Requested</dt>
+                                    <dd><?= htmlspecialchars($r['created_at']) ?></dd>
+                                </div>
+                                <div>
+                                    <dt>Reviewed</dt>
+                                    <dd>
+                                        <?= htmlspecialchars($r['reviewed_at'] ?? 'Not reviewed') ?>
+                                        <?= $r['reviewed_by'] ? ' by ' . htmlspecialchars($r['reviewed_by']) : '' ?>
+                                    </dd>
+                                </div>
+                                <?php if (!empty($r['admin_note'])): ?>
+                                    <div>
+                                        <dt>Admin note</dt>
+                                        <dd dir="auto"><?= htmlspecialchars($r['admin_note']) ?></dd>
+                                    </div>
+                                <?php endif; ?>
+                            </dl>
+                        </div>
+
+                        <?php if ($r['status'] === 'pending'): ?>
+                            <form method="post" class="recovery-review-form">
+                                <?= Csrf::field() ?>
+                                <input type="hidden" name="request_id" value="<?= $r['id'] ?>">
+                                <label>
+                                    <span>Internal note</span>
+                                    <textarea name="note" rows="2" placeholder="Optional reason or verification note"></textarea>
+                                </label>
+                                <div class="recovery-review-actions">
+                                    <button type="submit" name="action" value="reject" class="reject-action" onclick="return confirm('Reject this recovery request?');">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+                                        Reject
+                                    </button>
+                                    <button type="submit" name="action" value="approve" class="approve-action" onclick="return confirm('Approve this recovery request for this device?');">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>
+                                        Approve
+                                    </button>
+                                </div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </dialog>
+            <?php endforeach; ?>
+        </section>
+
+        <div class="search-empty" id="recovery-search-empty" hidden>
+            <strong>No matching requests</strong>
+            <p>Try another search or select a different status.</p>
+        </div>
+    <?php endif; ?>
 </div>
+
+<script>
+(function () {
+    document.querySelectorAll('[data-open-recovery-dialog]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var dialog = document.getElementById(button.dataset.openRecoveryDialog);
+            if (!dialog) return;
+            if (typeof dialog.showModal === 'function') dialog.showModal();
+            else dialog.setAttribute('open', '');
+        });
+    });
+    document.querySelectorAll('[data-close-recovery-dialog]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var dialog = button.closest('dialog');
+            if (!dialog) return;
+            if (typeof dialog.close === 'function') dialog.close();
+            else dialog.removeAttribute('open');
+        });
+    });
+    document.querySelectorAll('.recovery-dialog').forEach(function (dialog) {
+        dialog.addEventListener('click', function (event) {
+            if (event.target === dialog) dialog.close();
+        });
+    });
+
+    var cards = Array.from(document.querySelectorAll('[data-recovery-card]'));
+    var search = document.getElementById('recovery-search');
+    var filters = Array.from(document.querySelectorAll('[data-recovery-filter]'));
+    var resultCount = document.getElementById('recovery-result-count');
+    var empty = document.getElementById('recovery-search-empty');
+    var activeFilter = 'all';
+
+    function applyFilters() {
+        var query = search ? search.value.trim().toLocaleLowerCase() : '';
+        var visible = 0;
+        cards.forEach(function (card) {
+            var matchesSearch = card.dataset.search.toLocaleLowerCase().includes(query);
+            var matchesStatus = activeFilter === 'all' || card.dataset.status === activeFilter;
+            var show = matchesSearch && matchesStatus;
+            card.hidden = !show;
+            if (show) visible++;
+        });
+        if (resultCount) resultCount.textContent = visible;
+        if (empty) empty.hidden = visible !== 0;
+    }
+
+    if (search) search.addEventListener('input', applyFilters);
+    filters.forEach(function (button) {
+        button.addEventListener('click', function () {
+            activeFilter = button.dataset.recoveryFilter;
+            filters.forEach(function (item) { item.classList.toggle('active', item === button); });
+            applyFilters();
+        });
+    });
+
+    document.querySelectorAll('[data-copy-value]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (!navigator.clipboard) return;
+            navigator.clipboard.writeText(button.dataset.copyValue).then(function () {
+                button.classList.add('copied');
+                setTimeout(function () { button.classList.remove('copied'); }, 1200);
+            });
+        });
+    });
+})();
+</script>
 
 <?php render_footer(); ?>
