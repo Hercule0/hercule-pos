@@ -10,16 +10,22 @@ fi
 response="$(mktemp "${TMPDIR:-/tmp}/hercule-health.XXXXXX")"
 trap 'rm -f "$response"' EXIT
 
-http_code="$(curl --silent --show-error --location \
+metrics="$(curl --silent --show-error --location \
   --connect-timeout 8 --max-time 15 \
   --retry 2 --retry-delay 2 --retry-all-errors \
-  --output "$response" --write-out '%{http_code}' "$url")" || {
+  --output "$response" --write-out '%{http_code} %{time_total}' "$url")" || {
     echo "Health request failed." >&2
     exit 1
   }
 
+read -r http_code response_time <<< "$metrics"
 if [[ "$http_code" != "200" ]]; then
   echo "Health endpoint returned HTTP $http_code." >&2
+  exit 1
+fi
+
+if awk -v seconds="$response_time" 'BEGIN { exit !(seconds > 8.0) }'; then
+  echo "Health endpoint is degraded: ${response_time}s exceeds 8s." >&2
   exit 1
 fi
 
@@ -31,4 +37,4 @@ php -r '
   }
 ' "$response"
 
-echo "Application and database health confirmed."
+echo "Application and database health confirmed in ${response_time}s."
