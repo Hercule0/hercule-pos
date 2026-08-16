@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
+    role            ENUM('owner','support','read_only') NOT NULL DEFAULT 'owner',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
