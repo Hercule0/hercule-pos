@@ -32,6 +32,12 @@ $username = trim($input['username'] ?? '');
 if ($licenseKey === '' || $hwid === '' || $username === '') {
     json_response(['ok' => false, 'error' => 'license_key, hwid, and username are required'], 400);
 }
+if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey)) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key format.'], 400);
+}
+if (strlen($hwid) > 128 || preg_match('/[\\x00-\\x1F\\x7F]/', $hwid)) {
+    json_response(['ok' => false, 'error' => 'Invalid hwid.'], 400);
+}
 
 if (mb_strlen($username) > 64) {
     json_response(['ok' => false, 'error' => 'Username is too long.'], 400);

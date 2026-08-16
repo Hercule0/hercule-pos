@@ -30,6 +30,12 @@ $licenseKey = trim($input['license_key'] ?? '');
 if (!$requestId || $licenseKey === '') {
     json_response(['ok' => false, 'error' => 'request_id and license_key are required'], 400);
 }
+if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey)) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key format.'], 400);
+}
+if (!RateLimiter::check('key:' . $licenseKey, 'recovery_status_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
+    json_response(['ok' => false, 'error' => 'Too many status checks for this license. Please try again later.'], 429);
+}
 
 $status = PasswordRecovery::statusFor($requestId, $licenseKey);
 if (!$status) {

@@ -36,6 +36,15 @@ $token = trim($input['token'] ?? '');
 if (!$requestId || $licenseKey === '' || $hwid === '' || $token === '') {
     json_response(['ok' => false, 'error' => 'request_id, license_key, hwid, and token are required'], 400);
 }
+if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey) || strlen($hwid) > 128) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key or hwid.'], 400);
+}
+if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+    json_response(['ok' => false, 'error' => 'Invalid authorization token format.'], 400);
+}
+if (!RateLimiter::check('key:' . $licenseKey, 'recovery_reset_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
+    json_response(['ok' => false, 'error' => 'Too many reset attempts for this license. Please try again later.'], 429);
+}
 
 $result = PasswordRecovery::reset($requestId, $licenseKey, $hwid, $token, client_ip());
 json_response($result, $result['ok'] ? 200 : 400);
