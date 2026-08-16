@@ -9,11 +9,10 @@ echo "Running database migration..."
 php db/migrate.php
 
 echo ""
-echo "Generating RSA signing keypair..."
-php -r "require 'includes/RsaSigner.php'; RsaSigner::generateKeypair(); echo \"Keypair written to keys/\n\";"
+echo "Validating LICENSE_PRIVATE_KEY..."
+php -r "require 'includes/RsaSigner.php'; RsaSigner::sign(['setup_check' => true]); echo \"Private signing key is valid.\\n\";"
 
 echo ""
 echo "Setup complete."
-echo "IMPORTANT: keys/license_signing_public.pem is what gets embedded in the"
-echo "desktop app (Phase 5). keys/license_signing_private.pem must NEVER leave"
-echo "this server."
+echo "IMPORTANT: LICENSE_PRIVATE_KEY must remain in the server environment only."
+echo "The desktop app embeds keys/license_signing_public.pem."

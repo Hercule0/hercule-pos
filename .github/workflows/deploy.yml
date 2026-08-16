@@ -1,6 +1,9 @@
 name: Deploy PHP app to Azure Web App
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -9,6 +12,10 @@ on:
 permissions:
   id-token: write
   contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
 
 env:
   AZURE_WEBAPP_NAME: pos
@@ -26,6 +33,12 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
+
+      - name: Validate PHP syntax
+        run: find . -path './deploy_package' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run test suite
+        run: php tests/run_test.php
 
       - name: Prepare deployment package
         run: |
@@ -46,14 +59,18 @@ jobs:
           rsync -a \
             --exclude='.git' \
             --exclude='.github' \
-            --exclude='tests' \
             --exclude='deploy_package' \
             --exclude='get_key.php' \
             --exclude='New Text Document.txt' \
-            --exclude='htaccess' \
+            --exclude='tests' \
+            --exclude='db' \
+            --exclude='setup.sh' \
+            --exclude='README.md' \
+            --exclude='.htaccess' \
             ./ deploy_package/
 
       - name: Azure Login
+        if: github.event_name != 'pull_request'
         uses: azure/login@v2
         with:
           client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
@@ -61,6 +78,7 @@ jobs:
           subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
 
       - name: Deploy to Azure Web App
+        if: github.event_name != 'pull_request'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
