@@ -41,34 +41,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$customerFilter = isset($_GET['customer_id']) ? (int) $_GET['customer_id'] : null;
+$customerFilter = isset($_GET['customer_id']) ? max(0, (int) $_GET['customer_id']) : null;
+$searchQuery = mb_substr(trim($_GET['q'] ?? ''), 0, 100);
+$statusFilter = $_GET['status'] ?? 'all';
+$validStatusFilters = ['all', 'active', 'expiring', 'expired'];
+if (!in_array($statusFilter, $validStatusFilters, true)) $statusFilter = 'all';
+
+$currentPage = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 24;
 $customers = $pdo->query('SELECT id, name FROM customers ORDER BY name')->fetchAll();
 
-$sql = "SELECT l.*, c.name AS customer_name FROM licenses l JOIN customers c ON c.id = l.customer_id";
-$params = [];
+$scopeWhere = [];
+$scopeParams = [];
 if ($customerFilter) {
-    $sql .= " WHERE l.customer_id = ?";
-    $params[] = $customerFilter;
+    $scopeWhere[] = 'l.customer_id = ?';
+    $scopeParams[] = $customerFilter;
 }
-$sql .= " ORDER BY l.created_at DESC";
+$scopeSql = $scopeWhere ? ' WHERE ' . implode(' AND ', $scopeWhere) : '';
+
+$countSummary = $pdo->prepare(
+    "SELECT COUNT(*) AS all_count,
+            COUNT(CASE WHEN l.status = 'active' THEN 1 END) AS active_count,
+            COUNT(CASE WHEN l.status = 'expired' THEN 1 END) AS expired_count,
+            COUNT(CASE WHEN l.status = 'active'
+                        AND l.expires_at BETWEEN CURRENT_TIMESTAMP AND DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 7 DAY)
+                       THEN 1 END) AS expiring_count
+     FROM licenses l" . $scopeSql
+);
+$countSummary->execute($scopeParams);
+$summary = $countSummary->fetch();
+$licenseCounts = [
+    'all' => (int) ($summary['all_count'] ?? 0),
+    'active' => (int) ($summary['active_count'] ?? 0),
+    'expiring' => (int) ($summary['expiring_count'] ?? 0),
+    'expired' => (int) ($summary['expired_count'] ?? 0),
+];
+
+$where = $scopeWhere;
+$params = $scopeParams;
+if ($searchQuery !== '') {
+    $where[] = '(l.license_key LIKE ? OR c.name LIKE ? OR l.plan LIKE ?)';
+    $pattern = '%' . $searchQuery . '%';
+    array_push($params, $pattern, $pattern, $pattern);
+}
+if ($statusFilter === 'active') {
+    $where[] = "l.status = 'active'";
+} elseif ($statusFilter === 'expired') {
+    $where[] = "l.status = 'expired'";
+} elseif ($statusFilter === 'expiring') {
+    $where[] = "l.status = 'active' AND l.expires_at BETWEEN CURRENT_TIMESTAMP AND DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 7 DAY)";
+}
+$whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+$totalStmt = $pdo->prepare(
+    'SELECT COUNT(*) FROM licenses l JOIN customers c ON c.id = l.customer_id' . $whereSql
+);
+$totalStmt->execute($params);
+$totalLicenses = (int) $totalStmt->fetchColumn();
+$totalPages = max(1, (int) ceil($totalLicenses / $perPage));
+$currentPage = min($currentPage, $totalPages);
+$offset = ($currentPage - 1) * $perPage;
+
+$sql = 'SELECT l.*, c.name AS customer_name
+        FROM licenses l JOIN customers c ON c.id = l.customer_id'
+        . $whereSql .
+       ' ORDER BY l.created_at DESC LIMIT ? OFFSET ?';
 $stmt = $pdo->prepare($sql);
-$stmt->execute($params);
+$position = 1;
+foreach ($params as $value) {
+    $stmt->bindValue($position++, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+}
+$stmt->bindValue($position++, $perPage, PDO::PARAM_INT);
+$stmt->bindValue($position, $offset, PDO::PARAM_INT);
+$stmt->execute();
 $licenses = $stmt->fetchAll();
 
 $nowTimestamp = time();
 $soonTimestamp = strtotime('+7 days');
-$licenseCounts = ['all' => count($licenses), 'active' => 0, 'expiring' => 0, 'expired' => 0];
 foreach ($licenses as &$licenseRow) {
     $expiresTimestamp = $licenseRow['expires_at'] ? strtotime($licenseRow['expires_at']) : null;
     $licenseRow['is_expiring'] = $licenseRow['status'] === 'active'
         && $expiresTimestamp
         && $expiresTimestamp >= $nowTimestamp
         && $expiresTimestamp <= $soonTimestamp;
-    if ($licenseRow['status'] === 'active') $licenseCounts['active']++;
-    if ($licenseRow['is_expiring']) $licenseCounts['expiring']++;
-    if ($licenseRow['status'] === 'expired') $licenseCounts['expired']++;
 }
 unset($licenseRow);
+
+$licensePageUrl = static function (int $page, ?string $status = null) use ($customerFilter, $searchQuery, $statusFilter): string {
+    $query = ['page' => $page, 'status' => $status ?? $statusFilter];
+    if ($customerFilter) $query['customer_id'] = $customerFilter;
+    if ($searchQuery !== '') $query['q'] = $searchQuery;
+    if ($query['status'] === 'all') unset($query['status']);
+    return '/public/admin/licenses.php' . ($query ? '?' . http_build_query($query) : '');
+};
 
 render_header('Licenses');
 flash_render();
@@ -80,7 +145,7 @@ flash_render();
             <p class="eyebrow">Subscriptions</p>
             <h1>Licenses</h1>
             <p class="page-subtitle">
-                <?= count($licenses) ?> license<?= count($licenses) === 1 ? '' : 's' ?>
+                <?= $totalLicenses ?> license<?= $totalLicenses === 1 ? '' : 's' ?>
                 <?= $customerFilter ? ' for the selected customer' : ' in your workspace' ?>.
             </p>
         </div>
@@ -104,16 +169,20 @@ flash_render();
     <?php endif; ?>
 
     <section class="license-tools" aria-label="License tools">
-        <label class="app-search" for="license-search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
-            <input id="license-search" type="search" placeholder="Search key, customer, or plan" autocomplete="off">
-            <kbd id="license-result-count"><?= count($licenses) ?></kbd>
-        </label>
+        <form method="get">
+            <?php if ($customerFilter): ?><input type="hidden" name="customer_id" value="<?= $customerFilter ?>"><?php endif; ?>
+            <?php if ($statusFilter !== 'all'): ?><input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter, ENT_QUOTES) ?>"><?php endif; ?>
+            <label class="app-search" for="license-search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+                <input id="license-search" name="q" type="search" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES) ?>" placeholder="Search key, customer, or plan" autocomplete="off">
+                <kbd id="license-result-count"><?= count($licenses) ?></kbd>
+            </label>
+        </form>
         <div class="filter-chips" id="license-filters" role="group" aria-label="Filter licenses">
             <?php foreach (['all' => 'All', 'active' => 'Active', 'expiring' => 'Expiring', 'expired' => 'Expired'] as $value => $label): ?>
-                <button type="button" data-license-filter="<?= $value ?>" class="<?= $value === 'all' ? 'active' : '' ?>">
+                <a href="<?= htmlspecialchars($licensePageUrl(1, $value), ENT_QUOTES) ?>" class="<?= $value === $statusFilter ? 'active' : '' ?>" <?= $value === $statusFilter ? 'aria-current="page"' : '' ?>>
                     <?= $label ?><span><?= $licenseCounts[$value] ?></span>
-                </button>
+                </a>
             <?php endforeach; ?>
         </div>
     </section>
@@ -203,6 +272,14 @@ flash_render();
                 </article>
             <?php endforeach; ?>
         </section>
+
+        <?php if ($totalPages > 1): ?>
+            <nav class="app-pagination" aria-label="License pages">
+                <a href="<?= htmlspecialchars($licensePageUrl(max(1, $currentPage - 1)), ENT_QUOTES) ?>" class="<?= $currentPage <= 1 ? 'disabled' : '' ?>" <?= $currentPage <= 1 ? 'aria-disabled="true" tabindex="-1"' : '' ?>>Previous</a>
+                <span>Page <strong><?= $currentPage ?></strong> of <?= $totalPages ?></span>
+                <a href="<?= htmlspecialchars($licensePageUrl(min($totalPages, $currentPage + 1)), ENT_QUOTES) ?>" class="<?= $currentPage >= $totalPages ? 'disabled' : '' ?>" <?= $currentPage >= $totalPages ? 'aria-disabled="true" tabindex="-1"' : '' ?>>Next</a>
+            </nav>
+        <?php endif; ?>
 
         <div class="search-empty" id="license-search-empty" hidden>
             <strong>No matching licenses</strong>
@@ -306,20 +383,14 @@ flash_render();
 
     var cards = Array.from(document.querySelectorAll('[data-license-card]'));
     var search = document.getElementById('license-search');
-    var filters = Array.from(document.querySelectorAll('[data-license-filter]'));
     var resultCount = document.getElementById('license-result-count');
     var empty = document.getElementById('license-search-empty');
-    var activeFilter = 'all';
-
     function applyFilters() {
         var query = search ? search.value.trim().toLocaleLowerCase() : '';
         var visible = 0;
         cards.forEach(function (card) {
             var matchesSearch = card.dataset.search.toLocaleLowerCase().includes(query);
-            var matchesStatus = activeFilter === 'all'
-                || card.dataset.status === activeFilter
-                || (activeFilter === 'active' && card.dataset.status === 'expiring');
-            var show = matchesSearch && matchesStatus;
+            var show = matchesSearch;
             card.hidden = !show;
             if (show) visible++;
         });
@@ -328,14 +399,6 @@ flash_render();
     }
 
     if (search) search.addEventListener('input', applyFilters);
-    filters.forEach(function (button) {
-        button.addEventListener('click', function () {
-            activeFilter = button.dataset.licenseFilter;
-            filters.forEach(function (item) { item.classList.toggle('active', item === button); });
-            applyFilters();
-        });
-    });
-
     document.querySelectorAll('[data-copy-key]').forEach(function (button) {
         button.addEventListener('click', function () {
             var key = button.dataset.copyKey;

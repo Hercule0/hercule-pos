@@ -39,11 +39,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$customers = $pdo->query(
-    "SELECT c.*, COUNT(l.id) AS license_count
-     FROM customers c LEFT JOIN licenses l ON l.customer_id = c.id
-     GROUP BY c.id ORDER BY c.created_at DESC"
-)->fetchAll();
+$searchQuery = mb_substr(trim($_GET['q'] ?? ''), 0, 100);
+$currentPage = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 24;
+$whereSql = '';
+$params = [];
+
+if ($searchQuery !== '') {
+    $whereSql = ' WHERE c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?';
+    $pattern = '%' . $searchQuery . '%';
+    $params = [$pattern, $pattern, $pattern];
+}
+
+$countStmt = $pdo->prepare('SELECT COUNT(*) FROM customers c' . $whereSql);
+$countStmt->execute($params);
+$totalCustomers = (int) $countStmt->fetchColumn();
+$totalPages = max(1, (int) ceil($totalCustomers / $perPage));
+$currentPage = min($currentPage, $totalPages);
+$offset = ($currentPage - 1) * $perPage;
+
+$sql = "SELECT c.*, COUNT(l.id) AS license_count
+        FROM customers c
+        LEFT JOIN licenses l ON l.customer_id = c.id"
+        . $whereSql .
+       " GROUP BY c.id
+         ORDER BY c.created_at DESC
+         LIMIT ? OFFSET ?";
+$stmt = $pdo->prepare($sql);
+$position = 1;
+foreach ($params as $value) {
+    $stmt->bindValue($position++, $value, PDO::PARAM_STR);
+}
+$stmt->bindValue($position++, $perPage, PDO::PARAM_INT);
+$stmt->bindValue($position, $offset, PDO::PARAM_INT);
+$stmt->execute();
+$customers = $stmt->fetchAll();
+
+$customerPageUrl = static function (int $page) use ($searchQuery): string {
+    $query = ['page' => $page];
+    if ($searchQuery !== '') $query['q'] = $searchQuery;
+    return '/public/admin/customers.php?' . http_build_query($query);
+};
 
 render_header('Customers');
 flash_render();
@@ -54,7 +90,7 @@ flash_render();
         <div>
             <p class="eyebrow">People</p>
             <h1>Customers</h1>
-            <p class="page-subtitle"><span id="customer-count"><?= count($customers) ?></span> customer<?= count($customers) === 1 ? '' : 's' ?> in your workspace.</p>
+            <p class="page-subtitle"><span id="customer-count"><?= $totalCustomers ?></span> customer<?= $totalCustomers === 1 ? '' : 's' ?><?= $searchQuery !== '' ? ' matching your search' : ' in your workspace' ?>.</p>
         </div>
         <button type="button" class="app-primary-action" data-open-customer-dialog>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -62,22 +98,28 @@ flash_render();
         </button>
     </section>
 
-    <section class="customer-toolbar" aria-label="Customer tools">
+    <form class="customer-toolbar" method="get" aria-label="Customer search">
         <label class="app-search" for="customer-search">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
-            <input id="customer-search" type="search" placeholder="Search by name, phone, or email" autocomplete="off">
+            <input id="customer-search" name="q" type="search" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES) ?>" placeholder="Search by name, phone, or email" autocomplete="off">
             <kbd id="search-result-count"><?= count($customers) ?></kbd>
         </label>
-    </section>
+    </form>
 
     <?php if (empty($customers)): ?>
         <section class="customers-empty">
             <span class="empty-illustration">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M17 9v6M14 12h6"/></svg>
             </span>
-            <h2>Add your first customer</h2>
-            <p>Customers keep contact details and licenses organized in one place.</p>
-            <button type="button" class="app-primary-action" data-open-customer-dialog>Add customer</button>
+            <?php if ($searchQuery !== ''): ?>
+                <h2>No customers found</h2>
+                <p>Try another name, phone number, or email address.</p>
+                <a href="/public/admin/customers.php" class="app-primary-action">Clear search</a>
+            <?php else: ?>
+                <h2>Add your first customer</h2>
+                <p>Customers keep contact details and licenses organized in one place.</p>
+                <button type="button" class="app-primary-action" data-open-customer-dialog>Add customer</button>
+            <?php endif; ?>
         </section>
     <?php else: ?>
         <section class="customer-grid" id="customer-grid" aria-live="polite">
@@ -142,6 +184,14 @@ flash_render();
                 </article>
             <?php endforeach; ?>
         </section>
+
+        <?php if ($totalPages > 1): ?>
+            <nav class="app-pagination" aria-label="Customer pages">
+                <a href="<?= htmlspecialchars($customerPageUrl(max(1, $currentPage - 1)), ENT_QUOTES) ?>" class="<?= $currentPage <= 1 ? 'disabled' : '' ?>" <?= $currentPage <= 1 ? 'aria-disabled="true" tabindex="-1"' : '' ?>>Previous</a>
+                <span>Page <strong><?= $currentPage ?></strong> of <?= $totalPages ?></span>
+                <a href="<?= htmlspecialchars($customerPageUrl(min($totalPages, $currentPage + 1)), ENT_QUOTES) ?>" class="<?= $currentPage >= $totalPages ? 'disabled' : '' ?>" <?= $currentPage >= $totalPages ? 'aria-disabled="true" tabindex="-1"' : '' ?>>Next</a>
+            </nav>
+        <?php endif; ?>
 
         <div class="search-empty" id="customer-search-empty" hidden>
             <strong>No matching customers</strong>
