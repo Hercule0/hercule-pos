@@ -359,6 +359,9 @@ function render_footer(): void
         badge.hidden = total === 0;
         button.classList.toggle("has-notifications", total > 0);
         button.classList.toggle("has-expired", Number(expired) > 0);
+        button.href = Number(expired) > 0
+            ? "/public/admin/licenses.php?status=expired"
+            : "/public/admin/index.php#expiring-soon";
         button.setAttribute("aria-label", total
             ? expired + " expired and " + expiring + " expiring licenses"
             : "No license expiry alerts");
