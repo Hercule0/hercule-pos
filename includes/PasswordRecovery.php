@@ -19,6 +19,11 @@ final class PasswordRecovery
     /** How long an approved authorization stays claimable/usable before it self-expires. */
     private const TOKEN_TTL_MINUTES = 30;
 
+    private static function lockingClause(PDO $pdo): string
+    {
+        return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
+    }
+
     /**
      * Step 2 of the plan: user submits a recovery request. Tied to the
      * store's license_key + current hwid (the only account identifiers
@@ -38,8 +43,8 @@ final class PasswordRecovery
                  INNER JOIN license_activations a
                     ON a.license_id = l.id AND a.hwid = ? AND a.is_active = 1
                  WHERE l.license_key = ? AND l.status = 'active'
-                   AND (l.expires_at IS NULL OR l.expires_at > CURRENT_TIMESTAMP)
-                 FOR UPDATE"
+                   AND (l.expires_at IS NULL OR l.expires_at > CURRENT_TIMESTAMP)"
+                . self::lockingClause($pdo)
             );
             $licenseStmt->execute([$hwid, $licenseKey]);
 
@@ -51,7 +56,7 @@ final class PasswordRecovery
             $duplicate = $pdo->prepare(
                 "SELECT id FROM password_recovery_requests
                  WHERE license_key = ? AND requested_username = ? AND status = 'pending'
-                 LIMIT 1 FOR UPDATE"
+                 LIMIT 1" . self::lockingClause($pdo)
             );
             $duplicate->execute([$licenseKey, $username]);
             if ($duplicate->fetchColumn()) {
@@ -170,7 +175,9 @@ final class PasswordRecovery
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('SELECT * FROM password_recovery_requests WHERE id = ? FOR UPDATE');
+            $stmt = $pdo->prepare(
+                'SELECT * FROM password_recovery_requests WHERE id = ?' . self::lockingClause($pdo)
+            );
             $stmt->execute([$id]);
             $request = $stmt->fetch();
 
@@ -239,7 +246,9 @@ final class PasswordRecovery
         $pdo->beginTransaction();
 
         try {
-            $stmt = $pdo->prepare('SELECT * FROM password_recovery_requests WHERE id = ? FOR UPDATE');
+            $stmt = $pdo->prepare(
+                'SELECT * FROM password_recovery_requests WHERE id = ?' . self::lockingClause($pdo)
+            );
             $stmt->execute([$id]);
             $request = $stmt->fetch();
 
