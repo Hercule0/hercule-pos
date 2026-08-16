@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: production-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   AZURE_WEBAPP_NAME: pos
@@ -66,6 +66,8 @@ jobs:
             --exclude='get_key.php' \
             --exclude='New Text Document.txt' \
             --exclude='tests' \
+            --exclude='scripts' \
+            --exclude='docs' \
             --exclude='db' \
             --exclude='setup.sh' \
             --exclude='README.md' \
@@ -80,35 +82,139 @@ jobs:
           tenant-id: cb4f9603-299f-4515-b736-2d50c9c37494
           subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
 
-      - name: Deploy to Azure Web App
+      - name: Resolve app and create staging slot
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          RESOURCE_GROUP="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "Could not resolve the Azure resource group."
+            exit 1
+          fi
+          echo "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" >> "$GITHUB_ENV"
+
+          if ! az webapp deployment slot show \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --slot staging \
+            --output none 2>/dev/null; then
+            az webapp deployment slot create \
+              --name "$AZURE_WEBAPP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --slot staging \
+              --configuration-source "$AZURE_WEBAPP_NAME" \
+              --output none
+          fi
+
+      - name: Configure isolated staging database
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          STAGING_DB_HOST: ${{ secrets.STAGING_DB_HOST }}
+          STAGING_DB_PORT: ${{ secrets.STAGING_DB_PORT }}
+          STAGING_DB_NAME: ${{ secrets.STAGING_DB_NAME }}
+          STAGING_DB_USER: ${{ secrets.STAGING_DB_USER }}
+          STAGING_DB_PASS: ${{ secrets.STAGING_DB_PASS }}
+        run: |
+          for name in STAGING_DB_HOST STAGING_DB_PORT STAGING_DB_NAME STAGING_DB_USER STAGING_DB_PASS; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: $name"
+              exit 1
+            fi
+          done
+
+          az webapp config appsettings set \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --slot staging \
+            --slot-settings \
+              DB_HOST="$STAGING_DB_HOST" \
+              DB_PORT="$STAGING_DB_PORT" \
+              DB_NAME="$STAGING_DB_NAME" \
+              DB_USER="$STAGING_DB_USER" \
+              DB_PASS="$STAGING_DB_PASS" \
+            --output none
+
+      - name: Deploy candidate to staging
         if: github.event_name != 'pull_request'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: staging
           package: deploy_package
 
-      - name: Verify deployed application health
+      - name: Verify staging health
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
-          if [ -z "$APP_HOST" ]; then
-            echo "Could not resolve the deployed Azure Web App hostname."
-            exit 1
-          fi
-
-          HEALTH_URL="https://$APP_HOST/public/health.php"
-          echo "Waiting for $HEALTH_URL"
+          STAGING_HOST="$(az webapp deployment slot show \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --slot staging \
+            --query defaultHostName --output tsv)"
+          STAGING_HEALTH_URL="https://$STAGING_HOST/public/health.php"
 
           for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL"; then
-              echo
-              echo "Deployment health check passed."
+            if bash scripts/check_production_health.sh "$STAGING_HEALTH_URL"; then
+              echo "Staging application and database are healthy."
               exit 0
             fi
-            echo "Health check attempt $attempt/12 failed; retrying in 5 seconds..."
+            echo "Staging health attempt $attempt/12 failed; retrying in 5 seconds..."
             sleep 5
           done
 
-          echo "Deployment did not become healthy."
+          echo "Candidate failed in staging. Production was not changed."
+          exit 1
+
+      - name: Swap staging into production with rollback
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          PRODUCTION_HOST="$(az webapp show \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query defaultHostName --output tsv)"
+          PRODUCTION_HEALTH_URL="https://$PRODUCTION_HOST/public/health.php"
+
+          echo "Promoting verified staging slot to production."
+          az webapp deployment slot swap \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --slot staging \
+            --target-slot production \
+            --output none
+
+          healthy=false
+          for attempt in {1..12}; do
+            if bash scripts/check_production_health.sh "$PRODUCTION_HEALTH_URL"; then
+              healthy=true
+              break
+            fi
+            echo "Production health attempt $attempt/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          if [ "$healthy" = "true" ]; then
+            echo "Production promotion completed successfully."
+            exit 0
+          fi
+
+          echo "Production health failed. Swapping the previous version back."
+          az webapp deployment slot swap \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --slot staging \
+            --target-slot production \
+            --output none
+
+          for attempt in {1..12}; do
+            if bash scripts/check_production_health.sh "$PRODUCTION_HEALTH_URL"; then
+              echo "Automatic rollback restored the previous healthy version."
+              exit 1
+            fi
+            echo "Rollback verification $attempt/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "CRITICAL: automatic rollback did not restore production health."
           exit 1
