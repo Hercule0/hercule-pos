@@ -103,6 +103,14 @@ final class Auth
             'INSERT INTO login_attempts (username, ip_address, success) VALUES (?, ?, ?)'
         );
         $stmt->execute([$username, $ip, $success ? 1 : 0]);
+
+        if (random_int(1, 100) === 1) {
+            $threshold = (new DateTime())->modify('-30 days')->format('Y-m-d H:i:s');
+            $cleanup = Database::pdo()->prepare(
+                'DELETE FROM login_attempts WHERE created_at < ? ORDER BY id LIMIT 1000'
+            );
+            $cleanup->execute([$threshold]);
+        }
     }
 
     /**
