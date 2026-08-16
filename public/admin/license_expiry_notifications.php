@@ -13,8 +13,8 @@ header('Cache-Control: no-store');
 
 $stmt = Database::pdo()->query(
     "SELECT l.id, l.license_key, l.status, l.expires_at, c.name AS customer_name,
-            CASE WHEN l.expires_at < NOW() THEN 'expired' ELSE 'expiring' END AS alert_type,
-            CASE WHEN l.expires_at < NOW() THEN 0 ELSE DATEDIFF(l.expires_at, NOW()) END AS days_remaining
+            CASE WHEN l.status = 'expired' OR l.expires_at < NOW() THEN 'expired' ELSE 'expiring' END AS alert_type,
+            CASE WHEN l.status = 'expired' OR l.expires_at < NOW() THEN 0 ELSE DATEDIFF(l.expires_at, NOW()) END AS days_remaining
      FROM licenses l
      JOIN customers c ON c.id = l.customer_id
      WHERE l.expires_at IS NOT NULL
