@@ -340,7 +340,7 @@ final class PasswordRecovery
         );
         $stmt->execute([$requestId, $eventType, $actor, $ip, $note]);
 
-        if (random_int(1, 250) === 1) {
+        if (Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' && random_int(1, 250) === 1) {
             $threshold = (new DateTime())->modify('-180 days')->format('Y-m-d H:i:s');
             $cleanup = Database::pdo()->prepare(
                 'DELETE FROM recovery_audit_log WHERE created_at < ? ORDER BY id LIMIT 1000'
