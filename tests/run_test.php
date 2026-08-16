@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/Database.php';
 require_once __DIR__ . '/../includes/License.php';
 require_once __DIR__ . '/../includes/RsaSigner.php';
 require_once __DIR__ . '/../includes/Auth.php';
+require_once __DIR__ . '/../includes/Totp.php';
 require_once __DIR__ . '/../includes/PasswordRecovery.php';
 
 function check(string $label, bool $condition): void
@@ -240,6 +241,42 @@ check('Read-only role is stored in the session', Auth::currentRole() === 'read_o
 check('Read-only cannot mutate licenses', !Auth::can('licenses.manage'));
 check('Read-only cannot review recovery requests', !Auth::can('recovery.review'));
 check('Read-only cannot export data', !Auth::can('exports.download'));
+
+
+// ================= TOTP and MFA =================
+$_ENV['MFA_ENCRYPTION_KEY'] = str_repeat('test-key-', 8);
+putenv('MFA_ENCRYPTION_KEY=' . $_ENV['MFA_ENCRYPTION_KEY']);
+
+$rfcSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+check('TOTP matches RFC 6238 test vector', Totp::code($rfcSecret, intdiv(59, 30)) === '287082');
+check('TOTP accepts the current time window', Totp::verify($rfcSecret, '287082', 59));
+check('TOTP rejects an incorrect code', !Totp::verify($rfcSecret, '000000', 59));
+
+$encryptedSecret = Totp::encrypt($rfcSecret);
+check('MFA secret is encrypted at rest', $encryptedSecret !== $rfcSecret);
+check('Encrypted MFA secret decrypts correctly', Totp::decrypt($encryptedSecret) === $rfcSecret);
+
+Auth::logout();
+$mfaSecret = Totp::generateSecret();
+$recoveryRaw = 'ABCDE12345';
+$pdo->prepare(
+    'UPDATE admin_users SET role = ?, totp_enabled = 1, totp_secret = ?, recovery_codes = ? WHERE username = ?'
+)->execute(['owner', Totp::encrypt($mfaSecret), json_encode([password_hash($recoveryRaw, PASSWORD_DEFAULT)]), 'admin']);
+
+$mfaPassword = Auth::attemptLogin('admin', 'correct-horse-battery-staple', '4.4.4.4');
+check('MFA account does not create a session after password alone', !empty($mfaPassword['requires_mfa']) && !Auth::isLoggedIn());
+$wrongMfa = Auth::verifySecondFactor('000000');
+check('Incorrect MFA code is rejected', $wrongMfa['ok'] === false);
+$validMfa = Auth::verifySecondFactor(Totp::code($mfaSecret, intdiv(time(), 30)));
+check('Correct MFA code completes sign-in', $validMfa['ok'] === true && Auth::isLoggedIn());
+
+Auth::logout();
+$recoveryLogin = Auth::attemptLogin('admin', 'correct-horse-battery-staple', '5.5.5.5');
+check('MFA challenge is required again on a new session', !empty($recoveryLogin['requires_mfa']));
+$recoveryResult = Auth::verifySecondFactor('ABCDE-12345');
+check('A recovery code can complete sign-in', $recoveryResult['ok'] === true);
+$remainingRecovery = $pdo->query("SELECT recovery_codes FROM admin_users WHERE username = 'admin'")->fetchColumn();
+check('Used recovery code is consumed', json_decode($remainingRecovery, true) === []);
 
 // ================= Summary =================
 echo "\n";

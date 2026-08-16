@@ -2362,3 +2362,27 @@ code, [dir="ltr"] { unicode-bidi: isolate; }
         width: 100%;
     }
 }
+
+
+/* Two-factor authentication */
+.mfa-recovery-codes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+    margin: 1.25rem 0;
+}
+.mfa-recovery-codes code,
+.mfa-uri {
+    display: block;
+    padding: .8rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--text);
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+.mfa-uri { margin-top: .75rem; text-align: left; }
+@media (max-width: 520px) {
+    .mfa-recovery-codes { grid-template-columns: 1fr; }
+}
