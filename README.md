@@ -8,8 +8,8 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 
 - Session-based admin authentication with CSRF protection, strict cookies,
   idle expiry, login throttling, password changes, role-based permissions, and encrypted TOTP MFA
-- Mobile-first dashboard, customers, licenses, license details, and recovery
-  pages
+- Installable mobile PWA for dashboard, customers, licenses, license details,
+  recovery, MFA, and administrator management
 - Database-backed search, filtering, and pagination for large admin datasets
 - License plans: trial, monthly, semi-annual, annual, custom, and lifetime
 - Atomic device activation with per-license activation limits
@@ -25,6 +25,17 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - GitHub Actions validation and Azure deployment health verification
 - Daily encrypted database backups with an automated disposable restore test
 - Five-minute production monitoring, outage incidents, and structured error logs
+
+## Mobile installation
+
+On supported Android browsers, open the account menu and select **Install mobile
+app**. On iPhone/iPad, the same action shows the Safari **Share → Add to Home
+Screen** instructions. The installed app uses standalone display, safe-area
+spacing, shortcuts, and a branded icon.
+
+The service worker caches only public static shell assets and a generic offline
+screen. Authenticated HTML, API responses, customer records, license records,
+and recovery data are always network-only and are never available offline.
 
 ## Routes
 
@@ -239,4 +250,3 @@ docs/                    operational runbooks
 - mandatory MFA policy controls
 - payment-provider webhooks
 - staging deployment slot and automated rollback
-- full PWA installation support
