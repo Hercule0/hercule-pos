@@ -27,5 +27,6 @@ try {
         'service' => 'hercule-license-server',
         'database' => 'unavailable',
         'time' => gmdate('Y-m-d\TH:i:s\Z'),
+        'request_id' => ErrorHandler::requestId(),
     ], JSON_UNESCAPED_SLASHES);
 }
