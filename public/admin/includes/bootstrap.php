@@ -22,7 +22,7 @@ function render_header(string $title): void
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=auth-v2">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=ui-final">
 </head>
 <body>
 <div class="shell">
@@ -30,16 +30,16 @@ function render_header(string $title): void
         <div class="brand"><span class="brand-mark" aria-hidden="true">H</span><span class="brand-copy"><strong>Hercule</strong><small>License Admin</small></span></div>
         <?php if ($username): ?>
         <nav class="nav" id="admin-navigation" aria-label="Primary navigation">
-            <a href="/public/admin/index.php" class="<?= $currentPage === 'index.php' ? 'active' : '' ?>">
+            <a href="/public/admin/index.php" class="<?= $currentPage === 'index.php' ? 'active' : '' ?>" <?= $currentPage === 'index.php' ? 'aria-current="page"' : '' ?>>
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Dashboard</span>
             </a>
-            <a href="/public/admin/customers.php" class="<?= $currentPage === 'customers.php' ? 'active' : '' ?>">
+            <a href="/public/admin/customers.php" class="<?= $currentPage === 'customers.php' ? 'active' : '' ?>" <?= $currentPage === 'customers.php' ? 'aria-current="page"' : '' ?>>
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg><span>Customers</span>
             </a>
-            <a href="/public/admin/licenses.php" class="<?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>">
+            <a href="/public/admin/licenses.php" class="<?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>" <?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'aria-current="page"' : '' ?>>
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a4 4 0 0 1 0 8H9l-3 3v-3H4a4 4 0 0 1 0-8z"/><circle cx="14" cy="11" r="1"/></svg><span>Licenses</span>
             </a>
-            <a href="/public/admin/recovery_requests.php" class="<?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>">
+            <a href="/public/admin/recovery_requests.php" class="<?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>" <?= $currentPage === 'recovery_requests.php' ? 'aria-current="page"' : '' ?>>
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Recovery</span>
             </a>
         </nav>
@@ -80,6 +80,15 @@ function render_footer(): void
     var toggle = document.querySelector(".nav-toggle");
     var menu = document.getElementById("account-menu");
 
+    function closeAccountMenu() {
+        if (!toggle || !menu) {
+            return;
+        }
+
+        menu.classList.remove("is-open");
+        toggle.setAttribute("aria-expanded", "false");
+    }
+
     if (toggle && menu) {
         toggle.addEventListener("click", function () {
             var open = menu.classList.toggle("is-open");
@@ -88,20 +97,28 @@ function render_footer(): void
 
         document.addEventListener("click", function (event) {
             if (!event.target.closest(".account-area")) {
-                menu.classList.remove("is-open");
-                toggle.setAttribute("aria-expanded", "false");
+                closeAccountMenu();
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && menu.classList.contains("is-open")) {
+                closeAccountMenu();
+                toggle.focus();
             }
         });
     }
 
-    document.querySelectorAll(".data-table").forEach(function (table) {
-        var labels = Array.from(table.querySelectorAll("thead th")).map(function (th) {
-            return th.textContent.trim() || "Action";
-        });
+    document.querySelectorAll("details.card-menu").forEach(function (details) {
+        details.addEventListener("toggle", function () {
+            if (!details.open) {
+                return;
+            }
 
-        table.querySelectorAll("tbody tr").forEach(function (row) {
-            Array.from(row.children).forEach(function (cell, index) {
-                cell.setAttribute("data-label", labels[index] || "");
+            document.querySelectorAll("details.card-menu[open]").forEach(function (other) {
+                if (other !== details) {
+                    other.removeAttribute("open");
+                }
             });
         });
     });
