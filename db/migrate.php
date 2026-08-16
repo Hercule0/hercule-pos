@@ -83,6 +83,16 @@ function run(): void
     ];
 
     foreach ($retentionIndexes as [$tableName, $indexName, $columnName]) {
+        $tableCheck = $pdo->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
+        );
+        $tableCheck->execute([$tableName]);
+        if ((int) $tableCheck->fetchColumn() === 0) {
+            echo "SKIP - {$tableName} does not exist yet\n";
+            continue;
+        }
+
         $check = $pdo->prepare(
             'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?'
