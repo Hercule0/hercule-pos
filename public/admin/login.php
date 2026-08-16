@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span>Authenticator or recovery code</span>
                     <div class="auth-input">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/></svg>
-                        <input type="text" name="mfa_code" required autofocus autocomplete="one-time-code" inputmode="numeric" maxlength="11" placeholder="000000">
+                        <input type="text" name="mfa_code" required autofocus autocomplete="one-time-code" inputmode="text" maxlength="11" placeholder="000000 or recovery code">
                     </div>
                 </label>
             <?php else: ?>
