@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../includes/ErrorHandler.php';
+ErrorHandler::register();
+
 require_once __DIR__ . '/../includes/Database.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -14,8 +17,10 @@ try {
         'service' => 'hercule-license-server',
         'database' => 'reachable',
         'time' => gmdate('Y-m-d\TH:i:s\Z'),
+        'request_id' => ErrorHandler::requestId(),
     ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
+    ErrorHandler::report($e, 'health_database_unavailable');
     http_response_code(503);
     echo json_encode([
         'ok' => false,
