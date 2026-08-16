@@ -19,18 +19,49 @@ final class Auth
         return $config;
     }
 
+    public static function startSession(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE || headers_sent()) {
+            return;
+        }
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+        ini_set('session.use_strict_mode', '1');
+        ini_set('session.use_only_cookies', '1');
+        session_name('hercule_admin');
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'secure' => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+        session_start();
+    }
+
     private static function ensureSession(): void
     {
-        // تم التعديل لتجنب أخطاء الـ CLI والـ Headers
-        if (session_status() !== PHP_SESSION_ACTIVE && !headers_sent()) {
-            session_start();
-        }
+        self::startSession();
     }
 
     public static function isLoggedIn(): bool
     {
         self::ensureSession();
-        return !empty($_SESSION['admin_id']);
+        if (empty($_SESSION['admin_id'])) {
+            return false;
+        }
+
+        $lifetime = (int) self::config()['security']['session_lifetime_minutes'] * 60;
+        $lastActivity = (int) ($_SESSION['last_activity'] ?? 0);
+        if ($lastActivity > 0 && (time() - $lastActivity) > $lifetime) {
+            self::logout();
+            return false;
+        }
+
+        $_SESSION['last_activity'] = time();
+        return true;
     }
 
     /** Call at the top of every admin page. Redirects to login if not authenticated. */
@@ -109,8 +140,11 @@ final class Auth
             session_regenerate_id(true); // prevent session fixation
         }
         
+        unset($_SESSION['csrf_token']);
         $_SESSION['admin_id'] = $user['id'];
         $_SESSION['admin_username'] = $username;
+        $_SESSION['last_activity'] = time();
+        $_SESSION['logged_in_at'] = time();
 
         return ['ok' => true];
     }
@@ -120,7 +154,18 @@ final class Auth
         self::ensureSession();
         $_SESSION = [];
         
-        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            $params = session_get_cookie_params();
+            if (!headers_sent()) {
+                setcookie(session_name(), '', [
+                    'expires' => time() - 42000,
+                    'path' => $params['path'] ?: '/',
+                    'domain' => $params['domain'] ?? '',
+                    'secure' => (bool) ($params['secure'] ?? false),
+                    'httponly' => true,
+                    'samesite' => 'Strict',
+                ]);
+            }
             session_destroy();
         }
     }
@@ -151,6 +196,12 @@ final class Auth
         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
         $update = Database::pdo()->prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?');
         $update->execute([$newHash, $adminId]);
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+            unset($_SESSION['csrf_token']);
+            $_SESSION['last_activity'] = time();
+        }
 
         return ['ok' => true];
     }
