@@ -5,6 +5,9 @@
  * and enforces auth).
  */
 
+require_once __DIR__ . '/../../includes/ErrorHandler.php';
+ErrorHandler::register();
+
 require_once __DIR__ . '/../../includes/Database.php';
 require_once __DIR__ . '/../../includes/License.php';
 require_once __DIR__ . '/../../includes/RsaSigner.php';
