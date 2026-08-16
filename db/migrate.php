@@ -90,12 +90,9 @@ function run(): void
     echo "You can now use /public/api/recovery_*.php and /public/admin/recovery_requests.php.\n";
 }
 
-if (php_sapi_name() === 'cli') {
-    run();
-} else {
-    // Also safe to hit over HTTP once, if CLI access isn't available on
-    // your host — but lock it down immediately after using it this way,
-    // since it has no authentication check.
-    header('Content-Type: text/plain');
-    run();
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
 }
+
+run();
