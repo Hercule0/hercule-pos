@@ -1,7 +1,7 @@
 const CACHE_VERSION = "hercule-admin-shell-v3";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
-  "/public/admin/manifest.webmanifest",
+  "/public/admin/manifest.json",
   "/public/admin/assets/css/style.css",
   "/public/admin/assets/icons/app-icon.svg",
   "/public/admin/assets/icons/app-icon-192.png",
