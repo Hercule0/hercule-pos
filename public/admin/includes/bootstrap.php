@@ -70,6 +70,10 @@ function render_header(string $title): void
                     <span class="account-avatar account-avatar-large" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
                     <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong><small><?= htmlspecialchars($roleLabel) ?></small></span>
                 </div>
+                <a href="/public/admin/mfa_settings.php" class="<?= $currentPage === 'mfa_settings.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+                    <span>Two-factor authentication</span>
+                </a>
                 <a href="/public/admin/change_password.php" class="<?= $currentPage === 'change_password.php' ? 'active' : '' ?>">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
                     <span>Change password</span>
