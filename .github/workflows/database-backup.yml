@@ -1,0 +1,73 @@
+name: Encrypted database backup
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup-and-restore-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-backup
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: restore-test-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -prostore-test-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-mysql-client
+
+      - name: Create encrypted production backup
+        env:
+          DB_HOST: ${{ secrets.BACKUP_DB_HOST }}
+          DB_PORT: ${{ secrets.BACKUP_DB_PORT }}
+          DB_NAME: ${{ secrets.BACKUP_DB_NAME }}
+          DB_USER: ${{ secrets.BACKUP_DB_USER }}
+          DB_PASS: ${{ secrets.BACKUP_DB_PASSWORD }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          BACKUP_DIR: ${{ runner.temp }}/encrypted-backup
+        run: bash scripts/backup_database.sh
+
+      - name: Restore into disposable MySQL and verify
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          VERIFY_DB_HOST: 127.0.0.1
+          VERIFY_DB_PORT: "3306"
+          VERIFY_DB_NAME: hercule_restore_test
+          VERIFY_DB_USER: root
+          VERIFY_DB_PASS: restore-test-password
+        run: |
+          backup_file="$(find "${{ runner.temp }}/encrypted-backup" -name '*.sql.enc' -type f -print -quit)"
+          bash scripts/verify_backup.sh "$backup_file"
+
+      - name: Upload verified encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: hercule-db-backup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/encrypted-backup/*.sql.enc
+            ${{ runner.temp }}/encrypted-backup/*.sha256
+          retention-days: 14
+          if-no-files-found: error

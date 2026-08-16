@@ -23,6 +23,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - Bounded operational-log retention
 - Health endpoint that verifies both PHP and database availability
 - GitHub Actions validation and Azure deployment health verification
+- Daily encrypted database backups with an automated disposable restore test
 
 ## Routes
 
@@ -180,6 +181,17 @@ column. Role checks are enforced server-side.
 - Debug license generators, browser-accessible migrations, duplicate deployment
   workflows, tests, and setup files are excluded from production.
 
+## Database backups
+
+The `Encrypted database backup` workflow runs daily at 02:30 UTC (05:30
+Baghdad). It creates a transaction-consistent dump, encrypts it before upload,
+restores it into disposable MySQL, verifies the required tables, and retains
+only the encrypted artifact for 14 days.
+
+Configure the `production-backup` GitHub environment before enabling the
+schedule. Full setup, restore-drill, key-rotation, and network requirements are
+in [the database backup runbook](docs/DATABASE_BACKUP_RUNBOOK.md).
+
 ## Operational retention
 
 Normal traffic performs small probabilistic cleanup passes:
@@ -203,13 +215,14 @@ public/admin/            administration panel
 public/api/              desktop-client API
 public/health.php        application/database health check
 tests/                   SQLite integration test harness
+scripts/                 encrypted backup and restore verification
+docs/                    operational runbooks
 .github/workflows/       validated Azure deployment
 ```
 
 ## Remaining production work
 
 - mandatory MFA policy controls
-- automated database backups with a tested restore procedure
 - centralized error monitoring and uptime alerting
 - payment-provider webhooks
 - customer expiry notifications
