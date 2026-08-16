@@ -284,8 +284,18 @@ function render_footer(): void
 
     if (notificationClose) notificationClose.addEventListener("click", hideRecoveryToast);
     if (notificationButton) {
-        notificationButton.addEventListener("click", function () {
+        notificationButton.addEventListener("click", function (event) {
             saveLastSeen(lastSeenId);
+
+            if ("Notification" in window && Notification.permission === "default") {
+                event.preventDefault();
+                var destination = notificationButton.href;
+                Notification.requestPermission()
+                    .catch(function () { return "denied"; })
+                    .finally(function () {
+                        window.location.href = destination;
+                    });
+            }
         });
     }
     document.addEventListener("visibilitychange", function () {
