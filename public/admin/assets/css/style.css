@@ -134,7 +134,7 @@ button, input, select, textarea { max-width: 100%; }
     word-break: break-word;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px), (hover: none) and (pointer: coarse) {
     .topbar {
         position: relative;
         flex-wrap: wrap;
@@ -166,7 +166,7 @@ button, input, select, textarea { max-width: 100%; }
     .panel-wide { grid-column: auto; }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px), (hover: none) and (pointer: coarse) and (max-width: 1100px) {
     .brand {
         max-width: calc(100% - 58px);
         line-height: 1.25;
@@ -254,7 +254,7 @@ button, input, select, textarea { max-width: 100%; }
     font-weight: 800;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px), (hover: none) and (pointer: coarse) {
     body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
     .shell { min-height: calc(100vh - 72px - env(safe-area-inset-bottom)); }
     .topbar {
@@ -345,7 +345,7 @@ button, input, select, textarea { max-width: 100%; }
     .account-menu a:last-child { border-bottom: 0; }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px), (hover: none) and (pointer: coarse) and (max-width: 1100px) {
     .content { padding-bottom: 20px; }
     .panel { overflow: visible; }
     .data-table,
