@@ -17,8 +17,8 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - RSA/SHA-256 signed activation and validation responses
 - Per-IP and per-license API rate limits
 - Device-bound, short-lived, single-use password-recovery authorization
-- Live recovery notifications with badge, toast, sound, and optional browser
-  notification
+- Live recovery and license-expiry notifications with badges, toast, sound,
+  and optional browser notifications
 - Streaming CSV export with spreadsheet formula-injection protection
 - Bounded operational-log retention
 - Health endpoint that verifies both PHP and database availability
@@ -238,6 +238,5 @@ docs/                    operational runbooks
 
 - mandatory MFA policy controls
 - payment-provider webhooks
-- customer expiry notifications
 - staging deployment slot and automated rollback
 - full PWA installation support
