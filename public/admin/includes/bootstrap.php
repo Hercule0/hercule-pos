@@ -19,6 +19,8 @@ Auth::startSession();
 function render_header(string $title): void
 {
     $username = Auth::currentUsername();
+    $role = Auth::currentRole();
+    $roleLabel = ['owner' => 'Owner', 'support' => 'Support', 'read_only' => 'Read only'][$role] ?? 'Read only';
     $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
     ?>
 <!DOCTYPE html>
@@ -32,7 +34,7 @@ function render_header(string $title): void
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css?v=server-pagination">
 </head>
-<body>
+<body class="role-<?= htmlspecialchars($role) ?>">
 <div class="shell">
     <header class="topbar">
         <div class="brand"><span class="brand-mark" aria-hidden="true">H</span><span class="brand-copy"><strong>Hercule</strong><small>License Admin</small></span></div>
@@ -66,7 +68,7 @@ function render_header(string $title): void
             <div class="account-menu" id="account-menu">
                 <div class="account-menu-header">
                     <span class="account-avatar account-avatar-large" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
-                    <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong></span>
+                    <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong><small><?= htmlspecialchars($roleLabel) ?></small></span>
                 </div>
                 <a href="/public/admin/change_password.php" class="<?= $currentPage === 'change_password.php' ? 'active' : '' ?>">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
