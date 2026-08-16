@@ -43,6 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/public/admin/manifest.php">
+<link rel="icon" href="/public/admin/assets/icons/app-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/public/admin/assets/icons/app-icon.svg">
 <title><?= $mfaPending ? 'Verify identity' : 'Log in' ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css?v=mfa-v1">
 </head>
@@ -93,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <button type="submit" class="auth-submit"><span><?= $mfaPending ? 'Verify and continue' : 'Sign in securely' ?></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+            <button type="button" class="auth-install-action" data-install-app hidden>Install Hercule Admin</button>
             <p class="auth-security-note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/></svg><?= $mfaPending ? 'Codes expire every 30 seconds. Five failed attempts cancel sign-in.' : 'Your session is protected and rate-limited.' ?></p>
         </form>
     </section>
@@ -108,5 +113,6 @@ document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
     });
 });
 </script>
+<script src="/public/admin/assets/js/pwa.js?v=1" defer></script>
 </body>
 </html>
