@@ -20,10 +20,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 $afterId = max(0, (int) ($_GET['after_id'] ?? 0));
 $pdo = Database::pdo();
 
-$countStmt = $pdo->query(
-    "SELECT COUNT(*) FROM password_recovery_requests WHERE status = 'pending'"
-);
-$pendingCount = (int) $countStmt->fetchColumn();
+$summary = $pdo->query(
+    "SELECT COUNT(CASE WHEN status = 'pending' THEN 1 END) AS pending_count,
+            COALESCE(MAX(id), 0) AS latest_id
+     FROM password_recovery_requests"
+)->fetch();
+$pendingCount = (int) ($summary['pending_count'] ?? 0);
+$latestId = (int) ($summary['latest_id'] ?? 0);
 
 $stmt = $pdo->prepare(
     "SELECT id, requested_username, created_at
@@ -34,9 +37,6 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$afterId]);
 $requests = $stmt->fetchAll();
-
-$latestStmt = $pdo->query('SELECT COALESCE(MAX(id), 0) FROM password_recovery_requests');
-$latestId = (int) $latestStmt->fetchColumn();
 
 echo json_encode([
     'ok' => true,

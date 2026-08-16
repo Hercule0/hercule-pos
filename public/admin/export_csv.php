@@ -17,15 +17,15 @@ $sql .= " ORDER BY l.created_at DESC";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
-$rows = $stmt->fetchAll();
-
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="licenses_export_' . date('Y-m-d') . '.csv"');
+header('X-Content-Type-Options: nosniff');
+header('Cache-Control: no-store');
 
 $out = fopen('php://output', 'w');
 fputcsv($out, ['License Key', 'Customer', 'Email', 'Plan', 'Status', 'Max Activations', 'Issued', 'Expires', 'Last Verified']);
 
-foreach ($rows as $r) {
+while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
     // CSV injection guard: prefix any value starting with =, +, -, @ so
     // spreadsheet apps don't treat it as a formula (same fix already
     // applied in Ur Library's export).

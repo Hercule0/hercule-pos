@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     ip_address      VARCHAR(45) NOT NULL,
     success         TINYINT(1) NOT NULL DEFAULT 0,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_login_attempts_lookup (username, ip_address, created_at)
+    INDEX idx_login_attempts_lookup (username, ip_address, created_at),
+    INDEX idx_login_attempts_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Rate limiting for the public API endpoints (activate.php / validate.php /
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS api_requests (
     ip_address      VARCHAR(45) NOT NULL,
     endpoint        VARCHAR(30) NOT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_api_requests_lookup (ip_address, endpoint, created_at)
+    INDEX idx_api_requests_lookup (ip_address, endpoint, created_at),
+    INDEX idx_api_requests_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS customers (
@@ -162,5 +164,6 @@ CREATE TABLE IF NOT EXISTS recovery_audit_log (
     ip_address      VARCHAR(45) NULL,
     note            VARCHAR(255) NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_recovery_audit_request (request_id)
+    INDEX idx_recovery_audit_request (request_id),
+    INDEX idx_recovery_audit_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
