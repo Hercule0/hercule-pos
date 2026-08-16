@@ -33,6 +33,10 @@ function render_header(string $title): void
 <meta name="theme-color" content="#151b23">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/public/admin/manifest.php">
+<link rel="icon" href="/public/admin/assets/icons/app-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/public/admin/assets/icons/app-icon.svg">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css?v=server-pagination">
 </head>
@@ -90,6 +94,10 @@ function render_header(string $title): void
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
                     <span>Change password</span>
                 </a>
+                <button type="button" class="account-install-action" data-install-app hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>
+                    <span>Install mobile app</span>
+                </button>
                 <a href="/public/admin/logout.php" class="nav-logout">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>
                     <span>Log out</span>
@@ -468,6 +476,7 @@ function render_footer(): void
     schedule(600);
 })();
 </script>
+<script src="/public/admin/assets/js/pwa.js?v=1" defer></script>
 </body>
 </html>
     <?php
