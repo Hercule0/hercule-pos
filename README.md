@@ -25,6 +25,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - GitHub Actions validation and Azure deployment health verification
 - Daily encrypted database backups with an automated disposable restore test
 - Five-minute production monitoring, outage incidents, and structured error logs
+- Staging-slot deployment with pre-promotion checks and automatic rollback
 
 ## Routes
 
@@ -142,8 +143,11 @@ The suite covers:
 - invalid token and replay rejection
 
 GitHub Actions runs PHP syntax validation and this suite on every pull request.
-Only pushes to `main` deploy to Azure. Production deployments are serialized,
-use a clean package, and must pass `/public/health.php` after deployment.
+Only pushes to `main` deploy to Azure. Production deployments are serialized
+and use a clean package. Each candidate is deployed to an isolated `staging`
+slot and must pass application/database health checks before an Azure slot swap.
+If production health fails after promotion, the previous slot is swapped back
+and verified automatically.
 
 ## Administrator management
 
@@ -194,6 +198,14 @@ Configure the `production-backup` GitHub environment before enabling the
 schedule. Full setup, restore-drill, key-rotation, and network requirements are
 in [the database backup runbook](docs/DATABASE_BACKUP_RUNBOOK.md).
 
+## Staging and rollback
+
+The deployment pipeline requires an Azure App Service plan that supports
+deployment slots plus a separate staging database. Configure the five
+`STAGING_DB_*` GitHub secrets before merging the workflow. Setup, slot-sticky
+secret guidance, manual rollback, and migration safety rules are in
+[the staging rollback runbook](docs/STAGING_ROLLBACK_RUNBOOK.md).
+
 ## Monitoring and alerts
 
 The production workflow checks application availability, database readiness,
@@ -238,5 +250,4 @@ docs/                    operational runbooks
 
 - mandatory MFA policy controls
 - payment-provider webhooks
-- staging deployment slot and automated rollback
 - full PWA installation support
