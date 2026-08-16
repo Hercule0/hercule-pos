@@ -11,12 +11,16 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 function render_header(string $title): void
 {
     $username = Auth::currentUsername();
+    $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
     ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151b23">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css">
 </head>
@@ -25,18 +29,30 @@ function render_header(string $title): void
     <header class="topbar">
         <div class="brand">Hercule <span>License Admin</span></div>
         <?php if ($username): ?>
-        <button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="admin-navigation" aria-expanded="false">
-            <span></span><span></span><span></span>
-        </button>
-        <nav class="nav" id="admin-navigation">
-            <a href="/public/admin/index.php">Dashboard</a>
-            <a href="/public/admin/customers.php">Customers</a>
-            <a href="/public/admin/licenses.php">Licenses</a>
-            <a href="/public/admin/recovery_requests.php">Recovery Requests</a>
-            <span class="nav-user">signed in as <?= htmlspecialchars($username) ?></span>
-            <a href="/public/admin/change_password.php">Change password</a>
-            <a href="/public/admin/logout.php" class="nav-logout">Log out</a>
+        <nav class="nav" id="admin-navigation" aria-label="Primary navigation">
+            <a href="/public/admin/index.php" class="<?= $currentPage === 'index.php' ? 'active' : '' ?>">
+                <span class="nav-icon" aria-hidden="true">⌂</span><span>Dashboard</span>
+            </a>
+            <a href="/public/admin/customers.php" class="<?= $currentPage === 'customers.php' ? 'active' : '' ?>">
+                <span class="nav-icon" aria-hidden="true">♙</span><span>Customers</span>
+            </a>
+            <a href="/public/admin/licenses.php" class="<?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>">
+                <span class="nav-icon" aria-hidden="true">◇</span><span>Licenses</span>
+            </a>
+            <a href="/public/admin/recovery_requests.php" class="<?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>">
+                <span class="nav-icon" aria-hidden="true">↺</span><span>Recovery</span>
+            </a>
         </nav>
+        <div class="account-area">
+            <button class="nav-toggle" type="button" aria-label="Open account menu" aria-controls="account-menu" aria-expanded="false">
+                <span class="account-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
+            </button>
+            <div class="account-menu" id="account-menu">
+                <span class="nav-user">Signed in as <strong><?= htmlspecialchars($username) ?></strong></span>
+                <a href="/public/admin/change_password.php">Change password</a>
+                <a href="/public/admin/logout.php" class="nav-logout">Log out</a>
+            </div>
+        </div>
         <?php endif; ?>
     </header>
     <main class="content">
@@ -51,19 +67,32 @@ function render_footer(): void
 <script>
 (function () {
     var toggle = document.querySelector(".nav-toggle");
-    var nav = document.getElementById("admin-navigation");
-    if (!toggle || !nav) return;
+    var menu = document.getElementById("account-menu");
 
-    toggle.addEventListener("click", function () {
-        var open = nav.classList.toggle("is-open");
-        toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    });
+    if (toggle && menu) {
+        toggle.addEventListener("click", function () {
+            var open = menu.classList.toggle("is-open");
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        });
 
-    nav.addEventListener("click", function (event) {
-        if (event.target.tagName === "A" && window.innerWidth <= 900) {
-            nav.classList.remove("is-open");
-            toggle.setAttribute("aria-expanded", "false");
-        }
+        document.addEventListener("click", function (event) {
+            if (!event.target.closest(".account-area")) {
+                menu.classList.remove("is-open");
+                toggle.setAttribute("aria-expanded", "false");
+            }
+        });
+    }
+
+    document.querySelectorAll(".data-table").forEach(function (table) {
+        var labels = Array.from(table.querySelectorAll("thead th")).map(function (th) {
+            return th.textContent.trim() || "Action";
+        });
+
+        table.querySelectorAll("tbody tr").forEach(function (row) {
+            Array.from(row.children).forEach(function (cell, index) {
+                cell.setAttribute("data-label", labels[index] || "");
+            });
+        });
     });
 })();
 </script>
