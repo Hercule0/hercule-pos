@@ -60,7 +60,8 @@ function run(): void
                 ip_address      VARCHAR(45) NULL,
                 note            VARCHAR(255) NULL,
                 created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_recovery_audit_request (request_id)
+                INDEX idx_recovery_audit_request (request_id),
+                INDEX idx_recovery_audit_created (created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ",
     ];
@@ -72,6 +73,27 @@ function run(): void
         } catch (PDOException $e) {
             fwrite(STDERR, "FAILED creating {$tableName}: " . $e->getMessage() . "\n");
             exit(1);
+        }
+    }
+
+    $retentionIndexes = [
+        ['login_attempts', 'idx_login_attempts_created', 'created_at'],
+        ['api_requests', 'idx_api_requests_created', 'created_at'],
+        ['recovery_audit_log', 'idx_recovery_audit_created', 'created_at'],
+    ];
+
+    foreach ($retentionIndexes as [$tableName, $indexName, $columnName]) {
+        $check = $pdo->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?'
+        );
+        $check->execute([$tableName, $indexName]);
+
+        if ((int) $check->fetchColumn() === 0) {
+            $pdo->exec("ALTER TABLE {$tableName} ADD INDEX {$indexName} ({$columnName})");
+            echo "OK  - {$indexName} added to {$tableName}\n";
+        } else {
+            echo "OK  - {$indexName} already exists\n";
         }
     }
 
