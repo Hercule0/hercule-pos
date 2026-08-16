@@ -7,10 +7,24 @@ CREATE TABLE IF NOT EXISTS admin_users (
     username        VARCHAR(64) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
     role            ENUM('owner','support','read_only') NOT NULL DEFAULT 'owner',
+    is_active       TINYINT(1) NOT NULL DEFAULT 1,
+    must_change_password TINYINT(1) NOT NULL DEFAULT 0,
     totp_enabled    TINYINT(1) NOT NULL DEFAULT 0,
     totp_secret     TEXT NULL,
     recovery_codes  TEXT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    actor_id        INT UNSIGNED NULL,
+    target_id       INT UNSIGNED NULL,
+    action          VARCHAR(40) NOT NULL,
+    details         VARCHAR(255) NULL,
+    ip_address      VARCHAR(45) NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_admin_audit_created (created_at),
+    INDEX idx_admin_audit_target (target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS login_attempts (
