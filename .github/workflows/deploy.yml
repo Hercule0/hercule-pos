@@ -83,3 +83,29 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: deploy_package
+
+      - name: Verify deployed application health
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
+          if [ -z "$APP_HOST" ]; then
+            echo "Could not resolve the deployed Azure Web App hostname."
+            exit 1
+          fi
+
+          HEALTH_URL="https://$APP_HOST/public/health.php"
+          echo "Waiting for $HEALTH_URL"
+
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL"; then
+              echo
+              echo "Deployment health check passed."
+              exit 0
+            fi
+            echo "Health check attempt $attempt/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "Deployment did not become healthy."
+          exit 1

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/Database.php';
 require_once __DIR__ . '/../includes/License.php';
 require_once __DIR__ . '/../includes/RsaSigner.php';
 require_once __DIR__ . '/../includes/Auth.php';
+require_once __DIR__ . '/../includes/PasswordRecovery.php';
 
 function check(string $label, bool $condition): void
 {
@@ -125,6 +126,61 @@ $activations = License::activationsFor($licenseId);
 License::deactivateDevice((int) $activations[0]['id']);
 $act3Retry = License::activate($licenseKey, $hwid3, '10.0.0.2');
 check('Freed activation slot allows a new device to activate', $act3Retry['ok'] === true);
+
+// ================= Password recovery authorization =================
+$invalidRecovery = PasswordRecovery::createRequest(
+    'FAKE-FAKE-FAKE-FAKE-FAKE',
+    'UNKNOWN-HWID',
+    'cashier',
+    '127.0.0.1'
+);
+check('Recovery rejects an unknown license/device pair', $invalidRecovery['ok'] === false);
+
+$recovery = PasswordRecovery::createRequest($licenseKey, $hwid3, 'cashier', '127.0.0.1');
+check('Recovery request succeeds for an active license and HWID', $recovery['ok'] === true);
+$recoveryId = (int) ($recovery['request_id'] ?? 0);
+
+$duplicateRecovery = PasswordRecovery::createRequest($licenseKey, $hwid3, 'cashier', '127.0.0.1');
+check('Duplicate pending recovery request is rejected', $duplicateRecovery['ok'] === false);
+
+$approvedRecovery = PasswordRecovery::approve($recoveryId, 'admin', 'Identity checked');
+check('Pending recovery can be approved once', $approvedRecovery['ok'] === true);
+
+$secondReview = PasswordRecovery::reject($recoveryId, 'admin', 'Too late');
+check('Already reviewed recovery cannot be reviewed again', $secondReview['ok'] === false);
+
+$wrongDeviceClaim = PasswordRecovery::claim($recoveryId, $licenseKey, 'WRONG-HWID', '127.0.0.1');
+check('Recovery authorization is bound to the requesting HWID', $wrongDeviceClaim['ok'] === false);
+
+$claimedRecovery = PasswordRecovery::claim($recoveryId, $licenseKey, $hwid3, '127.0.0.1');
+check('Approved recovery authorization can be claimed once', $claimedRecovery['ok'] === true);
+
+$secondClaim = PasswordRecovery::claim($recoveryId, $licenseKey, $hwid3, '127.0.0.1');
+check('Delivered authorization cannot be claimed twice', $secondClaim['ok'] === false);
+
+$badReset = PasswordRecovery::reset($recoveryId, $licenseKey, $hwid3, str_repeat('0', 64), '127.0.0.1');
+check('Wrong recovery token is rejected', $badReset['ok'] === false);
+
+$completedRecovery = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $claimedRecovery['token'],
+    '127.0.0.1'
+);
+check('Valid recovery token is consumed successfully', $completedRecovery['ok'] === true);
+
+$reusedRecovery = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $claimedRecovery['token'],
+    '127.0.0.1'
+);
+check('Consumed recovery token cannot be reused', $reusedRecovery['ok'] === false);
+
+$storedRecovery = PasswordRecovery::findById($recoveryId);
+check('Completed recovery clears the stored token hash', $storedRecovery['token_hash'] === null);
 
 // ================= RSA signing round-trip =================
 $testKey = openssl_pkey_new([
