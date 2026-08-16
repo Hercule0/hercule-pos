@@ -60,6 +60,10 @@ function render_header(string $title): void
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
                 <span class="notification-badge" id="recovery-notification-count" hidden>0</span>
             </a>
+            <a class="notification-button expiry-notification-button" id="license-expiry-button" href="/public/admin/index.php#expiring-soon" aria-label="License expiry alerts">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>
+                <span class="notification-badge" id="license-expiry-count" hidden>0</span>
+            </a>
         </div>
         <div class="account-area">
             <button class="nav-toggle account-button" type="button" aria-label="Open account menu" aria-controls="account-menu" aria-expanded="false">
@@ -112,6 +116,16 @@ function render_footer(): void
         <span id="recovery-notification-message"></span>
     </a>
     <button type="button" id="recovery-notification-close" aria-label="Dismiss notification">×</button>
+</div>
+<div class="notification-toast expiry-notification-toast" id="license-expiry-toast" role="status" aria-live="polite" hidden>
+    <span class="notification-toast-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>
+    </span>
+    <a id="license-expiry-link" href="/public/admin/index.php#expiring-soon">
+        <strong id="license-expiry-title">License expiry alert</strong>
+        <span id="license-expiry-message"></span>
+    </a>
+    <button type="button" id="license-expiry-close" aria-label="Dismiss notification">×</button>
 </div>
 <script>
 (function () {
@@ -316,6 +330,142 @@ function render_footer(): void
         if (!document.hidden) scheduleRecoveryPoll(250);
     });
     scheduleRecoveryPoll(400);
+})();
+</script>
+<script>
+(function () {
+    var button = document.getElementById("license-expiry-button");
+    var badge = document.getElementById("license-expiry-count");
+    var toast = document.getElementById("license-expiry-toast");
+    var link = document.getElementById("license-expiry-link");
+    var title = document.getElementById("license-expiry-title");
+    var message = document.getElementById("license-expiry-message");
+    var close = document.getElementById("license-expiry-close");
+    var timer = null;
+    var pollTimer = null;
+    var lastSignature = "";
+
+    try { lastSignature = localStorage.getItem("herculeLicenseExpirySignature") || ""; } catch (error) {}
+
+    function saveSignature(signature) {
+        lastSignature = signature || "";
+        try { localStorage.setItem("herculeLicenseExpirySignature", lastSignature); } catch (error) {}
+    }
+
+    function updateBadge(count, expired, expiring) {
+        if (!button || !badge) return;
+        var total = Math.max(0, Number(count) || 0);
+        badge.textContent = total > 99 ? "99+" : String(total);
+        badge.hidden = total === 0;
+        button.classList.toggle("has-notifications", total > 0);
+        button.classList.toggle("has-expired", Number(expired) > 0);
+        button.href = Number(expired) > 0
+            ? "/public/admin/licenses.php?status=expired"
+            : "/public/admin/index.php#expiring-soon";
+        button.setAttribute("aria-label", total
+            ? expired + " expired and " + expiring + " expiring licenses"
+            : "No license expiry alerts");
+    }
+
+    function hideToast() {
+        if (!toast) return;
+        toast.classList.remove("is-visible");
+        window.setTimeout(function () {
+            if (!toast.classList.contains("is-visible")) toast.hidden = true;
+        }, 220);
+    }
+
+    function playTone() {
+        try {
+            var Context = window.AudioContext || window.webkitAudioContext;
+            if (!Context) return;
+            var context = new Context();
+            var oscillator = context.createOscillator();
+            var gain = context.createGain();
+            oscillator.frequency.value = 620;
+            gain.gain.value = 0.08;
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start();
+            oscillator.stop(context.currentTime + 0.18);
+            oscillator.onended = function () { context.close(); };
+        } catch (error) {}
+    }
+
+    function showToast(data) {
+        if (!toast || !link || !data.alerts || !data.alerts.length) return;
+        var alert = data.alerts[0];
+        title.textContent = data.expired_count > 0
+            ? data.expired_count + " expired license" + (data.expired_count === 1 ? "" : "s")
+            : data.expiring_count + " license" + (data.expiring_count === 1 ? "" : "s") + " expiring soon";
+        message.textContent = alert.type === "expired"
+            ? alert.customer + " requires attention."
+            : alert.customer + " expires in " + alert.days_remaining + " day" + (alert.days_remaining === 1 ? "" : "s") + ".";
+        link.href = alert.url || "/public/admin/index.php#expiring-soon";
+        toast.hidden = false;
+        requestAnimationFrame(function () { toast.classList.add("is-visible"); });
+        clearTimeout(timer);
+        timer = window.setTimeout(hideToast, 9000);
+        playTone();
+
+        if ("Notification" in window && Notification.permission === "granted") {
+            try {
+                new Notification(title.textContent, {
+                    body: message.textContent,
+                    tag: "hercule-license-expiry"
+                });
+            } catch (error) {}
+        }
+    }
+
+    function schedule(delay) {
+        clearTimeout(pollTimer);
+        pollTimer = window.setTimeout(poll, delay);
+    }
+
+    function poll() {
+        fetch("/public/admin/license_expiry_notifications.php", {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        })
+        .then(function (response) {
+            if (response.status === 401) {
+                window.location.href = "/public/admin/login.php";
+                return null;
+            }
+            if (!response.ok) throw new Error("Expiry notification request failed");
+            return response.json();
+        })
+        .then(function (data) {
+            if (!data || !data.ok) return;
+            updateBadge(data.total_count, data.expired_count, data.expiring_count);
+            if (data.total_count > 0 && data.signature && data.signature !== lastSignature) {
+                showToast(data);
+                window.dispatchEvent(new CustomEvent("hercule:license-expiry", { detail: data }));
+            }
+            saveSignature(data.signature);
+        })
+        .catch(function () {})
+        .finally(function () { schedule(document.hidden ? 120000 : 60000); });
+    }
+
+    if (close) close.addEventListener("click", hideToast);
+    if (button) {
+        button.addEventListener("click", function (event) {
+            if ("Notification" in window && Notification.permission === "default") {
+                event.preventDefault();
+                var destination = button.href;
+                Notification.requestPermission().catch(function () { return "denied"; }).finally(function () {
+                    window.location.href = destination;
+                });
+            }
+        });
+    }
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) schedule(250);
+    });
+    schedule(600);
 })();
 </script>
 </body>

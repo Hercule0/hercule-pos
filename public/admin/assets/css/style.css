@@ -2413,3 +2413,18 @@ code, [dir="ltr"] { unicode-bidi: isolate; }
   .admin-account-actions form { grid-template-columns:1fr; }
   .admin-account-head .status-pill { display:none; }
 }
+
+
+/* License expiry notification state */
+.expiry-notification-button.has-expired {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+.expiry-notification-toast .notification-toast-icon {
+    color: var(--warning);
+}
+#expiring-soon { scroll-margin-top: 6rem; }
+@media (max-width: 760px) {
+    .notification-area { gap: .35rem; }
+    .notification-area .notification-button { width: 42px; height: 42px; }
+}
