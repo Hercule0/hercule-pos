@@ -24,6 +24,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - Health endpoint that verifies both PHP and database availability
 - GitHub Actions validation and Azure deployment health verification
 - Daily encrypted database backups with an automated disposable restore test
+- Five-minute production monitoring, outage incidents, and structured error logs
 
 ## Routes
 
@@ -60,7 +61,8 @@ A healthy response returns HTTP 200:
   "ok": true,
   "service": "hercule-license-server",
   "database": "reachable",
-  "time": "2026-08-16T00:00:00Z"
+  "time": "2026-08-16T00:00:00Z",
+  "request_id": "correlation-id"
 }
 ```
 
@@ -192,6 +194,18 @@ Configure the `production-backup` GitHub environment before enabling the
 schedule. Full setup, restore-drill, key-rotation, and network requirements are
 in [the database backup runbook](docs/DATABASE_BACKUP_RUNBOOK.md).
 
+## Monitoring and alerts
+
+The production workflow checks application availability, database readiness,
+and response time every five minutes. It opens one `uptime-alert` GitHub issue
+on failure and closes it automatically after recovery. Set the repository
+variable `PRODUCTION_HEALTH_URL` to the deployed health endpoint.
+
+Unhandled application errors are logged as structured JSON with an
+`X-Request-ID` correlation header, while clients receive no stack traces.
+Configuration and incident procedures are documented in
+[the monitoring runbook](docs/MONITORING_RUNBOOK.md).
+
 ## Operational retention
 
 Normal traffic performs small probabilistic cleanup passes:
@@ -223,7 +237,6 @@ docs/                    operational runbooks
 ## Remaining production work
 
 - mandatory MFA policy controls
-- centralized error monitoring and uptime alerting
 - payment-provider webhooks
 - customer expiry notifications
 - staging deployment slot and automated rollback
