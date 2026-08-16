@@ -18,7 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_WEBAPP_NAME: al-01
+  AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+  PRODUCTION_HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
   PHP_VERSION: '8.3'
 
 jobs:
@@ -72,6 +73,27 @@ jobs:
             --exclude='.htaccess' \
             ./ deploy_package/
 
+      - name: Resolve deployment target
+        if: github.event_name != 'pull_request'
+        id: resolve_target
+        shell: bash
+        run: |
+          app_name="$AZURE_WEBAPP_NAME"
+          if [ -z "$app_name" ] && [ -n "$PRODUCTION_HEALTH_URL" ]; then
+            host="$(echo "$PRODUCTION_HEALTH_URL" | sed -E 's#^[a-zA-Z]+://([^/]+).*$#\1#')"
+            if [[ "$host" == *.azurewebsites.net ]]; then
+              app_name="${host%%.azurewebsites.net}"
+            fi
+          fi
+
+          if [ -z "$app_name" ]; then
+            echo "::error::Set repository variable AZURE_WEBAPP_NAME (or PRODUCTION_HEALTH_URL with an azurewebsites.net host) before deploying."
+            exit 1
+          fi
+
+          echo "name=$app_name" >> "$GITHUB_OUTPUT"
+          echo "Resolved Azure Web App: $app_name"
+
       - name: Azure Login
         if: github.event_name != 'pull_request'
         uses: azure/login@v2
@@ -84,20 +106,20 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          app-name: ${{ steps.resolve_target.outputs.name }}
           package: deploy_package
 
       - name: Verify deployed application health
         if: github.event_name != 'pull_request'
         shell: bash
+        env:
+          RESOLVED_AZURE_WEBAPP_NAME: ${{ steps.resolve_target.outputs.name }}
         run: |
-          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
-          if [ -z "$APP_HOST" ]; then
-            echo "Could not resolve the deployed Azure Web App hostname."
-            exit 1
+          HEALTH_URL="$PRODUCTION_HEALTH_URL"
+          if [ -z "$HEALTH_URL" ]; then
+            HEALTH_URL="https://${RESOLVED_AZURE_WEBAPP_NAME}.azurewebsites.net/public/health.php"
           fi
 
-          HEALTH_URL="https://$APP_HOST/public/health.php"
           echo "Waiting for $HEALTH_URL"
 
           for attempt in {1..12}; do
