@@ -1,6 +1,7 @@
-const CACHE_VERSION = "hercule-admin-shell-v2";
+const CACHE_VERSION = "hercule-admin-shell-v3";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
+  "/public/admin/manifest.webmanifest",
   "/public/admin/assets/css/style.css",
   "/public/admin/assets/icons/app-icon.svg",
   "/public/admin/assets/icons/app-icon-192.png",
@@ -11,7 +12,11 @@ const STATIC_ASSETS = [
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then(function (cache) { return cache.addAll(STATIC_ASSETS); })
+      .then(function (cache) {
+        return Promise.allSettled(STATIC_ASSETS.map(function (asset) {
+          return cache.add(asset);
+        }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });
