@@ -249,4 +249,3 @@ docs/                    operational runbooks
 
 - mandatory MFA policy controls
 - payment-provider webhooks
-- staging deployment slot and automated rollback
