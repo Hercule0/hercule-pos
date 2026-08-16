@@ -4,9 +4,17 @@ require_once __DIR__ . '/../../../includes/Auth.php';
 require_once __DIR__ . '/../../../includes/Csrf.php';
 require_once __DIR__ . '/../../../includes/License.php';
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header("Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'");
+if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
 }
+
+Auth::startSession();
 
 function render_header(string $title): void
 {
