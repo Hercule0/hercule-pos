@@ -1053,6 +1053,7 @@ body {
     font-family: inherit;
     font-size: 10px;
     font-weight: 700;
+    text-decoration: none;
 }
 .filter-chips :is(button, a) span {
     display: grid;
