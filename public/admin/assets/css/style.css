@@ -400,3 +400,182 @@ button, input, select, textarea { max-width: 100%; }
     .data-table td .icon-link { min-height: 38px; }
     .data-table tr:hover td { background: transparent; }
 }
+
+/* ---------- Mobile app visual polish ---------- */
+body {
+    background:
+        radial-gradient(circle at 10% -10%, rgba(63, 169, 245, 0.12), transparent 34rem),
+        var(--bg);
+}
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.brand-mark {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    border-radius: 11px;
+    background: linear-gradient(145deg, #55b8ff, var(--accent-dim));
+    color: #07111a !important;
+    font-size: 18px;
+    font-weight: 900 !important;
+    box-shadow: 0 8px 20px rgba(63, 169, 245, 0.22);
+}
+.brand-copy {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+.brand-copy strong { font-size: 16px; }
+.brand-copy small {
+    margin-top: 3px;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.nav-icon {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.panel,
+.stat-card,
+.login-card {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
+}
+.stat-card {
+    position: relative;
+    overflow: hidden;
+}
+.stat-card::after {
+    position: absolute;
+    right: -18px;
+    bottom: -28px;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: rgba(63, 169, 245, 0.07);
+    content: "";
+}
+.account-button-text {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 700;
+}
+.account-chevron {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+.account-menu-header { display: none; }
+.account-menu > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.account-menu > a svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+@media (max-width: 1100px), (hover: none) and (pointer: coarse) {
+    .brand { min-width: 0; }
+    .brand-copy { min-width: 0; }
+    .brand-copy strong,
+    .brand-copy small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .account-button {
+        display: flex;
+        width: auto;
+        min-width: 42px;
+        max-width: 128px;
+        height: 42px;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 8px 4px 4px;
+        border-radius: 22px;
+    }
+    .account-button .account-avatar {
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
+    }
+    .account-menu {
+        overflow: hidden;
+        padding: 0;
+    }
+    .account-menu-header {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 14px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(135deg, rgba(63, 169, 245, 0.12), transparent);
+    }
+    .account-avatar-large {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
+    }
+    .account-menu-header .nav-user {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 0;
+        border: 0;
+    }
+    .account-menu-header .nav-user small {
+        color: var(--text-dim);
+        font-size: 10px;
+        text-transform: uppercase;
+    }
+    .account-menu-header .nav-user strong {
+        color: var(--text);
+        font-size: 14px;
+    }
+    .account-menu > a {
+        display: flex;
+        min-height: 50px;
+        align-items: center;
+        gap: 11px;
+        padding: 13px 15px;
+        font-weight: 600;
+    }
+    .account-menu > a svg {
+        width: 20px;
+        height: 20px;
+    }
+    .account-menu > a.active {
+        background: rgba(63, 169, 245, 0.1);
+        color: var(--accent);
+    }
+    .nav-logout {
+        background: rgba(240, 87, 93, 0.05);
+    }
+}
+
+@media (max-width: 390px) {
+    .account-button-text,
+    .account-chevron { display: none; }
+    .account-button { padding: 4px; }
+}
