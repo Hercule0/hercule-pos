@@ -28,7 +28,7 @@ jobs:
         id: health
         continue-on-error: true
         run: |
-          url="${HEALTH_URL:-https://pos.azurewebsites.net/public/health.php}"
+          url="${HEALTH_URL:-https://al-01.azurewebsites.net/public/health.php}"
           started="$(date +%s)"
           if bash scripts/check_production_health.sh "$url"; then
             echo "healthy=true" >> "$GITHUB_OUTPUT"
