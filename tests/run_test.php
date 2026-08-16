@@ -218,6 +218,28 @@ check('After 5 failed attempts, further attempts are rate-limited', str_contains
 
 $goodLoginDifferentIp = Auth::attemptLogin('admin', 'correct-horse-battery-staple', '1.1.1.1');
 check('Correct password from a DIFFERENT IP still succeeds (rate limit is per-IP)', $goodLoginDifferentIp['ok'] === true);
+check('Existing admin defaults to owner', Auth::currentRole() === 'owner');
+check('Owner can delete licenses', Auth::can('licenses.delete'));
+check('Owner can manage customers', Auth::can('customers.manage'));
+
+Auth::logout();
+$pdo->prepare('UPDATE admin_users SET role = ? WHERE username = ?')->execute(['support', 'admin']);
+$supportLogin = Auth::attemptLogin('admin', 'correct-horse-battery-staple', '2.2.2.2');
+check('Support admin login succeeds', $supportLogin['ok'] === true);
+check('Support role is stored in the session', Auth::currentRole() === 'support');
+check('Support can manage license lifecycle', Auth::can('licenses.manage'));
+check('Support can review recovery requests', Auth::can('recovery.review'));
+check('Support cannot permanently delete licenses', !Auth::can('licenses.delete'));
+check('Support cannot manage customers', !Auth::can('customers.manage'));
+
+Auth::logout();
+$pdo->prepare('UPDATE admin_users SET role = ? WHERE username = ?')->execute(['read_only', 'admin']);
+$readOnlyLogin = Auth::attemptLogin('admin', 'correct-horse-battery-staple', '3.3.3.3');
+check('Read-only admin login succeeds', $readOnlyLogin['ok'] === true);
+check('Read-only role is stored in the session', Auth::currentRole() === 'read_only');
+check('Read-only cannot mutate licenses', !Auth::can('licenses.manage'));
+check('Read-only cannot review recovery requests', !Auth::can('recovery.review'));
+check('Read-only cannot export data', !Auth::can('exports.download'));
 
 // ================= Summary =================
 echo "\n";
