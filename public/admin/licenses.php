@@ -9,6 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formAction = $_POST['form_action'] ?? 'issue';
 
     if ($formAction === 'delete') {
+        Auth::requirePermission('licenses.delete');
         $licenseId = (int) ($_POST['license_id'] ?? 0);
         License::deleteLicense($licenseId);
         flash_set('License permanently deleted.');
@@ -17,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // --- Issue a new license ---
+    Auth::requirePermission('licenses.manage');
+
     $customerId = (int) ($_POST['customer_id'] ?? 0);
     $plan = $_POST['plan'] ?? '';
     $maxActivations = max(1, (int) ($_POST['max_activations'] ?? 1));
