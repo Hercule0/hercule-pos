@@ -41,6 +41,20 @@ foreach ($statements as $statement) {
     }
 }
 
+$roleColumn = $pdo->prepare(
+    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+);
+$roleColumn->execute(['admin_users', 'role']);
+if ((int) $roleColumn->fetchColumn() === 0) {
+    $pdo->exec(
+        "ALTER TABLE admin_users
+         ADD COLUMN role ENUM('owner','support','read_only') NOT NULL DEFAULT 'owner'
+         AFTER password_hash"
+    );
+    echo "COLUMN - admin_users.role added (existing admins are owners)\n";
+}
+
 $retentionIndexes = [
     ['login_attempts', 'idx_login_attempts_created', 'created_at'],
     ['api_requests', 'idx_api_requests_created', 'created_at'],
