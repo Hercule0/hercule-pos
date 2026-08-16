@@ -7,6 +7,7 @@ $pdo = Database::pdo();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
+    Auth::requirePermission('recovery.review');
     $id = (int) ($_POST['request_id'] ?? 0);
     $action = $_POST['action'] ?? '';
     $note = trim($_POST['note'] ?? '') ?: null;

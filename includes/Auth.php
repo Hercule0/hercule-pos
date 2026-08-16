@@ -10,6 +10,13 @@ require_once __DIR__ . '/Database.php';
 
 final class Auth
 {
+    private const ROLES = ['owner', 'support', 'read_only'];
+
+    private const ROLE_PERMISSIONS = [
+        'owner' => ['*'],
+        'support' => ['licenses.manage', 'recovery.review', 'exports.download'],
+        'read_only' => [],
+    ];
     private static function config(): array
     {
         static $config = null;
@@ -125,9 +132,20 @@ final class Auth
             return ['ok' => false, 'error' => "Too many failed attempts. Try again in {$cfg['login_window_minutes']} minutes."];
         }
 
-        $stmt = Database::pdo()->prepare('SELECT id, password_hash FROM admin_users WHERE username = ?');
-        $stmt->execute([$username]);
-        $user = $stmt->fetch();
+        try {
+            $stmt = Database::pdo()->prepare('SELECT id, password_hash, role FROM admin_users WHERE username = ?');
+            $stmt->execute([$username]);
+            $user = $stmt->fetch();
+        } catch (PDOException $e) {
+            // Backward-compatible during rollout: the CLI migration adds role.
+            error_log('admin_users.role is not migrated yet: ' . $e->getMessage());
+            $stmt = Database::pdo()->prepare('SELECT id, password_hash FROM admin_users WHERE username = ?');
+            $stmt->execute([$username]);
+            $user = $stmt->fetch();
+            if ($user) {
+                $user['role'] = 'owner';
+            }
+        }
 
         // Always run password_verify even on a missing user, against a fixed
         // dummy hash, so response timing doesn't reveal whether the
@@ -151,6 +169,8 @@ final class Auth
         unset($_SESSION['csrf_token']);
         $_SESSION['admin_id'] = $user['id'];
         $_SESSION['admin_username'] = $username;
+        $role = $user['role'] ?? 'read_only';
+        $_SESSION['admin_role'] = in_array($role, self::ROLES, true) ? $role : 'read_only';
         $_SESSION['last_activity'] = time();
         $_SESSION['logged_in_at'] = time();
 
@@ -182,6 +202,34 @@ final class Auth
     {
         self::ensureSession();
         return $_SESSION['admin_username'] ?? null;
+    }
+
+    public static function currentRole(): string
+    {
+        self::ensureSession();
+        $role = $_SESSION['admin_role'] ?? 'read_only';
+        return in_array($role, self::ROLES, true) ? $role : 'read_only';
+    }
+
+    public static function can(string $permission): bool
+    {
+        if (!self::isLoggedIn()) {
+            return false;
+        }
+
+        $permissions = self::ROLE_PERMISSIONS[self::currentRole()] ?? [];
+        return in_array('*', $permissions, true) || in_array($permission, $permissions, true);
+    }
+
+    public static function requirePermission(string $permission): void
+    {
+        self::require();
+        if (!self::can($permission)) {
+            http_response_code(403);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo 'You do not have permission to perform this action.';
+            exit;
+        }
     }
 
     /**

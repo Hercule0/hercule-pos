@@ -7,7 +7,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 ## Production features
 
 - Session-based admin authentication with CSRF protection, strict cookies,
-  idle expiry, login throttling, and password changes
+  idle expiry, login throttling, password changes, and role-based permissions
 - Mobile-first dashboard, customers, licenses, license details, and recovery
   pages
 - Database-backed search, filtering, and pagination for large admin datasets
@@ -131,6 +131,15 @@ GitHub Actions runs PHP syntax validation and this suite on every pull request.
 Only pushes to `main` deploy to Azure. Production deployments are serialized,
 use a clean package, and must pass `/public/health.php` after deployment.
 
+## Admin roles
+
+- `owner`: full access, including customer changes and permanent license deletion
+- `support`: license lifecycle actions, recovery review, and CSV export
+- `read_only`: dashboard and record viewing only
+
+Existing administrators become `owner` when `php db/migrate.php` adds the role
+column. Role checks are enforced server-side.
+
 ## Security model
 
 - Database access uses PDO prepared statements with emulated prepares disabled.
@@ -174,7 +183,7 @@ tests/                   SQLite integration test harness
 
 ## Remaining production work
 
-- MFA/TOTP and role-based admin permissions
+- MFA/TOTP and an administrator-management interface
 - automated database backups with a tested restore procedure
 - centralized error monitoring and uptime alerting
 - payment-provider webhooks

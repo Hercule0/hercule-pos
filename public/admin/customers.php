@@ -7,6 +7,7 @@ $pdo = Database::pdo();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
     $formAction = $_POST['form_action'] ?? 'add';
+    Auth::requirePermission('customers.manage');
 
     if ($formAction === 'delete') {
         $customerId = (int) ($_POST['customer_id'] ?? 0);
