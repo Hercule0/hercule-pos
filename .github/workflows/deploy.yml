@@ -18,7 +18,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_WEBAPP_NAME: al-01
   PHP_VERSION: '8.3'
 
 jobs:
@@ -72,6 +71,34 @@ jobs:
             --exclude='.htaccess' \
             ./ deploy_package/
 
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          configured_app_name="${{ vars.AZURE_WEBAPP_NAME }}"
+          configured_health_url="${{ vars.PRODUCTION_HEALTH_URL }}"
+          app_name="$configured_app_name"
+
+          if [ -z "$app_name" ] && [ -n "$configured_health_url" ]; then
+            health_host="$(printf '%s' "$configured_health_url" | sed -E 's#^https?://([^/]+)/?.*$#\1#')"
+            if [[ "$health_host" =~ ^([a-zA-Z0-9-]+)\.azurewebsites\.net$ ]]; then
+              app_name="${BASH_REMATCH[1]}"
+            fi
+          fi
+
+          if [ -z "$app_name" ]; then
+            app_name="al-01"
+          fi
+
+          if [ -n "$configured_health_url" ]; then
+            health_url="$configured_health_url"
+          else
+            health_url="https://${app_name}.azurewebsites.net/public/health.php"
+          fi
+
+          echo "app_name=$app_name" >> "$GITHUB_OUTPUT"
+          echo "health_url=$health_url" >> "$GITHUB_OUTPUT"
+
       - name: Azure Login
         if: github.event_name != 'pull_request'
         uses: azure/login@v2
@@ -84,20 +111,14 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          app-name: ${{ steps.target.outputs.app_name }}
           package: deploy_package
 
       - name: Verify deployed application health
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
-          if [ -z "$APP_HOST" ]; then
-            echo "Could not resolve the deployed Azure Web App hostname."
-            exit 1
-          fi
-
-          HEALTH_URL="https://$APP_HOST/public/health.php"
+          HEALTH_URL="${{ steps.target.outputs.health_url }}"
           echo "Waiting for $HEALTH_URL"
 
           for attempt in {1..12}; do
