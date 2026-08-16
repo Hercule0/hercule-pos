@@ -30,7 +30,7 @@ function render_header(string $title): void
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=ui-brand-fix">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=live-recovery-alerts">
 </head>
 <body>
 <div class="shell">
@@ -51,6 +51,12 @@ function render_header(string $title): void
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Recovery</span>
             </a>
         </nav>
+        <div class="notification-area">
+            <a class="notification-button" id="recovery-notification-button" href="/public/admin/recovery_requests.php" aria-label="Recovery requests">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                <span class="notification-badge" id="recovery-notification-count" hidden>0</span>
+            </a>
+        </div>
         <div class="account-area">
             <button class="nav-toggle account-button" type="button" aria-label="Open account menu" aria-controls="account-menu" aria-expanded="false">
                 <span class="account-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
@@ -82,6 +88,16 @@ function render_footer(): void
 {
     ?>
     </main>
+</div>
+<div class="notification-toast" id="recovery-notification-toast" role="status" aria-live="polite" hidden>
+    <span class="notification-toast-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+    </span>
+    <a id="recovery-notification-link" href="/public/admin/recovery_requests.php">
+        <strong id="recovery-notification-title">New recovery request</strong>
+        <span id="recovery-notification-message"></span>
+    </a>
+    <button type="button" id="recovery-notification-close" aria-label="Dismiss notification">×</button>
 </div>
 <script>
 (function () {
@@ -130,6 +146,152 @@ function render_footer(): void
             });
         });
     });
+
+
+    var notificationButton = document.getElementById("recovery-notification-button");
+    var notificationCount = document.getElementById("recovery-notification-count");
+    var notificationToast = document.getElementById("recovery-notification-toast");
+    var notificationLink = document.getElementById("recovery-notification-link");
+    var notificationTitle = document.getElementById("recovery-notification-title");
+    var notificationMessage = document.getElementById("recovery-notification-message");
+    var notificationClose = document.getElementById("recovery-notification-close");
+    var notificationTimer = null;
+    var pollTimer = null;
+    var lastSeenId = 0;
+    var audioContext = null;
+
+    try {
+        lastSeenId = Number(localStorage.getItem("herculeRecoveryLastSeenId") || 0);
+    } catch (error) {
+        lastSeenId = 0;
+    }
+
+    function saveLastSeen(id) {
+        lastSeenId = Math.max(lastSeenId, Number(id) || 0);
+        try {
+            localStorage.setItem("herculeRecoveryLastSeenId", String(lastSeenId));
+        } catch (error) {}
+    }
+
+    function playNotificationTone() {
+        if (!audioContext || audioContext.state !== "running") return;
+        var oscillator = audioContext.createOscillator();
+        var gain = audioContext.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(740, audioContext.currentTime);
+        oscillator.frequency.setValueAtTime(880, audioContext.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.24);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.25);
+    }
+
+    document.addEventListener("pointerdown", function unlockAudio() {
+        try {
+            audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+            audioContext.resume();
+        } catch (error) {}
+        document.removeEventListener("pointerdown", unlockAudio);
+    }, { once: true });
+
+    function hideRecoveryToast() {
+        if (!notificationToast) return;
+        notificationToast.classList.remove("is-visible");
+        window.setTimeout(function () {
+            if (!notificationToast.classList.contains("is-visible")) notificationToast.hidden = true;
+        }, 220);
+    }
+
+    function showRecoveryToast(request, newCount) {
+        if (!notificationToast || !notificationLink) return;
+        var count = Math.max(1, Number(newCount) || 1);
+        notificationTitle.textContent = count > 1 ? count + " new recovery requests" : "New recovery request";
+        notificationMessage.textContent = request && request.username
+            ? "Request from " + request.username
+            : "A customer submitted a password change request.";
+        notificationLink.href = request && request.url
+            ? request.url
+            : "/public/admin/recovery_requests.php";
+        notificationToast.hidden = false;
+        requestAnimationFrame(function () {
+            notificationToast.classList.add("is-visible");
+        });
+        clearTimeout(notificationTimer);
+        notificationTimer = window.setTimeout(hideRecoveryToast, 9000);
+        playNotificationTone();
+
+        if ("Notification" in window && Notification.permission === "granted") {
+            try {
+                new Notification(notificationTitle.textContent, {
+                    body: notificationMessage.textContent,
+                    tag: "hercule-recovery-request"
+                });
+            } catch (error) {}
+        }
+    }
+
+    function updateRecoveryBadge(count) {
+        if (!notificationCount || !notificationButton) return;
+        var value = Math.max(0, Number(count) || 0);
+        notificationCount.textContent = value > 99 ? "99+" : String(value);
+        notificationCount.hidden = value === 0;
+        notificationButton.classList.toggle("has-notifications", value > 0);
+        notificationButton.setAttribute("aria-label", value > 0
+            ? value + " pending recovery requests"
+            : "Recovery requests");
+    }
+
+    function scheduleRecoveryPoll(delay) {
+        clearTimeout(pollTimer);
+        pollTimer = window.setTimeout(pollRecoveryRequests, delay);
+    }
+
+    function pollRecoveryRequests() {
+        fetch("/public/admin/recovery_notifications.php?after_id=" + encodeURIComponent(lastSeenId), {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+        })
+            .then(function (response) {
+                if (response.status === 401) {
+                    window.location.href = "/public/admin/login.php";
+                    return null;
+                }
+                if (!response.ok) throw new Error("Notification request failed");
+                return response.json();
+            })
+            .then(function (data) {
+                if (!data || !data.ok) return;
+                updateRecoveryBadge(data.pending_count);
+
+                if (Array.isArray(data.requests) && data.requests.length > 0) {
+                    showRecoveryToast(data.requests[0], data.requests.length);
+                    window.dispatchEvent(new CustomEvent("hercule:recovery-request", {
+                        detail: { requests: data.requests, pendingCount: data.pending_count }
+                    }));
+                }
+
+                saveLastSeen(data.latest_id);
+            })
+            .catch(function () {})
+            .finally(function () {
+                scheduleRecoveryPoll(document.hidden ? 30000 : 15000);
+            });
+    }
+
+    if (notificationClose) notificationClose.addEventListener("click", hideRecoveryToast);
+    if (notificationButton) {
+        notificationButton.addEventListener("click", function () {
+            saveLastSeen(lastSeenId);
+        });
+    }
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) scheduleRecoveryPoll(250);
+    });
+    scheduleRecoveryPoll(400);
 })();
 </script>
 </body>
