@@ -6,9 +6,21 @@ CREATE TABLE admin_users (
     username        TEXT NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
     role            TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner','support','read_only')),
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     totp_enabled    INTEGER NOT NULL DEFAULT 0,
     totp_secret     TEXT NULL,
     recovery_codes  TEXT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE admin_audit_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_id        INTEGER NULL,
+    target_id       INTEGER NULL,
+    action          TEXT NOT NULL,
+    details         TEXT NULL,
+    ip_address      TEXT NULL,
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
