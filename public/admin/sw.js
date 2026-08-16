@@ -1,8 +1,11 @@
-const CACHE_VERSION = "hercule-admin-shell-v1";
+const CACHE_VERSION = "hercule-admin-shell-v2";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
   "/public/admin/assets/css/style.css",
-  "/public/admin/assets/icons/app-icon.svg"
+  "/public/admin/assets/icons/app-icon.svg",
+  "/public/admin/assets/icons/app-icon-192.png",
+  "/public/admin/assets/icons/app-icon-512.png",
+  "/public/admin/assets/icons/apple-touch-icon.png"
 ];
 
 self.addEventListener("install", function (event) {
