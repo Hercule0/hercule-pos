@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS admin_users (
     username        VARCHAR(64) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,
     role            ENUM('owner','support','read_only') NOT NULL DEFAULT 'owner',
+    totp_enabled    TINYINT(1) NOT NULL DEFAULT 0,
+    totp_secret     TEXT NULL,
+    recovery_codes  TEXT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
