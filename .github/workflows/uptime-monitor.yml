@@ -1,0 +1,69 @@
+name: Production uptime monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-uptime-monitor
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check application and database
+        id: health
+        continue-on-error: true
+        run: |
+          url="${HEALTH_URL:-https://pos.azurewebsites.net/public/health.php}"
+          started="$(date +%s)"
+          if bash scripts/check_production_health.sh "$url"; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "duration=$(( $(date +%s) - started ))" >> "$GITHUB_OUTPUT"
+
+      - name: Open outage incident
+        if: steps.health.outputs.healthy != 'true'
+        env:
+          HEALTH_URL_VALUE: ${{ steps.health.outputs.url }}
+          CHECKED_AT: ${{ steps.health.outputs.checked_at }}
+        run: |
+          existing="$(gh issue list --state open --label uptime-alert --json number --jq '.[0].number // empty')"
+          if [[ -z "$existing" ]]; then
+            gh label create uptime-alert --color D73A4A --description "Production availability incident" --force
+            body="$(printf 'Automated health monitoring could not confirm the application and database are healthy.\n\n- Endpoint: %s\n- First detected: %s\n- Workflow: %s/actions/runs/%s\n\nNo credentials or response body are included.' "$HEALTH_URL_VALUE" "$CHECKED_AT" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+            gh issue create --title "Production health check failed" --label uptime-alert --body "$body"
+          fi
+
+      - name: Close recovered incident
+        if: steps.health.outputs.healthy == 'true'
+        env:
+          CHECKED_AT: ${{ steps.health.outputs.checked_at }}
+        run: |
+          for issue in $(gh issue list --state open --label uptime-alert --json number --jq '.[].number'); do
+            gh issue comment "$issue" --body "Recovery confirmed automatically at $CHECKED_AT. Application and database health checks passed."
+            gh issue close "$issue" --reason completed
+          done
+
+      - name: Fail unhealthy run
+        if: steps.health.outputs.healthy != 'true'
+        run: |
+          echo "Production health check failed and an incident is open."
+          exit 1
