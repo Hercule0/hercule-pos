@@ -34,6 +34,7 @@ runtime validation, and an administrator-reviewed password-recovery flow.
 - `/public/admin/licenses.php`
 - `/public/admin/recovery_requests.php`
 - `/public/admin/mfa_settings.php`
+- `/public/admin/admin_users.php` (Owner only)
 
 ### Public API
 
@@ -126,6 +127,7 @@ The suite covers:
 - activation limits and device deactivation
 - RSA signing, verification, and tamper detection
 - login failure throttling
+- disabled-account rejection and mandatory temporary-password replacement
 - RFC 6238 TOTP generation and verification
 - encrypted MFA secret round-trip
 - two-stage login, invalid-code rejection, and one-time recovery-code consumption
@@ -139,6 +141,18 @@ The suite covers:
 GitHub Actions runs PHP syntax validation and this suite on every pull request.
 Only pushes to `main` deploy to Azure. Production deployments are serialized,
 use a clean package, and must pass `/public/health.php` after deployment.
+
+## Administrator management
+
+Owners can create, disable, re-enable, change the role of, reset MFA for, or
+permanently delete another administrator from the mobile-responsive account
+management page. Every sensitive change requires the acting Owner's current
+password and is written to `admin_audit_log`.
+
+New accounts receive a temporary password and are forced to replace it before
+accessing the administration panel. The system prevents self-demotion,
+self-disable, self-delete, and any action that would remove the final active
+Owner.
 
 ## Admin roles
 
@@ -194,7 +208,7 @@ tests/                   SQLite integration test harness
 
 ## Remaining production work
 
-- administrator-management interface and mandatory MFA policy controls
+- mandatory MFA policy controls
 - automated database backups with a tested restore procedure
 - centralized error monitoring and uptime alerting
 - payment-provider webhooks
