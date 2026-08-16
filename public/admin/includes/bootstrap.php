@@ -70,6 +70,12 @@ function render_header(string $title): void
                     <span class="account-avatar account-avatar-large" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
                     <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong><small><?= htmlspecialchars($roleLabel) ?></small></span>
                 </div>
+                <?php if (Auth::can('admins.manage')): ?>
+                <a href="/public/admin/admin_users.php" class="<?= $currentPage === 'admin_users.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
+                    <span>Administrators</span>
+                </a>
+                <?php endif; ?>
                 <a href="/public/admin/mfa_settings.php" class="<?= $currentPage === 'mfa_settings.php' ? 'active' : '' ?>">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
                     <span>Two-factor authentication</span>
