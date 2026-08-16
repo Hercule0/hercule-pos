@@ -451,6 +451,14 @@ final class License
             'INSERT INTO verification_log (license_id, license_key, hwid, result, ip_address) VALUES (?, ?, ?, ?, ?)'
         );
         $stmt->execute([$licenseId, $licenseKey, $hwid, $result, $ip]);
+
+        if (random_int(1, 500) === 1) {
+            $threshold = (new DateTime())->modify('-90 days')->format('Y-m-d H:i:s');
+            $cleanup = Database::pdo()->prepare(
+                'DELETE FROM verification_log WHERE created_at < ? ORDER BY id LIMIT 2000'
+            );
+            $cleanup->execute([$threshold]);
+        }
     }
 
     private static function logEvent(
