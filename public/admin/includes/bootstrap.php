@@ -16,6 +16,7 @@ function render_header(string $title): void
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css">
 </head>
@@ -24,7 +25,10 @@ function render_header(string $title): void
     <header class="topbar">
         <div class="brand">Hercule <span>License Admin</span></div>
         <?php if ($username): ?>
-        <nav class="nav">
+        <button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="admin-navigation" aria-expanded="false">
+            <span></span><span></span><span></span>
+        </button>
+        <nav class="nav" id="admin-navigation">
             <a href="/public/admin/index.php">Dashboard</a>
             <a href="/public/admin/customers.php">Customers</a>
             <a href="/public/admin/licenses.php">Licenses</a>
@@ -44,6 +48,25 @@ function render_footer(): void
     ?>
     </main>
 </div>
+<script>
+(function () {
+    var toggle = document.querySelector(".nav-toggle");
+    var nav = document.getElementById("admin-navigation");
+    if (!toggle || !nav) return;
+
+    toggle.addEventListener("click", function () {
+        var open = nav.classList.toggle("is-open");
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    nav.addEventListener("click", function (event) {
+        if (event.target.tagName === "A" && window.innerWidth <= 900) {
+            nav.classList.remove("is-open");
+            toggle.setAttribute("aria-expanded", "false");
+        }
+    });
+})();
+</script>
 </body>
 </html>
     <?php
