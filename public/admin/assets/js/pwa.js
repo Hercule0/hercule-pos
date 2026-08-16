@@ -41,11 +41,17 @@
       }
       if (isiOS && !standalone) {
         window.alert("To install Hercule Admin: tap Share in Safari, then choose Add to Home Screen.");
+        return;
+      }
+      if (!standalone) {
+        window.alert("Open your browser menu, then choose Install app or Add to Home screen.");
       }
     });
   });
 
-  if (isiOS && !standalone) setInstallVisible(true);
+  // Keep installation discoverable even before the browser emits its native
+  // prompt. Once eligible, clicking this action opens the native prompt.
+  if (!standalone) setInstallVisible(true);
   document.documentElement.classList.toggle("is-standalone", standalone);
   window.addEventListener("online", function () { document.documentElement.classList.remove("is-offline"); });
   window.addEventListener("offline", function () { document.documentElement.classList.add("is-offline"); });
