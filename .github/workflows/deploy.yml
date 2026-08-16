@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_WEBAPP_NAME: al-01
+  AZURE_WEBAPP_NAME: pos
   PHP_VERSION: '8.3'
 
 jobs:
