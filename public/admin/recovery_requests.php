@@ -232,6 +232,15 @@ flash_render();
         });
     });
 
+    var requestedId = new URLSearchParams(window.location.search).get('request_id');
+    if (requestedId && /^\d+$/.test(requestedId)) {
+        var requestedDialog = document.getElementById('recovery-dialog-' + requestedId);
+        if (requestedDialog) {
+            if (typeof requestedDialog.showModal === 'function') requestedDialog.showModal();
+            else requestedDialog.setAttribute('open', '');
+        }
+    }
+
     var cards = Array.from(document.querySelectorAll('[data-recovery-card]'));
     var search = document.getElementById('recovery-search');
     var filters = Array.from(document.querySelectorAll('[data-recovery-filter]'));
