@@ -34,7 +34,7 @@ function render_header(string $title): void
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="manifest" href="/public/admin/manifest.php">
+<link rel="manifest" href="/public/admin/manifest.json">
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
@@ -476,7 +476,7 @@ function render_footer(): void
     schedule(600);
 })();
 </script>
-<script src="/public/admin/assets/js/pwa.js?v=2" defer></script>
+<script src="/public/admin/assets/js/pwa.js?v=3" defer></script>
 </body>
 </html>
     <?php

@@ -1,5 +1,6 @@
 (function () {
   var deferredPrompt = null;
+  var registrationReady = false;
   var installButtons = Array.prototype.slice.call(document.querySelectorAll("[data-install-app]"));
   var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   var isiOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
@@ -8,15 +9,27 @@
     installButtons.forEach(function (button) { button.hidden = !visible; });
   }
 
-  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("/public/admin/sw.js", { scope: "/public/admin/" })
-        .then(function (registration) {
-          window.setInterval(function () { registration.update(); }, 60 * 60 * 1000);
-        })
-        .catch(function () {});
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator) || (location.protocol !== "https:" && location.hostname !== "localhost")) {
+      return;
+    }
+
+    navigator.serviceWorker.register("/public/admin/sw.js", {
+      scope: "/public/admin/",
+      updateViaCache: "none"
+    }).then(function (registration) {
+      registrationReady = true;
+      registration.update();
+      window.setInterval(function () { registration.update(); }, 60 * 60 * 1000);
+      return navigator.serviceWorker.ready;
+    }).then(function () {
+      registrationReady = true;
+    }).catch(function () {
+      registrationReady = false;
     });
   }
+
+  registerServiceWorker();
 
   window.addEventListener("beforeinstallprompt", function (event) {
     event.preventDefault();
@@ -35,22 +48,23 @@
         deferredPrompt.prompt();
         deferredPrompt.userChoice.finally(function () {
           deferredPrompt = null;
-          setInstallVisible(false);
         });
         return;
       }
+
       if (isiOS && !standalone) {
-        window.alert("To install Hercule Admin: tap Share in Safari, then choose Add to Home Screen.");
+        window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen.");
         return;
       }
+
       if (!standalone) {
-        window.alert("Open your browser menu, then choose Install app or Add to Home screen.");
+        window.alert(registrationReady
+          ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu."
+          : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
       }
     });
   });
 
-  // Keep installation discoverable even before the browser emits its native
-  // prompt. Once eligible, clicking this action opens the native prompt.
   if (!standalone) setInstallVisible(true);
   document.documentElement.classList.toggle("is-standalone", standalone);
   window.addEventListener("online", function () { document.documentElement.classList.remove("is-offline"); });
