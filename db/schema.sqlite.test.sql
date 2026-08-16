@@ -6,6 +6,9 @@ CREATE TABLE admin_users (
     username        TEXT NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
     role            TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner','support','read_only')),
+    totp_enabled    INTEGER NOT NULL DEFAULT 0,
+    totp_secret     TEXT NULL,
+    recovery_codes  TEXT NULL,
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
