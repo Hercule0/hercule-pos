@@ -10,6 +10,10 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
 env:
   AZURE_WEBAPP_NAME: pos
   PHP_VERSION: '8.3'
@@ -26,6 +30,12 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
+
+      - name: Validate PHP syntax
+        run: find . -path './deploy_package' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run test suite
+        run: php tests/run_test.php
 
       - name: Prepare deployment package
         run: |
@@ -46,11 +56,14 @@ jobs:
           rsync -a \
             --exclude='.git' \
             --exclude='.github' \
-            --exclude='tests' \
             --exclude='deploy_package' \
             --exclude='get_key.php' \
             --exclude='New Text Document.txt' \
-            --exclude='htaccess' \
+            --exclude='tests' \
+            --exclude='db' \
+            --exclude='setup.sh' \
+            --exclude='README.md' \
+            --exclude='.htaccess' \
             ./ deploy_package/
 
       - name: Azure Login
