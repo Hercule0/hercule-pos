@@ -31,10 +31,21 @@ final class RateLimiter
 
     public static function record(string $ip, string $endpoint): void
     {
-        $stmt = Database::pdo()->prepare(
+        $pdo = Database::pdo();
+        $stmt = $pdo->prepare(
             'INSERT INTO api_requests (ip_address, endpoint) VALUES (?, ?)'
         );
         $stmt->execute([$ip, $endpoint]);
+
+        // About 1% of requests perform a bounded retention cleanup, avoiding
+        // a cleanup query on every API call while preventing unbounded growth.
+        if (random_int(1, 100) === 1) {
+            $threshold = (new DateTime())->modify('-7 days')->format('Y-m-d H:i:s');
+            $cleanup = $pdo->prepare(
+                'DELETE FROM api_requests WHERE created_at < ? ORDER BY id LIMIT 1000'
+            );
+            $cleanup->execute([$threshold]);
+        }
     }
 
     /**
