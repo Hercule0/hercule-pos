@@ -127,14 +127,20 @@ $act3Retry = License::activate($licenseKey, $hwid3, '10.0.0.2');
 check('Freed activation slot allows a new device to activate', $act3Retry['ok'] === true);
 
 // ================= RSA signing round-trip =================
-$config = require __DIR__ . '/../config/config.php';
-@mkdir(dirname($config['rsa']['private_key_path']), 0700, true);
-RsaSigner::generateKeypair();
-check('RSA keypair files created', file_exists($config['rsa']['private_key_path']) && file_exists($config['rsa']['public_key_path']));
+$testKey = openssl_pkey_new([
+    'private_key_bits' => 2048,
+    'private_key_type' => OPENSSL_KEYTYPE_RSA,
+]);
+$testPrivatePem = '';
+openssl_pkey_export($testKey, $testPrivatePem);
+$testKeyDetails = openssl_pkey_get_details($testKey);
+$publicKeyPem = $testKeyDetails['key'];
+putenv('LICENSE_PRIVATE_KEY=' . str_replace("\n", "\\n", $testPrivatePem));
+$_ENV['LICENSE_PRIVATE_KEY'] = $testPrivatePem;
+check('Ephemeral RSA test key generated', $testPrivatePem !== '' && $publicKeyPem !== '');
 
 $samplePayload = ['status' => 'active', 'plan' => 'annual', 'expires_at' => '2027-01-01 00:00:00'];
 $signed = RsaSigner::sign($samplePayload);
-$publicKeyPem = file_get_contents($config['rsa']['public_key_path']);
 check('Signed payload verifies correctly with public key', RsaSigner::verify($signed['payload'], $signed['signature'], $publicKeyPem));
 
 $tamperedPayload = $samplePayload;
