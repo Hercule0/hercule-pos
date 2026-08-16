@@ -113,7 +113,6 @@ h2 { font-size: 15px; color: var(--text-dim); margin: 0 0 16px; }
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
         backdrop-filter: blur(16px);
     }
-    .brand span { display: block; font-size: 12px; }
     .nav {
         position: fixed;
         z-index: 100;
