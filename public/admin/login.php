@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="manifest" href="/public/admin/manifest.webmanifest">
+<link rel="manifest" href="/public/admin/manifest.json">
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= $mfaPending ? 'Verify identity' : 'Log in' ?> — Hercule License Admin</title>
