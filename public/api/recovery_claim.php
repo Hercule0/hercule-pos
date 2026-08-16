@@ -33,6 +33,12 @@ $hwid = trim($input['hwid'] ?? '');
 if (!$requestId || $licenseKey === '' || $hwid === '') {
     json_response(['ok' => false, 'error' => 'request_id, license_key, and hwid are required'], 400);
 }
+if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey) || strlen($hwid) > 128) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key or hwid.'], 400);
+}
+if (!RateLimiter::check('key:' . $licenseKey, 'recovery_claim_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
+    json_response(['ok' => false, 'error' => 'Too many claim attempts for this license. Please try again later.'], 429);
+}
 
 $result = PasswordRecovery::claim($requestId, $licenseKey, $hwid, client_ip());
 json_response($result, $result['ok'] ? 200 : 400);
