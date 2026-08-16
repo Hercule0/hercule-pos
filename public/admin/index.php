@@ -85,7 +85,7 @@ flash_render();
     </section>
 
     <div class="dashboard-columns">
-        <section class="dashboard-section attention-section">
+        <section class="dashboard-section attention-section" id="expiring-soon">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Needs attention</p>
