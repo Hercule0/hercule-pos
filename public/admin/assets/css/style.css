@@ -259,6 +259,7 @@ body {
     color: var(--text);
     font-size: 12px;
     font-weight: 700;
+    text-decoration: none;
 }
 .account-chevron {
     width: 16px;
@@ -1028,6 +1029,7 @@ body {
 }
 .active-filter-banner a { color: var(--accent); font-weight: 700; text-decoration: none; }
 .license-tools { display: grid; grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr); align-items: center; gap: 14px; }
+.license-tools > form { min-width: 0; }
 .filter-chips {
     display: flex;
     min-width: 0;
@@ -1036,7 +1038,7 @@ body {
     scrollbar-width: none;
 }
 .filter-chips::-webkit-scrollbar { display: none; }
-.filter-chips button {
+.filter-chips :is(button, a) {
     display: inline-flex;
     min-height: 38px;
     flex: 0 0 auto;
@@ -1052,7 +1054,7 @@ body {
     font-size: 10px;
     font-weight: 700;
 }
-.filter-chips button span {
+.filter-chips :is(button, a) span {
     display: grid;
     min-width: 20px;
     height: 20px;
@@ -1061,7 +1063,7 @@ body {
     background: var(--panel-alt);
     font-size: 9px;
 }
-.filter-chips button.active {
+.filter-chips :is(button, a).active {
     border-color: rgba(63, 169, 245, 0.38);
     background: rgba(63, 169, 245, 0.11);
     color: var(--accent);
@@ -2304,5 +2306,58 @@ code, [dir="ltr"] { unicode-bidi: isolate; }
         width: 38px;
         height: 38px;
         flex-basis: 38px;
+    }
+}
+
+
+/* ---------- Server pagination ---------- */
+.app-pagination {
+    display: grid;
+    grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr);
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+.app-pagination > span {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-align: center;
+}
+.app-pagination > span strong { color: var(--text); }
+.app-pagination > a {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 15px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.app-pagination > a:last-child { justify-self: end; }
+.app-pagination > a:first-child { justify-self: start; }
+.app-pagination > a:hover {
+    border-color: rgba(63, 169, 245, .4);
+    color: var(--accent);
+}
+.app-pagination > a.disabled {
+    pointer-events: none;
+    opacity: .4;
+}
+
+@media (max-width: 520px) {
+    .app-pagination {
+        grid-template-columns: 1fr 1fr;
+    }
+    .app-pagination > span {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
+    .app-pagination > a {
+        width: 100%;
     }
 }
