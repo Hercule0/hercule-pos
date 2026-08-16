@@ -45,8 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/public/admin/manifest.php">
-<link rel="icon" href="/public/admin/assets/icons/app-icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/public/admin/assets/icons/app-icon.svg">
+<link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= $mfaPending ? 'Verify identity' : 'Log in' ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css?v=mfa-v1">
 </head>
@@ -113,6 +113,6 @@ document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
     });
 });
 </script>
-<script src="/public/admin/assets/js/pwa.js?v=1" defer></script>
+<script src="/public/admin/assets/js/pwa.js?v=2" defer></script>
 </body>
 </html>
