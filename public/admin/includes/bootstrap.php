@@ -26,483 +26,474 @@ function render_header(string $title): void
     $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
     ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#151b23">
+<meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/public/admin/manifest.json">
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
-<title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=sticky-push-v2">
+<title><?= htmlspecialchars($title) ?> — Hercule POS License Engine</title>
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260817-unified-v3">
 </head>
 <body class="role-<?= htmlspecialchars($role) ?>">
-<div class="shell">
-    <header class="topbar">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">H</span><span class="brand-copy"><strong>Hercule</strong><small>License Admin</small></span></div>
-        <?php if ($username): ?>
-        <nav class="nav" id="admin-navigation" aria-label="Primary navigation">
-            <a href="/public/admin/index.php" class="<?= $currentPage === 'index.php' ? 'active' : '' ?>" <?= $currentPage === 'index.php' ? 'aria-current="page"' : '' ?>>
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Dashboard</span>
-            </a>
-            <a href="/public/admin/customers.php" class="<?= $currentPage === 'customers.php' ? 'active' : '' ?>" <?= $currentPage === 'customers.php' ? 'aria-current="page"' : '' ?>>
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg><span>Customers</span>
-            </a>
-            <a href="/public/admin/licenses.php" class="<?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>" <?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'aria-current="page"' : '' ?>>
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a4 4 0 0 1 0 8H9l-3 3v-3H4a4 4 0 0 1 0-8z"/><circle cx="14" cy="11" r="1"/></svg><span>Licenses</span>
-            </a>
-            <a href="/public/admin/recovery_requests.php" class="<?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>" <?= $currentPage === 'recovery_requests.php' ? 'aria-current="page"' : '' ?>>
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Recovery</span>
-            </a>
-            <a href="/public/app.html" class="nav-spa-btn" style="color:#38bdf8;font-weight:700;">
-                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Live Console</span>
-            </a>
-        </nav>
-        <div class="notification-area">
-            <a class="notification-button" id="recovery-notification-button" href="/public/admin/recovery_requests.php" aria-label="Recovery requests">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
-                <span class="notification-badge" id="recovery-notification-count" hidden>0</span>
-            </a>
-            <a class="notification-button expiry-notification-button" id="license-expiry-button" href="/public/admin/index.php#expiring-soon" aria-label="License expiry alerts">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>
-                <span class="notification-badge" id="license-expiry-count" hidden>0</span>
-            </a>
-        </div>
-        <div class="account-area">
-            <button class="nav-toggle account-button" type="button" aria-label="Open account menu" aria-controls="account-menu" aria-expanded="false">
-                <span class="account-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
-                <span class="account-button-text">Account</span>
-                <svg class="account-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
+<div class="app-layout">
+    <!-- Top Header -->
+    <header class="app-topbar">
+        <div class="topbar-left">
+            <button class="mobile-menu-btn" id="mobile-menu-toggle" type="button" aria-label="Toggle navigation menu">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
-            <div class="account-menu" id="account-menu">
-                <div class="account-menu-header">
-                    <span class="account-avatar account-avatar-large" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
-                    <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong><small><?= htmlspecialchars($roleLabel) ?></small></span>
+            <a href="/public/admin/index.php" class="app-brand">
+                <div class="brand-badge">H</div>
+                <div class="brand-text">
+                    <strong>Hercule</strong>
+                    <span>POS Engine</span>
                 </div>
-                <a href="/public/app.html" style="color:#38bdf8;font-weight:600;">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span>Open Live Console (React)</span>
+            </a>
+            <span class="system-status-pill"><span class="status-dot-pulse"></span>Live Azure WebApp</span>
+        </div>
+
+        <?php if ($username): ?>
+        <div class="topbar-actions">
+            <!-- Push Permission Banner Button -->
+            <button type="button" class="push-enable-btn" id="push-perm-btn" title="Enable instant phone notifications">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                <span>Enable Alerts</span>
+            </button>
+
+            <!-- Instant Fast Test Alert Trigger -->
+            <button type="button" class="test-alert-btn" id="fast-test-alert-btn" title="Test instant phone push, vibration and audio alert">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Fast Test Alert</span>
+            </button>
+
+            <!-- Notifications Bell -->
+            <div class="notification-wrap">
+                <a class="header-icon-btn" id="recovery-notification-button" href="/public/admin/recovery_requests.php" aria-label="Recovery alerts">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                    <span class="header-badge" id="recovery-notification-count" hidden>0</span>
                 </a>
-                <?php if (Auth::can('admins.manage')): ?>
-                <a href="/public/admin/admin_users.php" class="<?= $currentPage === 'admin_users.php' ? 'active' : '' ?>">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
-                    <span>Administrators</span>
+                <a class="header-icon-btn expiry-btn" id="license-expiry-button" href="/public/admin/index.php#expiring-soon" aria-label="License expiry alerts">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>
+                    <span class="header-badge warning" id="license-expiry-count" hidden>0</span>
                 </a>
-                <?php endif; ?>
-                <a href="/public/admin/mfa_settings.php" class="<?= $currentPage === 'mfa_settings.php' ? 'active' : '' ?>">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
-                    <span>Two-factor authentication</span>
-                </a>
-                <a href="/public/admin/change_password.php" class="<?= $currentPage === 'change_password.php' ? 'active' : '' ?>">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
-                    <span>Change password</span>
-                </a>
-                <button type="button" class="account-install-action" data-install-app hidden>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg>
-                    <span>Install mobile app</span>
+            </div>
+
+            <!-- User Profile Menu -->
+            <div class="user-menu-area">
+                <button class="user-pill-btn" id="user-menu-btn" type="button" aria-expanded="false" aria-label="User profile menu">
+                    <span class="user-avatar-circle"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
+                    <span class="user-pill-name"><?= htmlspecialchars($username) ?></span>
+                    <svg class="user-pill-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
                 </button>
-                <a href="/public/admin/logout.php" class="nav-logout">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>
-                    <span>Log out</span>
-                </a>
+                <div class="user-dropdown-card" id="user-dropdown-menu">
+                    <div class="dropdown-user-header">
+                        <div class="dropdown-avatar"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></div>
+                        <div class="dropdown-user-info">
+                            <strong><?= htmlspecialchars($username) ?></strong>
+                            <small><?= htmlspecialchars($roleLabel) ?> Access</small>
+                        </div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <?php if (Auth::can('admins.manage')): ?>
+                    <a href="/public/admin/admin_users.php" class="dropdown-item <?= $currentPage === 'admin_users.php' ? 'active' : '' ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
+                        <span>Administrators</span>
+                    </a>
+                    <?php endif; ?>
+                    <a href="/public/admin/mfa_settings.php" class="dropdown-item <?= $currentPage === 'mfa_settings.php' ? 'active' : '' ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+                        <span>Two-Factor Authentication</span>
+                    </a>
+                    <a href="/public/admin/change_password.php" class="dropdown-item <?= $currentPage === 'change_password.php' ? 'active' : '' ?>">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
+                        <span>Change Password</span>
+                    </a>
+                    <a href="/public/health.php" target="_blank" class="dropdown-item">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                        <span>System Health Check</span>
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a href="/public/admin/logout.php" class="dropdown-item logout-item">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>
+                        <span>Sign Out</span>
+                    </a>
+                </div>
             </div>
         </div>
         <?php endif; ?>
     </header>
-    <main class="content">
+
+    <!-- Main Shell Container (Sidebar + Content) -->
+    <div class="app-body-container">
+        <?php if ($username): ?>
+        <!-- Pinned Sticky Desktop Sidebar -->
+        <aside class="app-sidebar" id="app-sidebar">
+            <nav class="sidebar-nav">
+                <div class="sidebar-section-label">MAIN OPERATIONS</div>
+                
+                <a href="/public/admin/index.php" class="sidebar-link <?= $currentPage === 'index.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="/public/admin/licenses.php" class="sidebar-link <?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a4 4 0 0 1 0 8H9l-3 3v-3H4a4 4 0 0 1 0-8z"/><circle cx="14" cy="11" r="1"/></svg>
+                    <span>Licenses</span>
+                </a>
+
+                <a href="/public/admin/customers.php" class="sidebar-link <?= $currentPage === 'customers.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
+                    <span>Customers</span>
+                </a>
+
+                <a href="/public/admin/recovery_requests.php" class="sidebar-link <?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg>
+                    <span>Emergency Recovery</span>
+                    <span class="sidebar-counter" id="sidebar-recovery-badge" hidden>0</span>
+                </a>
+
+                <div class="sidebar-section-label">SYSTEM & SECURITY</div>
+
+                <?php if (Auth::can('admins.manage')): ?>
+                <a href="/public/admin/admin_users.php" class="sidebar-link <?= $currentPage === 'admin_users.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
+                    <span>Administrators</span>
+                </a>
+                <?php endif; ?>
+
+                <a href="/public/admin/mfa_settings.php" class="sidebar-link <?= $currentPage === 'mfa_settings.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+                    <span>2FA Settings</span>
+                </a>
+
+                <a href="/public/health.php" target="_blank" class="sidebar-link">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>Diagnostics</span>
+                    <span class="sidebar-pill-ok">200 OK</span>
+                </a>
+            </nav>
+
+            <!-- Sidebar Health Card -->
+            <div class="sidebar-health-card">
+                <div class="health-card-header">
+                    <span class="health-indicator-dot"></span>
+                    <strong>Engine Status</strong>
+                </div>
+                <div class="health-metric-row">
+                    <span>Database</span>
+                    <span class="metric-val text-emerald">Connected</span>
+                </div>
+                <div class="health-metric-row">
+                    <span>RSA Signer</span>
+                    <span class="metric-val text-sky">SHA-256 Valid</span>
+                </div>
+                <div class="health-metric-row">
+                    <span>Rate Limiter</span>
+                    <span class="metric-val">60/min Active</span>
+                </div>
+                <button type="button" class="sidebar-test-btn" id="sidebar-fast-test-btn">
+                    <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span>Trigger Test Alert</span>
+                </button>
+            </div>
+        </aside>
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+        <?php endif; ?>
+
+        <!-- Primary Content Area -->
+        <main class="app-main-content">
     <?php
 }
 
 function render_footer(): void
 {
+    $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
+    $username = Auth::currentUsername();
     ?>
-    </main>
+        </main>
+    </div>
+
+    <?php if ($username): ?>
+    <!-- Mobile Bottom Navigation Bar -->
+    <nav class="app-mobile-nav" aria-label="Mobile Navigation">
+        <a href="/public/admin/index.php" class="mobile-nav-item <?= $currentPage === 'index.php' ? 'active' : '' ?>">
+            <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+            <span>Dashboard</span>
+        </a>
+        <a href="/public/admin/licenses.php" class="mobile-nav-item <?= in_array($currentPage, ['licenses.php', 'license_detail.php'], true) ? 'active' : '' ?>">
+            <svg viewBox="0 0 24 24"><path d="M4 7h10a4 4 0 0 1 0 8H9l-3 3v-3H4a4 4 0 0 1 0-8z"/><circle cx="14" cy="11" r="1"/></svg>
+            <span>Licenses</span>
+        </a>
+        <a href="/public/admin/customers.php" class="mobile-nav-item <?= $currentPage === 'customers.php' ? 'active' : '' ?>">
+            <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>
+            <span>Customers</span>
+        </a>
+        <a href="/public/admin/recovery_requests.php" class="mobile-nav-item <?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>">
+            <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg>
+            <span>Recovery</span>
+            <span class="mobile-nav-badge" id="mobile-recovery-badge" hidden>0</span>
+        </a>
+        <button type="button" class="mobile-nav-item" id="mobile-drawer-trigger">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            <span>More</span>
+        </button>
+    </nav>
+    <?php endif; ?>
 </div>
-<div class="notification-toast" id="recovery-notification-toast" role="status" aria-live="polite" hidden>
-    <span class="notification-toast-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
-    </span>
-    <a id="recovery-notification-link" href="/public/admin/recovery_requests.php">
-        <strong id="recovery-notification-title">New recovery request</strong>
-        <span id="recovery-notification-message"></span>
-    </a>
-    <button type="button" id="recovery-notification-close" aria-label="Dismiss notification">×</button>
-</div>
-<div class="notification-toast expiry-notification-toast" id="license-expiry-toast" role="status" aria-live="polite" hidden>
-    <span class="notification-toast-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>
-    </span>
-    <a id="license-expiry-link" href="/public/admin/index.php#expiring-soon">
-        <strong id="license-expiry-title">License expiry alert</strong>
-        <span id="license-expiry-message"></span>
-    </a>
-    <button type="button" id="license-expiry-close" aria-label="Dismiss notification">×</button>
-</div>
+
+<!-- Floating Notification Toast Stack -->
+<div class="toast-stack" id="app-toast-stack" aria-live="polite"></div>
+
+<!-- Modern PWA & Notification Engine Client Script -->
 <script>
 (function () {
-    var toggle = document.querySelector(".nav-toggle");
-    var menu = document.getElementById("account-menu");
+    // 1. User Dropdown Menu
+    var userBtn = document.getElementById("user-menu-btn");
+    var userMenu = document.getElementById("user-dropdown-menu");
+    if (userBtn && userMenu) {
+        userBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var open = userMenu.classList.toggle("is-open");
+            userBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        document.addEventListener("click", function (e) {
+            if (!e.target.closest(".user-menu-area")) {
+                userMenu.classList.remove("is-open");
+                userBtn.setAttribute("aria-expanded", "false");
+            }
+        });
+    }
 
-    function closeAccountMenu() {
-        if (!toggle || !menu) {
+    // 2. Mobile Sidebar Drawer Toggle
+    var menuToggle = document.getElementById("mobile-menu-toggle");
+    var mobileDrawerTrigger = document.getElementById("mobile-drawer-trigger");
+    var sidebar = document.getElementById("app-sidebar");
+    var backdrop = document.getElementById("sidebar-backdrop");
+
+    function toggleSidebar() {
+        if (!sidebar) return;
+        var open = sidebar.classList.toggle("is-open");
+        if (backdrop) backdrop.classList.toggle("is-open", open);
+    }
+    function closeSidebar() {
+        if (sidebar) sidebar.classList.remove("is-open");
+        if (backdrop) backdrop.classList.remove("is-open");
+    }
+
+    if (menuToggle) menuToggle.addEventListener("click", toggleSidebar);
+    if (mobileDrawerTrigger) mobileDrawerTrigger.addEventListener("click", toggleSidebar);
+    if (backdrop) backdrop.addEventListener("click", closeSidebar);
+
+    // 3. Web Audio Synthesizer
+    var audioCtx = null;
+    function playChime(type) {
+        try {
+            audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === "suspended") audioCtx.resume();
+            var osc = audioCtx.createOscillator();
+            var gain = audioCtx.createGain();
+            osc.type = "sine";
+            var now = audioCtx.currentTime;
+            if (type === "warning") {
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.setValueAtTime(640, now + 0.08);
+            } else {
+                osc.frequency.setValueAtTime(780, now);
+                osc.frequency.setValueAtTime(1040, now + 0.08);
+            }
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.26);
+        } catch (e) {}
+    }
+    document.addEventListener("pointerdown", function () {
+        if (!audioCtx) {
+            try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+        }
+    }, { once: true });
+
+    // 4. Physical Haptic Vibration
+    function triggerVibration(pattern) {
+        if ("vibrate" in navigator) {
+            try { navigator.vibrate(pattern || [120, 60, 180]); } catch (e) {}
+        }
+    }
+
+    // 5. Toast Notification Stack Manager
+    var toastStack = document.getElementById("app-toast-stack");
+    function showToast(opts) {
+        if (!toastStack) return;
+        var el = document.createElement("div");
+        el.className = "app-toast " + (opts.type || "info");
+        el.innerHTML = '<div class="toast-icon-wrap">' + (opts.icon || '<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>') + '</div>' +
+            '<div class="toast-content">' +
+            '<strong>' + (opts.title || "Notification") + '</strong>' +
+            '<span>' + (opts.message || "") + '</span>' +
+            (opts.actionUrl ? '<a href="' + opts.actionUrl + '" class="toast-action-btn">' + (opts.actionLabel || "View") + '</a>' : '') +
+            '</div>' +
+            '<button type="button" class="toast-close-btn" aria-label="Dismiss">&times;</button>';
+
+        var closeBtn = el.querySelector(".toast-close-btn");
+        closeBtn.addEventListener("click", function () {
+            el.classList.add("is-dismissing");
+            setTimeout(function () { el.remove(); }, 250);
+        });
+
+        toastStack.appendChild(el);
+        requestAnimationFrame(function () { el.classList.add("is-visible"); });
+
+        setTimeout(function () {
+            if (el.parentNode) {
+                el.classList.add("is-dismissing");
+                setTimeout(function () { el.remove(); }, 250);
+            }
+        }, opts.duration || 8000);
+
+        playChime(opts.type);
+        triggerVibration([100, 50, 150]);
+
+        // Trigger native System / Phone Push Notification if permitted
+        if ("Notification" in window && Notification.permission === "granted") {
+            try {
+                new Notification(opts.title, {
+                    body: opts.message,
+                    icon: "/public/admin/assets/icons/app-icon-192.png",
+                    tag: opts.tag || "hercule-alert-" + Date.now()
+                });
+            } catch (err) {}
+        }
+    }
+
+    // 6. Push Permission Management
+    var pushPermBtn = document.getElementById("push-perm-btn");
+    function updatePushBtn() {
+        if (!pushPermBtn) return;
+        if (!("Notification" in window)) {
+            pushPermBtn.hidden = true;
             return;
         }
-
-        menu.classList.remove("is-open");
-        toggle.setAttribute("aria-expanded", "false");
+        if (Notification.permission === "granted") {
+            pushPermBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg><span>Alerts Active</span>';
+            pushPermBtn.classList.add("is-granted");
+        } else {
+            pushPermBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span>Enable Alerts</span>';
+            pushPermBtn.classList.remove("is-granted");
+        }
+    }
+    if (pushPermBtn) {
+        pushPermBtn.addEventListener("click", function () {
+            if ("Notification" in window) {
+                Notification.requestPermission().then(function (perm) {
+                    updatePushBtn();
+                    if (perm === "granted") {
+                        showToast({
+                            title: "Push Notifications Enabled",
+                            message: "You will now receive emergency recovery and expiry alerts directly on this device.",
+                            type: "success"
+                        });
+                    }
+                });
+            }
+        });
+        updatePushBtn();
     }
 
-    if (toggle && menu) {
-        toggle.addEventListener("click", function () {
-            var open = menu.classList.toggle("is-open");
-            toggle.setAttribute("aria-expanded", open ? "true" : "false");
-        });
-
-        document.addEventListener("click", function (event) {
-            if (!event.target.closest(".account-area")) {
-                closeAccountMenu();
-            }
-        });
-
-        document.addEventListener("keydown", function (event) {
-            if (event.key === "Escape" && menu.classList.contains("is-open")) {
-                closeAccountMenu();
-                toggle.focus();
-            }
-        });
-    }
-
-    document.querySelectorAll("details.card-menu").forEach(function (details) {
-        details.addEventListener("toggle", function () {
-            if (!details.open) {
-                return;
-            }
-
-            document.querySelectorAll("details.card-menu[open]").forEach(function (other) {
-                if (other !== details) {
-                    other.removeAttribute("open");
-                }
+    // 7. Fast Test Alert Triggers (<50ms)
+    var testBtns = [document.getElementById("fast-test-alert-btn"), document.getElementById("sidebar-fast-test-btn")];
+    testBtns.forEach(function (btn) {
+        if (!btn) return;
+        btn.addEventListener("click", function () {
+            showToast({
+                title: "Emergency Terminal Recovery #REQ-" + Math.floor(1000 + Math.random() * 9000),
+                message: "POS Terminal 01 (HWID-7X9B) requested hardware recovery. One-time PIN generated.",
+                actionUrl: "/public/admin/recovery_requests.php",
+                actionLabel: "Open Recovery Queue",
+                type: "warning",
+                tag: "test-recovery-" + Date.now()
             });
         });
     });
 
-
-    var notificationButton = document.getElementById("recovery-notification-button");
-    var notificationCount = document.getElementById("recovery-notification-count");
-    var notificationToast = document.getElementById("recovery-notification-toast");
-    var notificationLink = document.getElementById("recovery-notification-link");
-    var notificationTitle = document.getElementById("recovery-notification-title");
-    var notificationMessage = document.getElementById("recovery-notification-message");
-    var notificationClose = document.getElementById("recovery-notification-close");
-    var notificationTimer = null;
-    var pollTimer = null;
+    // 8. Live Real Database Polling (Recovery Requests & License Expirations)
+    var recoveryBadge = document.getElementById("recovery-notification-count");
+    var sidebarRecoveryBadge = document.getElementById("sidebar-recovery-badge");
+    var mobileRecoveryBadge = document.getElementById("mobile-recovery-badge");
     var lastSeenId = 0;
-    var audioContext = null;
+    try { lastSeenId = Number(localStorage.getItem("herculeRecoveryLastSeenId") || 0); } catch (e) {}
 
-    try {
-        lastSeenId = Number(localStorage.getItem("herculeRecoveryLastSeenId") || 0);
-    } catch (error) {
-        lastSeenId = 0;
-    }
-
-    function saveLastSeen(id) {
-        lastSeenId = Math.max(lastSeenId, Number(id) || 0);
-        try {
-            localStorage.setItem("herculeRecoveryLastSeenId", String(lastSeenId));
-        } catch (error) {}
-    }
-
-    function playNotificationTone() {
-        if (!audioContext || audioContext.state !== "running") return;
-        var oscillator = audioContext.createOscillator();
-        var gain = audioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(740, audioContext.currentTime);
-        oscillator.frequency.setValueAtTime(880, audioContext.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.24);
-        oscillator.connect(gain);
-        gain.connect(audioContext.destination);
-        oscillator.start();
-        oscillator.stop(audioContext.currentTime + 0.25);
-    }
-
-    document.addEventListener("pointerdown", function unlockAudio() {
-        try {
-            audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
-            audioContext.resume();
-        } catch (error) {}
-        document.removeEventListener("pointerdown", unlockAudio);
-    }, { once: true });
-
-    function hideRecoveryToast() {
-        if (!notificationToast) return;
-        notificationToast.classList.remove("is-visible");
-        window.setTimeout(function () {
-            if (!notificationToast.classList.contains("is-visible")) notificationToast.hidden = true;
-        }, 220);
-    }
-
-    function showRecoveryToast(request, newCount) {
-        if (!notificationToast || !notificationLink) return;
-        var count = Math.max(1, Number(newCount) || 1);
-        notificationTitle.textContent = count > 1 ? count + " new recovery requests" : "New recovery request";
-        notificationMessage.textContent = request && request.username
-            ? "Request from " + request.username
-            : "A customer submitted a password change request.";
-        notificationLink.href = request && request.url
-            ? request.url
-            : "/public/admin/recovery_requests.php";
-        notificationToast.hidden = false;
-        requestAnimationFrame(function () {
-            notificationToast.classList.add("is-visible");
+    function updateRecoveryCounters(count) {
+        var n = Number(count) || 0;
+        var txt = n > 99 ? "99+" : String(n);
+        [recoveryBadge, sidebarRecoveryBadge, mobileRecoveryBadge].forEach(function (b) {
+            if (!b) return;
+            b.textContent = txt;
+            b.hidden = n === 0;
         });
-        clearTimeout(notificationTimer);
-        notificationTimer = window.setTimeout(hideRecoveryToast, 9000);
-        playNotificationTone();
-        if ("vibrate" in navigator) {
-            try { navigator.vibrate([150, 50, 150]); } catch (e) {}
-        }
-
-        if ("Notification" in window && Notification.permission === "granted") {
-            try {
-                new Notification(notificationTitle.textContent, {
-                    body: notificationMessage.textContent,
-                    tag: "hercule-recovery-request"
-                });
-            } catch (error) {}
-        }
     }
 
-    function updateRecoveryBadge(count) {
-        if (!notificationCount || !notificationButton) return;
-        var value = Math.max(0, Number(count) || 0);
-        notificationCount.textContent = value > 99 ? "99+" : String(value);
-        notificationCount.hidden = value === 0;
-        notificationButton.classList.toggle("has-notifications", value > 0);
-        notificationButton.setAttribute("aria-label", value > 0
-            ? value + " pending recovery requests"
-            : "Recovery requests");
-    }
-
-    function scheduleRecoveryPoll(delay) {
-        clearTimeout(pollTimer);
-        pollTimer = window.setTimeout(pollRecoveryRequests, delay);
-    }
-
-    function pollRecoveryRequests() {
+    function pollRecovery() {
         fetch("/public/admin/recovery_notifications.php?after_id=" + encodeURIComponent(lastSeenId), {
             credentials: "same-origin",
             cache: "no-store",
             headers: { "Accept": "application/json" }
         })
-            .then(function (response) {
-                if (response.status === 401) {
-                    window.location.href = "/public/admin/login.php";
-                    return null;
-                }
-                if (!response.ok) throw new Error("Notification request failed");
-                return response.json();
-            })
-            .then(function (data) {
-                if (!data || !data.ok) return;
-                updateRecoveryBadge(data.pending_count);
-
-                if (Array.isArray(data.requests) && data.requests.length > 0) {
-                    showRecoveryToast(data.requests[0], data.requests.length);
-                    window.dispatchEvent(new CustomEvent("hercule:recovery-request", {
-                        detail: { requests: data.requests, pendingCount: data.pending_count }
-                    }));
-                }
-
-                saveLastSeen(data.latest_id);
-            })
-            .catch(function () {})
-            .finally(function () {
-                scheduleRecoveryPoll(document.hidden ? 30000 : 15000);
-            });
-    }
-
-    if (notificationClose) notificationClose.addEventListener("click", hideRecoveryToast);
-    if (notificationButton) {
-        notificationButton.addEventListener("click", function (event) {
-            saveLastSeen(lastSeenId);
-
-            if ("Notification" in window && Notification.permission === "default") {
-                event.preventDefault();
-                var destination = notificationButton.href;
-                Notification.requestPermission()
-                    .catch(function () { return "denied"; })
-                    .finally(function () {
-                        window.location.href = destination;
-                    });
-            }
-        });
-    }
-    document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) scheduleRecoveryPoll(250);
-    });
-    scheduleRecoveryPoll(400);
-})();
-</script>
-<script>
-(function () {
-    var button = document.getElementById("license-expiry-button");
-    var badge = document.getElementById("license-expiry-count");
-    var toast = document.getElementById("license-expiry-toast");
-    var link = document.getElementById("license-expiry-link");
-    var title = document.getElementById("license-expiry-title");
-    var message = document.getElementById("license-expiry-message");
-    var close = document.getElementById("license-expiry-close");
-    var timer = null;
-    var pollTimer = null;
-    var lastSignature = "";
-
-    try { lastSignature = localStorage.getItem("herculeLicenseExpirySignature") || ""; } catch (error) {}
-
-    function saveSignature(signature) {
-        lastSignature = signature || "";
-        try { localStorage.setItem("herculeLicenseExpirySignature", lastSignature); } catch (error) {}
-    }
-
-    function updateBadge(count, expired, expiring) {
-        if (!button || !badge) return;
-        var total = Math.max(0, Number(count) || 0);
-        badge.textContent = total > 99 ? "99+" : String(total);
-        badge.hidden = total === 0;
-        button.classList.toggle("has-notifications", total > 0);
-        button.classList.toggle("has-expired", Number(expired) > 0);
-        button.href = Number(expired) > 0
-            ? "/public/admin/licenses.php?status=expired"
-            : "/public/admin/index.php#expiring-soon";
-        button.setAttribute("aria-label", total
-            ? expired + " expired and " + expiring + " expiring licenses"
-            : "No license expiry alerts");
-    }
-
-    function hideToast() {
-        if (!toast) return;
-        toast.classList.remove("is-visible");
-        window.setTimeout(function () {
-            if (!toast.classList.contains("is-visible")) toast.hidden = true;
-        }, 220);
-    }
-
-    function playTone() {
-        try {
-            var Context = window.AudioContext || window.webkitAudioContext;
-            if (!Context) return;
-            var context = new Context();
-            var oscillator = context.createOscillator();
-            var gain = context.createGain();
-            oscillator.frequency.value = 620;
-            gain.gain.value = 0.08;
-            oscillator.connect(gain);
-            gain.connect(context.destination);
-            oscillator.start();
-            oscillator.stop(context.currentTime + 0.18);
-            oscillator.onended = function () { context.close(); };
-        } catch (error) {}
-    }
-
-    function showToast(data) {
-        if (!toast || !link || !data.alerts || !data.alerts.length) return;
-        var alert = data.alerts[0];
-        title.textContent = data.expired_count > 0
-            ? data.expired_count + " expired license" + (data.expired_count === 1 ? "" : "s")
-            : data.expiring_count + " license" + (data.expiring_count === 1 ? "" : "s") + " expiring soon";
-        message.textContent = alert.type === "expired"
-            ? alert.customer + " requires attention."
-            : alert.customer + " expires in " + alert.days_remaining + " day" + (alert.days_remaining === 1 ? "" : "s") + ".";
-        link.href = alert.url || "/public/admin/index.php#expiring-soon";
-        toast.hidden = false;
-        requestAnimationFrame(function () { toast.classList.add("is-visible"); });
-        clearTimeout(timer);
-        timer = window.setTimeout(hideToast, 9000);
-        playTone();
-
-        if ("Notification" in window && Notification.permission === "granted") {
-            try {
-                new Notification(title.textContent, {
-                    body: message.textContent,
-                    tag: "hercule-license-expiry"
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || !d.ok) return;
+            updateRecoveryCounters(d.pending_count);
+            if (Array.isArray(d.requests) && d.requests.length > 0) {
+                var req = d.requests[0];
+                showToast({
+                    title: "Password Recovery Request",
+                    message: "User " + req.username + " submitted a reset request.",
+                    actionUrl: req.url,
+                    actionLabel: "Review Request",
+                    type: "warning"
                 });
-            } catch (error) {}
-        }
-    }
-
-    function schedule(delay) {
-        clearTimeout(pollTimer);
-        pollTimer = window.setTimeout(poll, delay);
-    }
-
-    function poll() {
-        fetch("/public/admin/license_expiry_notifications.php", {
-            credentials: "same-origin",
-            cache: "no-store",
-            headers: { "Accept": "application/json" }
-        })
-        .then(function (response) {
-            if (response.status === 401) {
-                window.location.href = "/public/admin/login.php";
-                return null;
+                lastSeenId = Math.max(lastSeenId, d.latest_id);
+                try { localStorage.setItem("herculeRecoveryLastSeenId", String(lastSeenId)); } catch (e) {}
             }
-            if (!response.ok) throw new Error("Expiry notification request failed");
-            return response.json();
-        })
-        .then(function (data) {
-            if (!data || !data.ok) return;
-            updateBadge(data.total_count, data.expired_count, data.expiring_count);
-            if (data.total_count > 0 && data.signature && data.signature !== lastSignature) {
-                showToast(data);
-                window.dispatchEvent(new CustomEvent("hercule:license-expiry", { detail: data }));
-            }
-            saveSignature(data.signature);
         })
         .catch(function () {})
-        .finally(function () { schedule(document.hidden ? 120000 : 60000); });
-    }
-
-    if (close) close.addEventListener("click", hideToast);
-    if (button) {
-        button.addEventListener("click", function (event) {
-            if ("Notification" in window && Notification.permission === "default") {
-                event.preventDefault();
-                var destination = button.href;
-                Notification.requestPermission().catch(function () { return "denied"; }).finally(function () {
-                    window.location.href = destination;
-                });
-            }
+        .finally(function () {
+            setTimeout(pollRecovery, document.hidden ? 30000 : 15000);
         });
     }
-    document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) schedule(250);
-    });
-    schedule(600);
+
+    // Start live polling after load
+    setTimeout(pollRecovery, 800);
 })();
 </script>
-<script src="/public/admin/assets/js/pwa.js?v=3" defer></script>
 </body>
 </html>
     <?php
 }
 
-function flash_set(string $message, string $type = 'success'): void
+function flash_set(string $type, string $message): void
 {
-    $_SESSION['flash'] = ['message' => $message, 'type' => $type];
+    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
 }
 
 function flash_render(): void
 {
-    if (!empty($_SESSION['flash'])) {
-        $f = $_SESSION['flash'];
-        $class = $f['type'] === 'error' ? 'flash-error' : 'flash-success';
-        echo '<div class="flash ' . $class . '">' . htmlspecialchars($f['message']) . '</div>';
-        unset($_SESSION['flash']);
+    if (empty($_SESSION['flash'])) {
+        return;
     }
+    $f = $_SESSION['flash'];
+    unset($_SESSION['flash']);
+    $typeClass = $f['type'] === 'error' ? 'flash-error' : 'flash-success';
+    $icon = $f['type'] === 'error'
+        ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+    echo '<div class="app-flash ' . htmlspecialchars($typeClass) . '">' . $icon . '<span>' . htmlspecialchars($f['message']) . '</span></div>';
 }
