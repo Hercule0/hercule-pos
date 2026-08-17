@@ -19,8 +19,13 @@ body { margin: 0; background: var(--bg); color: var(--text); }
 .shell { min-height: 100vh; display: flex; flex-direction: column; }
 
 .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 28px; background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 14px 28px; background: rgba(21, 27, 35, 0.96); border-bottom: 1px solid var(--border);
 }
 .brand { font-size: 18px; font-weight: 700; }
 .brand span { color: var(--accent); font-weight: 400; }

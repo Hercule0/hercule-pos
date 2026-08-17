@@ -43,9 +43,19 @@ jobs:
       - name: Run test suite
         run: php tests/run_test.php
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend assets
+        run: |
+          npm ci || npm install
+          npm run build
+
       - name: Prepare deployment package
         run: |
-          echo "Preparing PHP application..."
+          echo "Preparing PHP & Frontend application..."
           if [ -f composer.json ]; then
             composer install --no-dev --prefer-dist --no-progress --no-interaction
           fi

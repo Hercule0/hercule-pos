@@ -38,7 +38,7 @@ function render_header(string $title): void
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= htmlspecialchars($title) ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=server-pagination">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=sticky-push-v2">
 </head>
 <body class="role-<?= htmlspecialchars($role) ?>">
 <div class="shell">
@@ -258,6 +258,9 @@ function render_footer(): void
         clearTimeout(notificationTimer);
         notificationTimer = window.setTimeout(hideRecoveryToast, 9000);
         playNotificationTone();
+        if ("vibrate" in navigator) {
+            try { navigator.vibrate([150, 50, 150]); } catch (e) {}
+        }
 
         if ("Notification" in window && Notification.permission === "granted") {
             try {
