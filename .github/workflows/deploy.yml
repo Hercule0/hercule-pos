@@ -76,10 +76,13 @@ jobs:
             --exclude='.htaccess' \
             ./ deploy_package/
 
-          # Copy built modern React client into deploy_package/public
+          # Copy built modern React client into deploy_package
           if [ -d "dist" ]; then
-            cp -r dist/assets deploy_package/public/ 2>/dev/null || true
+            mkdir -p deploy_package/assets deploy_package/public/assets
+            cp -rf dist/assets/* deploy_package/assets/ 2>/dev/null || true
+            cp -rf dist/assets/* deploy_package/public/assets/ 2>/dev/null || true
             cp dist/index.html deploy_package/public/app.html 2>/dev/null || true
+            cp dist/index.html deploy_package/public/index.html 2>/dev/null || true
           fi
 
       - name: Azure Login
