@@ -58,6 +58,9 @@ function render_header(string $title): void
             <a href="/public/admin/recovery_requests.php" class="<?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>" <?= $currentPage === 'recovery_requests.php' ? 'aria-current="page"' : '' ?>>
                 <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Recovery</span>
             </a>
+            <a href="/public/app.html" class="nav-spa-btn" style="color:#38bdf8;font-weight:700;">
+                <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Live Console</span>
+            </a>
         </nav>
         <div class="notification-area">
             <a class="notification-button" id="recovery-notification-button" href="/public/admin/recovery_requests.php" aria-label="Recovery requests">
@@ -80,6 +83,10 @@ function render_header(string $title): void
                     <span class="account-avatar account-avatar-large" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
                     <span class="nav-user"><small>Signed in as</small><strong><?= htmlspecialchars($username) ?></strong><small><?= htmlspecialchars($roleLabel) ?></small></span>
                 </div>
+                <a href="/public/app.html" style="color:#38bdf8;font-weight:600;">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span>Open Live Console (React)</span>
+                </a>
                 <?php if (Auth::can('admins.manage')): ?>
                 <a href="/public/admin/admin_users.php" class="<?= $currentPage === 'admin_users.php' ? 'active' : '' ?>">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.2-4 2-6 5.5-6s5.3 2 5.5 6M16 5.5a3 3 0 0 1 0 5.8M16 14c3 0 4.5 2 4.5 5"/></svg>

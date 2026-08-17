@@ -60,13 +60,7 @@ jobs:
             composer install --no-dev --prefer-dist --no-progress --no-interaction
           fi
 
-          # Build a clean deployment package. We deliberately exclude:
-          # - .git / .github: no reason for VCS history or workflow
-          #   definitions to ever be reachable on the live web server
-          # - tests/: dev-only, not needed in production
-          # - get_key.php, "New Text Document.txt": one-off debug scripts
-          #   that print real license keys with no auth check — must never
-          #   be web-accessible
+          # Build a clean deployment package.
           rm -rf deploy_package
           mkdir deploy_package
           rsync -a \
@@ -81,6 +75,12 @@ jobs:
             --exclude='README.md' \
             --exclude='.htaccess' \
             ./ deploy_package/
+
+          # Copy built modern React client into deploy_package/public
+          if [ -d "dist" ]; then
+            cp -r dist/assets deploy_package/public/ 2>/dev/null || true
+            cp dist/index.html deploy_package/public/app.html 2>/dev/null || true
+          fi
 
       - name: Azure Login
         if: github.event_name != 'pull_request'
