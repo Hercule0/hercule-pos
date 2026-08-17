@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# If the request isn't already under /public/, rewrite it there.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteRule ^(.*)$ /public/$1 [L]
+
+# Never allow direct access to non-public source folders, even if someone
+# guesses a path or the rewrite above is bypassed.
+RewriteRule ^(config|includes|keys|db)/ - [F,L]

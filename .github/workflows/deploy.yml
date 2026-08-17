@@ -1,0 +1,114 @@
+name: Deploy PHP app to Azure Web App
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+env:
+  AZURE_WEBAPP_NAME: pos
+  PHP_VERSION: '8.3'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+
+      - name: Validate PHP syntax
+        run: find . -path './deploy_package' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Validate operational scripts
+        run: bash -n scripts/*.sh
+
+      - name: Run test suite
+        run: php tests/run_test.php
+
+      - name: Prepare deployment package
+        run: |
+          echo "Preparing PHP application..."
+          if [ -f composer.json ]; then
+            composer install --no-dev --prefer-dist --no-progress --no-interaction
+          fi
+
+          # Build a clean deployment package. We deliberately exclude:
+          # - .git / .github: no reason for VCS history or workflow
+          #   definitions to ever be reachable on the live web server
+          # - tests/: dev-only, not needed in production
+          # - get_key.php, "New Text Document.txt": one-off debug scripts
+          #   that print real license keys with no auth check — must never
+          #   be web-accessible
+          rm -rf deploy_package
+          mkdir deploy_package
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='deploy_package' \
+            --exclude='get_key.php' \
+            --exclude='New Text Document.txt' \
+            --exclude='tests' \
+            --exclude='db' \
+            --exclude='setup.sh' \
+            --exclude='README.md' \
+            --exclude='.htaccess' \
+            ./ deploy_package/
+
+      - name: Azure Login
+        if: github.event_name != 'pull_request'
+        uses: azure/login@v2
+        with:
+          client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
+          tenant-id: cb4f9603-299f-4515-b736-2d50c9c37494
+          subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
+
+      - name: Deploy to Azure Web App
+        if: github.event_name != 'pull_request'
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: deploy_package
+
+      - name: Verify deployed application health
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
+          if [ -z "$APP_HOST" ]; then
+            echo "Could not resolve the deployed Azure Web App hostname."
+            exit 1
+          fi
+
+          HEALTH_URL="https://$APP_HOST/public/health.php"
+          echo "Waiting for $HEALTH_URL"
+
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL"; then
+              echo
+              echo "Deployment health check passed."
+              exit 0
+            fi
+            echo "Health check attempt $attempt/12 failed; retrying in 5 seconds..."
+            sleep 5
+          done
+
+          echo "Deployment did not become healthy."
+          exit 1

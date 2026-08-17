@@ -1,0 +1,6 @@
+{
+  "name": "Hercule License Server",
+  "description": "Mobile-first administration panel and licensing service for Hercule POS with device-bound activations, plan management, and password recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
