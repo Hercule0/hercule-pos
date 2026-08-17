@@ -215,6 +215,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'unsupported';
   });
 
+  // Initial live database bootstrap from real Azure MySQL backend
+  useEffect(() => {
+    fetch('/public/admin/api.php?action=bootstrap', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.ok) {
+          if (Array.isArray(data.licenses) && data.licenses.length > 0) {
+            setLicenses(data.licenses);
+          }
+          if (Array.isArray(data.customers) && data.customers.length > 0) {
+            setCustomers(data.customers);
+          }
+          if (Array.isArray(data.verifications) && data.verifications.length > 0) {
+            setVerifications(data.verifications);
+          }
+          if (Array.isArray(data.recovery_requests) && data.recovery_requests.length > 0) {
+            setRecoveryRequests(data.recovery_requests);
+          }
+          if (data.user) {
+            setCurrentUser(prev => ({
+              ...prev,
+              id: data.user.id || prev.id,
+              username: data.user.username || prev.username,
+              role: data.user.role || prev.role
+            }));
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback gracefully to existing cached/initial data if offline or dev mode
+      });
+  }, []);
+
   // Sync to local storage
   useEffect(() => {
     localStorage.setItem('hercule_admins', JSON.stringify(users));
