@@ -78,11 +78,14 @@ jobs:
 
           # Copy built modern React client into deploy_package
           if [ -d "dist" ]; then
-            mkdir -p deploy_package/assets deploy_package/public/assets
+            mkdir -p deploy_package/assets deploy_package/public/assets deploy_package/public/admin/assets deploy_package/dist
+            cp -rf dist/* deploy_package/dist/ 2>/dev/null || true
             cp -rf dist/assets/* deploy_package/assets/ 2>/dev/null || true
             cp -rf dist/assets/* deploy_package/public/assets/ 2>/dev/null || true
+            cp -rf dist/assets/* deploy_package/public/admin/assets/ 2>/dev/null || true
             cp dist/index.html deploy_package/public/app.html 2>/dev/null || true
             cp dist/index.html deploy_package/public/index.html 2>/dev/null || true
+            cp dist/index.html deploy_package/index.html 2>/dev/null || true
           fi
 
       - name: Azure Login

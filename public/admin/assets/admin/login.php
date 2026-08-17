@@ -1,0 +1,118 @@
+<?php
+require_once __DIR__ . '/includes/bootstrap.php';
+
+if (Auth::isLoggedIn()) {
+    header('Location: /public/admin/index.php');
+    exit;
+}
+
+$error = null;
+$mfaPending = isset($_SESSION['mfa_pending']) && is_array($_SESSION['mfa_pending']);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    Csrf::guard();
+
+    if ($mfaPending) {
+        $result = Auth::verifySecondFactor($_POST['mfa_code'] ?? '');
+        if ($result['ok']) {
+            header('Location: /public/admin/index.php');
+            exit;
+        }
+        $error = $result['error'];
+        $mfaPending = isset($_SESSION['mfa_pending']);
+    } else {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $result = Auth::attemptLogin($username, $password, $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        if ($result['ok']) {
+            header('Location: /public/admin/index.php');
+            exit;
+        }
+        if (!empty($result['requires_mfa'])) {
+            header('Location: /public/admin/login.php');
+            exit;
+        }
+        $error = $result['error'];
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/public/admin/manifest.json">
+<link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
+<title><?= $mfaPending ? 'Verify identity' : 'Log in' ?> — Hercule License Admin</title>
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=mfa-v1">
+</head>
+<body class="auth-body">
+<main class="auth-layout">
+    <section class="auth-brand-panel">
+        <div class="auth-brand"><span class="auth-logo">H</span><span><strong>Hercule</strong><small>License Admin</small></span></div>
+        <div class="auth-intro">
+            <span class="auth-shield"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg></span>
+            <p class="eyebrow">Secure workspace</p>
+            <h1><?= $mfaPending ? 'One more security check.' : 'Manage every license with confidence.' ?></h1>
+            <p><?= $mfaPending ? 'Use your authenticator or a one-time recovery code.' : 'Issue subscriptions, monitor devices, and review security activity from one protected dashboard.' ?></p>
+        </div>
+        <small class="auth-brand-footer">Hercule POS · Administrative access</small>
+    </section>
+
+    <section class="auth-form-panel">
+        <form class="auth-card" method="post">
+            <div class="auth-mobile-brand"><span class="auth-logo">H</span><span><strong>Hercule</strong><small>License Admin</small></span></div>
+            <div class="auth-heading">
+                <p class="eyebrow"><?= $mfaPending ? 'Two-factor authentication' : 'Welcome back' ?></p>
+                <h2><?= $mfaPending ? 'Enter verification code' : 'Sign in' ?></h2>
+                <p><?= $mfaPending ? 'Enter the current six-digit code or one unused recovery code.' : 'Enter your administrator credentials to continue.' ?></p>
+            </div>
+
+            <?php if ($error): ?>
+                <div class="auth-error"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16h.01"/></svg><span><?= htmlspecialchars($error) ?></span></div>
+            <?php endif; ?>
+
+            <?= Csrf::field() ?>
+            <?php if ($mfaPending): ?>
+                <label class="auth-field">
+                    <span>Authenticator or recovery code</span>
+                    <div class="auth-input">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/></svg>
+                        <input type="text" name="mfa_code" required autofocus autocomplete="one-time-code" inputmode="text" maxlength="11" placeholder="000000 or recovery code">
+                    </div>
+                </label>
+            <?php else: ?>
+                <label class="auth-field">
+                    <span>Username</span>
+                    <div class="auth-input"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 20c.3-4 2.5-6 7-6s6.7 2 7 6"/></svg><input type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" autofocus required autocomplete="username" placeholder="Administrator username" autocapitalize="none"></div>
+                </label>
+                <label class="auth-field">
+                    <span>Password</span>
+                    <div class="auth-input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle" data-toggle-password="login-password" aria-label="Show password"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z"/><circle cx="12" cy="12" r="2"/></svg></button></div>
+                </label>
+            <?php endif; ?>
+
+            <button type="submit" class="auth-submit"><span><?= $mfaPending ? 'Verify and continue' : 'Sign in securely' ?></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+            <button type="button" class="auth-install-action" data-install-app hidden>Install Hercule Admin</button>
+            <p class="auth-security-note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/></svg><?= $mfaPending ? 'Codes expire every 30 seconds. Five failed attempts cancel sign-in.' : 'Your session is protected and rate-limited.' ?></p>
+        </form>
+    </section>
+</main>
+<script>
+document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
+    button.addEventListener('click', function () {
+        var input = document.getElementById(button.dataset.togglePassword);
+        if (!input) return;
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+});
+</script>
+<script src="/public/admin/assets/js/pwa.js?v=3" defer></script>
+</body>
+</html>
