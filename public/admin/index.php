@@ -2,26 +2,36 @@
 require_once __DIR__ . '/includes/bootstrap.php';
 Auth::require();
 
-$username = Auth::currentUsername();
-$role = Auth::currentRole();
+$username = Auth::currentUsername() ?? 'Admin';
+$role = Auth::currentRole() ?? 'admin';
+$userId = Auth::currentUserId() ?? 1;
 
-// Load the compiled SPA index.html
-$spaHtmlFile = __DIR__ . '/../../dist/index.html';
-if (!file_exists($spaHtmlFile)) {
-    $spaHtmlFile = __DIR__ . '/../app.html';
-}
-if (!file_exists($spaHtmlFile)) {
-    $spaHtmlFile = __DIR__ . '/../index.html';
+// Load the compiled SPA index.html from any available location
+$candidateFiles = [
+    __DIR__ . '/../../dist/index.html',
+    __DIR__ . '/../app.html',
+    __DIR__ . '/../index.html',
+    __DIR__ . '/index.html',
+    dirname(__DIR__, 2) . '/dist/index.html',
+    dirname(__DIR__, 2) . '/index.html'
+];
+
+$spaHtmlFile = null;
+foreach ($candidateFiles as $file) {
+    if (file_exists($file)) {
+        $spaHtmlFile = $file;
+        break;
+    }
 }
 
-$html = file_exists($spaHtmlFile) ? file_get_contents($spaHtmlFile) : '';
+$html = $spaHtmlFile ? file_get_contents($spaHtmlFile) : '';
 
 if (!empty($html)) {
     // Inject bootstrap auth payload right before </head>
     $bootstrapJson = json_encode([
         'authenticated' => true,
         'user' => [
-            'id' => (int)Auth::currentUserId(),
+            'id' => $userId,
             'username' => $username,
             'role' => $role
         ],
@@ -31,8 +41,6 @@ if (!empty($html)) {
     $injection = "<script>window.HERCULE_BOOTSTRAP = {$bootstrapJson};</script></head>";
     $html = str_replace('</head>', $injection, $html);
 
-    // Adjust relative assets paths so they load seamlessly from /public/admin/
-    // Both ./assets/ and /assets/ and assets/ work
     echo $html;
     exit;
 }

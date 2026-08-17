@@ -379,6 +379,17 @@ final class Auth
         }
     }
 
+    public static function check(): bool
+    {
+        return self::isLoggedIn();
+    }
+
+    public static function currentUserId(): ?int
+    {
+        self::ensureSession();
+        return isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : null;
+    }
+
     public static function currentUsername(): ?string
     {
         self::ensureSession();
