@@ -31,7 +31,7 @@ try {
                 "SELECT a.*, l.license_key 
                  FROM license_activations a 
                  JOIN licenses l ON l.id = a.license_id 
-                 WHERE a.status = 'active'
+                 WHERE a.is_active = 1
                  ORDER BY a.activated_at DESC"
             )->fetchAll();
 
@@ -46,7 +46,7 @@ try {
                     'hostname' => $act['hostname'] ?? 'POS-TERMINAL',
                     'activated_at' => $act['activated_at'],
                     'last_seen_at' => $act['last_seen_at'] ?? $act['activated_at'],
-                    'status' => $act['status'],
+                    'status' => $act['is_active'] ? 'active' : 'inactive',
                     'app_version' => $act['app_version'] ?? 'v2.4.0'
                 ];
             }

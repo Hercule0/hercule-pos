@@ -9,7 +9,7 @@ $totalLicenses   = (int) $pdo->query("SELECT COUNT(*) FROM licenses")->fetchColu
 $activeLicenses  = (int) $pdo->query("SELECT COUNT(*) FROM licenses WHERE status = 'active'")->fetchColumn();
 $expiredLicenses = (int) $pdo->query("SELECT COUNT(*) FROM licenses WHERE status = 'expired'")->fetchColumn();
 $totalCustomers  = (int) $pdo->query("SELECT COUNT(*) FROM customers")->fetchColumn();
-$totalDevices    = (int) $pdo->query("SELECT COUNT(*) FROM license_activations WHERE status = 'active'")->fetchColumn();
+$totalDevices    = (int) $pdo->query("SELECT COUNT(*) FROM license_activations WHERE is_active = 1")->fetchColumn();
 $pendingRecovery = (int) $pdo->query("SELECT COUNT(*) FROM password_recovery_requests WHERE status = 'pending'")->fetchColumn();
 
 $expiringSoon = (int) $pdo->query(
@@ -20,7 +20,7 @@ $expiringSoon = (int) $pdo->query(
 $recentLicenses = $pdo->query(
     "SELECT l.id, l.license_key, l.plan, l.status, l.max_activations, l.expires_at, l.created_at,
             c.name AS customer_name,
-            (SELECT COUNT(*) FROM license_activations a WHERE a.license_id = l.id AND a.status = 'active') AS active_devices
+            (SELECT COUNT(*) FROM license_activations a WHERE a.license_id = l.id AND a.is_active = 1) AS active_devices
      FROM licenses l
      LEFT JOIN customers c ON c.id = l.customer_id
      ORDER BY l.created_at DESC
@@ -29,7 +29,7 @@ $recentLicenses = $pdo->query(
 
 // ── Pending recovery requests ────────────────────────────────────────────────
 $pendingRecoveries = $pdo->query(
-    "SELECT id, license_key, hwid, username, created_at
+    "SELECT id, license_key, hwid, requested_username AS username, created_at
      FROM password_recovery_requests
      WHERE status = 'pending'
      ORDER BY created_at DESC
