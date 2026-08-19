@@ -3,3 +3,7 @@ dist/
 .DS_Store
 *.log
 .env
+vendor/
+composer.phar
+create_push_table.php
+public/admin/test_push.php
