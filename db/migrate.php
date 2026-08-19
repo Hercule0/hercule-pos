@@ -120,6 +120,7 @@ $tables = [
     'license_change_notifications',
     'password_recovery_requests',
     'recovery_audit_log',
+    'push_subscriptions',
 ];
 
 foreach ($tables as $tableName) {
