@@ -229,7 +229,7 @@ flash_render();
                             if ($filterStatus === 'revoked') $badgeClass = 'badge-revoked';
                         ?>
                         <tr data-license-card data-status="<?= htmlspecialchars($filterStatus) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
-                            <td>
+                            <td data-label="License Key">
                                 <div class="cell-main" style="flex-direction:row; align-items:center; gap:8px;">
                                     <code dir="ltr" title="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>" style="font-size:13px; font-weight:600;"><?= htmlspecialchars($shortKey) ?></code>
                                     <button type="button" class="copy-key" style="background:transparent; border:none; cursor:pointer; color:var(--text-dim);" data-copy-key="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>" aria-label="Copy license key">
@@ -237,21 +237,21 @@ flash_render();
                                     </button>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Customer">
                                 <div class="cell-main">
                                     <strong><?= htmlspecialchars($l['customer_name']) ?></strong>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Plan">
                                 <span style="color:var(--text-dim); text-transform:capitalize;"><?= htmlspecialchars(str_replace('_', ' ', $l['plan'])) ?></span>
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 <span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($filterStatus) ?></span>
                             </td>
-                            <td>
+                            <td data-label="Expires">
                                 <span style="color:var(--text-dim);"><?= $l['expires_at'] ? htmlspecialchars(date('M j, Y', strtotime($l['expires_at']))) : 'Never' ?></span>
                             </td>
-                            <td>
+                            <td data-label="Actions">
                                 <div class="cell-actions">
                                     <a href="/public/admin/license_detail.php?id=<?= $l['id'] ?>" class="table-btn">
                                         Manage

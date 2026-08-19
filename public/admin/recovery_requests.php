@@ -112,28 +112,28 @@ flash_render();
                             if ($r['status'] === 'rejected' || $r['status'] === 'expired') $badgeClass = 'badge-expired';
                         ?>
                         <tr data-recovery-card data-status="<?= htmlspecialchars($r['status']) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
-                            <td>
+                            <td data-label="Request ID">
                                 <div class="cell-main">
                                     <strong>#<?= (int) $r['id'] ?></strong>
                                     <span><?= htmlspecialchars(date('M j, Y', strtotime($r['created_at']))) ?></span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="User & Customer">
                                 <div class="cell-main">
                                     <strong><?= htmlspecialchars($r['requested_username']) ?></strong>
                                     <span><?= htmlspecialchars($customerName) ?></span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="License & Plan">
                                 <div class="cell-main">
                                     <code dir="ltr" style="font-size:13px; font-weight:600;" title="<?= htmlspecialchars($r['license_key'], ENT_QUOTES) ?>"><?= htmlspecialchars(strlen($r['license_key']) > 16 ? '•••• ' . substr($r['license_key'], -12) : $r['license_key']) ?></code>
                                     <span><?= $li ? htmlspecialchars(str_replace('_', ' ', $li['plan'])) . ' plan' : 'N/A' ?></span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 <span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($r['status']) ?></span>
                             </td>
-                            <td>
+                            <td data-label="Actions">
                                 <div class="cell-actions">
                                     <button type="button" class="table-btn" data-open-recovery-dialog="recovery-dialog-<?= (int) $r['id'] ?>">
                                         <?= $r['status'] === 'pending' ? 'Review' : 'Details' ?>

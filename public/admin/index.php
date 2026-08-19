@@ -158,28 +158,28 @@ render_header('Dashboard');
                             if ($lic['status'] === 'revoked') $badgeClass = 'badge-revoked';
                         ?>
                         <tr>
-                            <td>
+                            <td data-label="License Key">
                                 <div class="cell-main">
                                     <a href="/public/admin/license_detail.php?id=<?= $lic['id'] ?>" class="license-key-link" style="background:transparent; border:none; padding:0;">
                                         <code dir="ltr" style="font-size:13px; font-weight:600; color:var(--text);"><?= htmlspecialchars($lic['license_key']) ?></code>
                                     </a>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Customer">
                                 <div class="cell-main">
                                     <strong><?= htmlspecialchars($lic['customer_name'] ?? '—') ?></strong>
                                 </div>
                             </td>
-                            <td><span style="color:var(--text-dim); text-transform:capitalize;"><?= htmlspecialchars(str_replace('_', ' ', $lic['plan'])) ?></span></td>
-                            <td>
+                            <td data-label="Plan"><span style="color:var(--text-dim); text-transform:capitalize;"><?= htmlspecialchars(str_replace('_', ' ', $lic['plan'])) ?></span></td>
+                            <td data-label="Devices">
                                 <span style="color:var(--text-dim);"><?= (int)$lic['active_devices'] ?> / <?= (int)$lic['max_activations'] ?></span>
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 <span class="badge <?= $badgeClass ?>">
                                     <?= htmlspecialchars(ucfirst($lic['status'])) ?>
                                 </span>
                             </td>
-                            <td>
+                            <td data-label="Expires">
                                 <span style="color:var(--text-dim);" class="<?= (!empty($lic['expires_at']) && strtotime($lic['expires_at']) < strtotime('+30 days')) ? 'text-amber' : '' ?>">
                                     <?= $lic['expires_at'] ? date('M j, Y', strtotime($lic['expires_at'])) : 'Lifetime' ?>
                                 </span>

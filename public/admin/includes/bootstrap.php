@@ -506,6 +506,14 @@ function render_footer(): void
         });
     }
 
+    // Mobile sidebar toggle
+    var mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    if (mobileMenuToggle) {
+        mobileMenuToggle.addEventListener('click', function () {
+            document.body.classList.toggle('sidebar-open');
+        });
+    }
+
     // Start live polling after load
     setTimeout(pollRecovery, 800);
 })();
