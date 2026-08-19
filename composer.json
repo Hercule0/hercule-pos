@@ -1,0 +1,15 @@
+{
+    "name": "hercule/pos",
+    "description": "Hercule POS License Engine",
+    "type": "project",
+    "authors": [
+        {
+            "name": "hercule0",
+            "email": "11mosta22@gmail.com"
+        }
+    ],
+    "require": {
+        "minishlink/web-push": "^11.0",
+        "guzzlehttp/guzzle": "*"
+    }
+}
