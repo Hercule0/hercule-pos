@@ -108,13 +108,17 @@ final class Auth
             return false;
         }
 
-        // Verify Trusted Device (IP and User-Agent)
+        // Removed strict Trusted Device (IP and User-Agent) verification
+        // PWAs on mobile networks frequently change IP addresses, and the standalone
+        // User-Agent can differ slightly from the browser User-Agent.
+        /*
         $currentIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         $currentUa = $_SERVER['HTTP_USER_AGENT'] ?? '';
         if ($session['ip_address'] !== $currentIp || $session['user_agent'] !== $currentUa) {
             self::clearRememberCookie();
             return false;
         }
+        */
 
         // Check if user is still active
         if (empty($session['is_active'])) {
