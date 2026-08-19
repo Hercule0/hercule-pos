@@ -667,10 +667,256 @@ body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; li
 .icon-link { color: var(--accent); text-decoration: none; font-size: 13px; }
 
 /* ---------- Badges ---------- */
-.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.badge-active, .badge-ok { background: rgba(63,187,109,0.15); color: var(--success); }
-.badge-expired, .badge-suspended { background: rgba(224,168,63,0.15); color: var(--warning); }
-.badge-revoked, .badge-invalid_key, .badge-hwid_mismatch, .badge-activation_limit { background: rgba(240,87,93,0.15); color: var(--danger); }
+.badge { 
+    display: inline-flex; align-items: center; gap: 6px; 
+    padding: 4px 10px; border-radius: 99px; 
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; 
+    border: 1px solid transparent; background: transparent; 
+}
+.badge::before { content: ''; display: block; width: 6px; height: 6px; border-radius: 50%; }
+
+.badge-active, .badge-ok { color: var(--success); border-color: rgba(16,185,129,0.3); }
+.badge-active::before, .badge-ok::before { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+.badge-expired, .badge-suspended { color: var(--warning); border-color: rgba(245,158,11,0.3); }
+.badge-expired::before, .badge-suspended::before { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+
+.badge-revoked, .badge-invalid_key, .badge-hwid_mismatch, .badge-activation_limit { color: var(--danger); border-color: rgba(244,63,94,0.3); }
+.badge-revoked::before, .badge-invalid_key::before, .badge-hwid_mismatch::before, .badge-activation_limit::before { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+.badge-pending { color: var(--accent); border-color: rgba(56,189,248,0.3); }
+.badge-pending::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+/* ---------- Pill Filters ---------- */
+.pill-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.pill-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.pill-filter:hover { border-color: var(--border-light); color: var(--text); }
+.pill-filter.active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
+.pill-filter .count {
+    background: rgba(255,255,255,0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+}
+.pill-filter.active .count { background: rgba(0,0,0,0.2); }
+
+/* ---------- Grid Cards (Customers & Admins) ---------- */
+.grid-cards-wrapper {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+.grid-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+}
+.grid-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+.grid-card-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #0b0f17;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+.grid-card-title-group {
+    flex: 1;
+    min-width: 0;
+}
+.grid-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.grid-card-subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+}
+.grid-card-actions {
+    display: flex;
+    gap: 4px;
+}
+.grid-card-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+}
+.grid-card-action-btn:hover { color: var(--accent); background: rgba(255,255,255,0.05); }
+.grid-card-action-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.grid-card-body {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    flex: 1;
+}
+.grid-card-info-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.grid-card-info-row svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; opacity: 0.7; }
+.grid-card-note {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+    font-style: italic;
+    opacity: 0.8;
+}
+.grid-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+.grid-card-stats {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+.grid-card-stats strong { color: var(--text); }
+.grid-card-stats .text-emerald { color: #34d399; }
+.grid-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.grid-card-btn:hover { background: var(--accent); color: #0b0f17; }
+.grid-card-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.5; }
+
+/* ---------- Modern Table Layout (Licenses) ---------- */
+.modern-table-wrapper {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+.modern-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 13px;
+}
+.modern-table th {
+    background: var(--panel-alt);
+    padding: 14px 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+}
+.modern-table td {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.modern-table tr:last-child td {
+    border-bottom: none;
+}
+.modern-table tbody tr {
+    transition: background-color 0.2s;
+}
+.modern-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+.modern-table .cell-main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.modern-table .cell-main strong {
+    color: var(--text);
+    font-size: 14px;
+}
+.modern-table .cell-main span {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+.modern-table .cell-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.modern-table .table-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.modern-table .table-btn:hover {
+    background: var(--panel-alt);
+    border-color: var(--border-light);
+}
+.modern-table .table-btn-danger {
+    color: var(--danger);
+    border-color: rgba(244, 63, 94, 0.3);
+}
+.modern-table .table-btn-danger:hover {
+    background: rgba(244, 63, 94, 0.1);
+    border-color: var(--danger);
+}
 
 /* ---------- Mobile & Desktop app shell ---------- */
 .nav-icon { display: none; }

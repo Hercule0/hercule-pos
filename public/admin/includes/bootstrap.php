@@ -479,7 +479,7 @@ function render_footer(): void
     <?php
 }
 
-function flash_set(string $type, string $message): void
+function flash_set(string $message, string $type = 'success'): void
 {
     $_SESSION['flash'] = ['type' => $type, 'message' => $message];
 }

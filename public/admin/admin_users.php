@@ -153,43 +153,58 @@ render_header('Administrators');
         </form>
     </section>
 
-    <section class="admin-list">
+    <section class="grid-cards-wrapper">
         <?php foreach ($admins as $admin): ?>
-            <article class="admin-account-card <?= $admin['is_active'] ? '' : 'is-disabled' ?>">
-                <div class="admin-account-head">
-                    <span class="account-avatar"><?= strtoupper(htmlspecialchars(substr($admin['username'], 0, 1))) ?></span>
-                    <div><h2><?= htmlspecialchars($admin['username']) ?><?= (int) $admin['id'] === $currentAdminId ? ' (You)' : '' ?></h2><p><?= htmlspecialchars(ucwords(str_replace('_', ' ', $admin['role']))) ?> · <?= $admin['is_active'] ? 'Active' : 'Disabled' ?></p></div>
-                    <span class="status-pill <?= $admin['is_active'] ? 'active' : 'revoked' ?>"><?= $admin['is_active'] ? 'Active' : 'Disabled' ?></span>
-                </div>
-                <div class="admin-security-flags">
-                    <span><?= $admin['totp_enabled'] ? '✓ MFA enabled' : '○ MFA not enabled' ?></span>
-                    <?php if ($admin['must_change_password']): ?><span>! Password change required</span><?php endif; ?>
-                </div>
-                <?php if ((int) $admin['id'] !== $currentAdminId): ?>
-                <div class="admin-account-actions">
-                    <form method="post">
-                        <?= Csrf::field() ?><input type="hidden" name="action" value="change_role"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                        <select name="role"><?php foreach ($roles as $role): ?><option value="<?= $role ?>" <?= $role === $admin['role'] ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select>
-                        <input type="password" name="current_password" required placeholder="Your password" autocomplete="current-password">
-                        <button type="submit">Update role</button>
-                    </form>
-                    <form method="post">
-                        <?= Csrf::field() ?><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                        <input type="password" name="current_password" required placeholder="Your password" autocomplete="current-password">
-                        <button type="submit"><?= $admin['is_active'] ? 'Disable' : 'Enable' ?></button>
-                    </form>
-                    <?php if ($admin['totp_enabled']): ?>
-                    <form method="post" onsubmit="return confirm('Reset MFA for this administrator?');">
-                        <?= Csrf::field() ?><input type="hidden" name="action" value="reset_mfa"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>"><input type="hidden" name="confirm_reset_mfa" value="1">
-                        <input type="password" name="current_password" required placeholder="Your password" autocomplete="current-password">
-                        <button type="submit">Reset MFA</button>
-                    </form>
+            <article class="grid-card <?= $admin['is_active'] ? '' : 'is-disabled' ?>" style="<?= !$admin['is_active'] ? 'opacity: 0.6;' : '' ?>">
+                <div class="grid-card-header" style="margin-bottom: 12px;">
+                    <div class="grid-card-avatar" style="<?= $admin['role'] === 'owner' ? 'background: #3b82f6;' : '' ?>"><?= strtoupper(htmlspecialchars(substr($admin['username'], 0, 1))) ?></div>
+                    <div class="grid-card-title-group">
+                        <h2 class="grid-card-title"><?= htmlspecialchars($admin['username']) ?><?= (int) $admin['id'] === $currentAdminId ? ' (You)' : '' ?></h2>
+                        <div class="grid-card-subtitle" style="display:flex; gap:6px; margin-top:6px;">
+                            <span class="badge badge-<?= $admin['role'] === 'owner' ? 'active' : ($admin['role'] === 'support' ? 'pending' : 'expired') ?>"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $admin['role']))) ?></span>
+                            <?= $admin['is_active'] ? '' : '<span class="badge badge-revoked">DISABLED</span>' ?>
+                        </div>
+                    </div>
+                    <?php if ((int) $admin['id'] !== $currentAdminId): ?>
+                    <div class="grid-card-actions">
+                        <form method="post" onsubmit="return confirm('Permanently delete this administrator?');" style="display:inline;">
+                            <?= Csrf::field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
+                            <!-- Assuming the user enters password before submitting -->
+                            <button type="button" class="grid-card-action-btn" title="Delete Admin" onclick="const p = prompt('Enter your password to delete:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }">
+                                <svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                        </form>
+                    </div>
                     <?php endif; ?>
-                    <form method="post" onsubmit="return confirm('Permanently delete this administrator?');">
-                        <?= Csrf::field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                        <input type="password" name="current_password" required placeholder="Your password" autocomplete="current-password">
-                        <button type="submit" class="danger">Delete</button>
+                </div>
+                
+                <div class="grid-card-body" style="margin-bottom: 12px;">
+                    <div class="grid-card-info-row">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span dir="auto">Added <?= date('Y-m-d', strtotime($admin['created_at'])) ?></span>
+                    </div>
+                    <div class="grid-card-info-row">
+                        <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span dir="auto"><?= $admin['totp_enabled'] ? 'MFA Active' : 'MFA Inactive' ?></span>
+                    </div>
+                    <?php if ($admin['must_change_password']): ?>
+                    <div class="grid-card-note text-amber">Password change required on next login.</div>
+                    <?php endif; ?>
+                </div>
+
+                <?php if ((int) $admin['id'] !== $currentAdminId): ?>
+                <div class="grid-card-footer" style="flex-direction: column; gap: 8px; align-items: stretch;">
+                    <form method="post" style="display:flex; gap:6px;">
+                        <?= Csrf::field() ?><input type="hidden" name="action" value="change_role"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
+                        <select name="role" style="background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px; font-size:11px; flex:1;"><?php foreach ($roles as $role): ?><option value="<?= $role ?>" <?= $role === $admin['role'] ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select>
+                        <button type="button" class="grid-card-btn" style="padding:4px 8px; flex-shrink:0;" onclick="const p = prompt('Enter your password to update role:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }">Update</button>
                     </form>
+                    <div style="display:flex; gap:6px;">
+                        <form method="post" style="flex:1;">
+                            <?= Csrf::field() ?><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
+                            <button type="button" class="grid-card-btn" style="width:100%; justify-content:center; <?= $admin['is_active'] ? 'color:var(--warning); border-color:var(--warning);' : 'color:var(--success); border-color:var(--success);' ?>" onclick="const p = prompt('Enter your password to toggle access:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }"><?= $admin['is_active'] ? 'Disable Access' : 'Enable Access' ?></button>
+                        </form>
+                    </div>
                 </div>
                 <?php endif; ?>
             </article>

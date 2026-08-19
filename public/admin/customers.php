@@ -59,9 +59,12 @@ $totalPages = max(1, (int) ceil($totalCustomers / $perPage));
 $currentPage = min($currentPage, $totalPages);
 $offset = ($currentPage - 1) * $perPage;
 
-$sql = "SELECT c.*, COUNT(l.id) AS license_count
+$sql = "SELECT c.*, 
+            COUNT(DISTINCT l.id) AS license_count,
+            COUNT(DISTINCT a.id) AS device_count
         FROM customers c
-        LEFT JOIN licenses l ON l.customer_id = c.id"
+        LEFT JOIN licenses l ON l.customer_id = c.id
+        LEFT JOIN license_activations a ON a.license_id = l.id AND a.is_active = 1"
         . $whereSql .
        " GROUP BY c.id
          ORDER BY c.created_at DESC
@@ -123,7 +126,7 @@ flash_render();
             <?php endif; ?>
         </section>
     <?php else: ?>
-        <section class="customer-grid" id="customer-grid" aria-live="polite">
+        <section class="grid-cards-wrapper" id="customer-grid" aria-live="polite">
             <?php foreach ($customers as $c): ?>
                 <?php
                     $searchText = implode(' ', [
@@ -132,56 +135,48 @@ flash_render();
                         $c['phone'] ?? ''
                     ]);
                 ?>
-                <article class="customer-card" data-customer-card data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
-                    <div class="customer-card-head">
-                        <span class="customer-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($c['name'], 0, 1))) ?></span>
-                        <div class="customer-identity">
-                            <h2 dir="auto"><?= htmlspecialchars($c['name']) ?></h2>
-                            <span>Added <?= htmlspecialchars(date('M j, Y', strtotime($c['created_at']))) ?></span>
+                <article class="grid-card" data-customer-card data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
+                    <div class="grid-card-header">
+                        <div class="grid-card-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($c['name'], 0, 1))) ?></div>
+                        <div class="grid-card-title-group">
+                            <h2 class="grid-card-title" dir="auto"><?= htmlspecialchars($c['name']) ?></h2>
+                            <div class="grid-card-subtitle">ID #<?= $c['id'] ?> • Added <?= htmlspecialchars(date('Y-m-d', strtotime($c['created_at']))) ?></div>
                         </div>
-                        <details class="card-menu">
-                            <summary aria-label="Customer actions">
-                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-                            </summary>
-                            <div class="card-menu-popover">
-                                <a href="/public/admin/licenses.php?customer_id=<?= $c['id'] ?>">
-                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10a4 4 0 0 1 0 8H9l-3 3v-3H4a4 4 0 0 1 0-8z"/></svg>
-                                    View licenses
-                                </a>
-                                <form method="post" onsubmit="return confirm('Delete customer &quot;<?= htmlspecialchars($c['name'], ENT_QUOTES) ?>&quot; and ALL <?= (int) $c['license_count'] ?> of their licenses? This is irreversible.');">
-                                    <?= Csrf::field() ?>
-                                    <input type="hidden" name="form_action" value="delete">
-                                    <input type="hidden" name="customer_id" value="<?= $c['id'] ?>">
-                                    <button type="submit" class="menu-danger">
-                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 13h10l1-13"/></svg>
-                                        Delete customer
-                                    </button>
-                                </form>
-                            </div>
-                        </details>
+                        <div class="grid-card-actions">
+                            <form method="post" onsubmit="return confirm('Delete customer &quot;<?= htmlspecialchars($c['name'], ENT_QUOTES) ?>&quot; and ALL <?= (int) $c['license_count'] ?> of their licenses? This is irreversible.');" style="display:inline;">
+                                <?= Csrf::field() ?>
+                                <input type="hidden" name="form_action" value="delete">
+                                <input type="hidden" name="customer_id" value="<?= $c['id'] ?>">
+                                <button type="submit" class="grid-card-action-btn" title="Delete customer">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                </button>
+                            </form>
+                        </div>
                     </div>
 
-                    <div class="customer-contact">
-                        <a href="<?= $c['phone'] ? 'tel:' . htmlspecialchars($c['phone'], ENT_QUOTES) : '#' ?>" class="<?= $c['phone'] ? '' : 'is-empty' ?>">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4 4.5 6.5c.5 6.5 6.5 12.5 13 13L20 17l-4-3-2 2c-2.5-1-5-3.5-6-6l2-2z"/></svg>
-                            <span dir="auto"><?= htmlspecialchars($c['phone'] ?? 'No phone number') ?></span>
-                        </a>
-                        <a href="<?= $c['email'] ? 'mailto:' . htmlspecialchars($c['email'], ENT_QUOTES) : '#' ?>" class="<?= $c['email'] ? '' : 'is-empty' ?>">
+                    <div class="grid-card-body">
+                        <div class="grid-card-info-row">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
                             <span dir="auto"><?= htmlspecialchars($c['email'] ?? 'No email address') ?></span>
-                        </a>
+                        </div>
+                        <div class="grid-card-info-row">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            <span dir="auto"><?= htmlspecialchars($c['phone'] ?? 'No phone number') ?></span>
+                        </div>
+                        <?php if (!empty($c['notes'])): ?>
+                            <div class="grid-card-note"><?= htmlspecialchars($c['notes']) ?></div>
+                        <?php endif; ?>
                     </div>
 
-                    <a href="/public/admin/licenses.php?customer_id=<?= $c['id'] ?>" class="customer-card-footer">
-                        <span>
-                            <strong><?= (int) $c['license_count'] ?></strong>
-                            license<?= (int) $c['license_count'] === 1 ? '' : 's' ?>
-                        </span>
-                        <span class="view-customer">
-                            View
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                        </span>
-                    </a>
+                    <div class="grid-card-footer">
+                        <div class="grid-card-stats">
+                            <strong><?= (int) $c['license_count'] ?> active license<?= (int) $c['license_count'] === 1 ? '' : 's' ?></strong><br>
+                            <span class="text-emerald"><?= (int) $c['device_count'] ?? 0 ?> bound POS devices</span>
+                        </div>
+                        <a href="/public/admin/licenses.php?action=new&customer_id=<?= $c['id'] ?>" class="grid-card-btn">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Issue Key
+                        </a>
+                    </div>
                 </article>
             <?php endforeach; ?>
         </section>

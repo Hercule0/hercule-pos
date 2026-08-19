@@ -181,10 +181,10 @@ flash_render();
                 <kbd id="license-result-count"><?= count($licenses) ?></kbd>
             </label>
         </form>
-        <div class="filter-chips" id="license-filters" role="group" aria-label="Filter licenses">
+        <div class="pill-filters" id="license-filters" role="group" aria-label="Filter licenses">
             <?php foreach (['all' => 'All', 'active' => 'Active', 'expiring' => 'Expiring', 'expired' => 'Expired'] as $value => $label): ?>
-                <a href="<?= htmlspecialchars($licensePageUrl(1, $value), ENT_QUOTES) ?>" class="<?= $value === $statusFilter ? 'active' : '' ?>" <?= $value === $statusFilter ? 'aria-current="page"' : '' ?>>
-                    <?= $label ?><span><?= $licenseCounts[$value] ?></span>
+                <a href="<?= htmlspecialchars($licensePageUrl(1, $value), ENT_QUOTES) ?>" class="pill-filter <?= $value === $statusFilter ? 'active' : '' ?>" <?= $value === $statusFilter ? 'aria-current="page"' : '' ?>>
+                    <?= $label ?><span class="count"><?= $licenseCounts[$value] ?></span>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -204,77 +204,65 @@ flash_render();
             <?php endif; ?>
         </section>
     <?php else: ?>
-        <section class="license-grid" id="license-grid" aria-live="polite">
-            <?php foreach ($licenses as $l): ?>
-                <?php
-                    $filterStatus = $l['is_expiring'] ? 'expiring' : $l['status'];
-                    $searchText = implode(' ', [$l['license_key'], $l['customer_name'], $l['plan'], $l['status']]);
-                    $shortKey = strlen($l['license_key']) > 13 ? '•••• ' . substr($l['license_key'], -9) : $l['license_key'];
-                ?>
-                <article class="license-card" data-license-card data-status="<?= htmlspecialchars($filterStatus) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
-                    <div class="license-card-head">
-                        <span class="license-customer-avatar" aria-hidden="true"><?= strtoupper(htmlspecialchars(substr($l['customer_name'], 0, 1))) ?></span>
-                        <div class="license-identity">
-                            <h2 dir="auto"><?= htmlspecialchars($l['customer_name']) ?></h2>
-                            <span><?= htmlspecialchars(str_replace('_', ' ', $l['plan'])) ?> plan</span>
-                        </div>
-                        <span class="license-status status-<?= htmlspecialchars($filterStatus) ?>"><?= htmlspecialchars($filterStatus) ?></span>
-                    </div>
-
-                    <div class="license-key-row">
-                        <div>
-                            <span>License key</span>
-                            <code dir="ltr" title="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>"><?= htmlspecialchars($shortKey) ?></code>
-                        </div>
-                        <button type="button" class="copy-key" data-copy-key="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>" aria-label="Copy license key">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5H5v11h3"/></svg>
-                        </button>
-                    </div>
-
-                    <div class="license-facts">
-                        <div>
-                            <span>Expires</span>
-                            <strong><?= $l['expires_at'] ? htmlspecialchars(date('M j, Y', strtotime($l['expires_at']))) : 'Never' ?></strong>
-                        </div>
-                        <div>
-                            <span>Devices</span>
-                            <strong><?= (int) $l['max_activations'] ?></strong>
-                        </div>
-                        <div>
-                            <span>Created</span>
-                            <strong><?= htmlspecialchars(date('M j, Y', strtotime($l['created_at']))) ?></strong>
-                        </div>
-                    </div>
-
-                    <div class="license-card-actions">
-                        <a href="/public/admin/license_detail.php?id=<?= $l['id'] ?>" class="license-view-action">
-                            View details
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                        </a>
-                        <details class="card-menu">
-                            <summary aria-label="License actions">
-                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-                            </summary>
-                            <div class="card-menu-popover">
-                                <a href="/public/admin/license_detail.php?id=<?= $l['id'] ?>">
-                                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg>
-                                    Manage license
-                                </a>
-                                <form method="post" onsubmit="return confirm('Permanently delete license &quot;<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>&quot;? This cannot be undone.');">
-                                    <?= Csrf::field() ?>
-                                    <input type="hidden" name="form_action" value="delete">
-                                    <input type="hidden" name="license_id" value="<?= $l['id'] ?>">
-                                    <button type="submit" class="menu-danger">
-                                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 13h10l1-13"/></svg>
-                                        Delete license
+        <div class="modern-table-wrapper">
+            <table class="modern-table">
+                <thead>
+                    <tr>
+                        <th>License Key</th>
+                        <th>Customer</th>
+                        <th>Plan</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="license-grid" aria-live="polite">
+                    <?php foreach ($licenses as $l): ?>
+                        <?php
+                            $filterStatus = $l['is_expiring'] ? 'expiring' : $l['status'];
+                            $searchText = implode(' ', [$l['license_key'], $l['customer_name'], $l['plan'], $l['status']]);
+                            $shortKey = strlen($l['license_key']) > 16 ? '•••• ' . substr($l['license_key'], -12) : $l['license_key'];
+                            
+                            $badgeClass = 'badge-ok';
+                            if ($filterStatus === 'expiring') $badgeClass = 'badge-pending';
+                            if ($filterStatus === 'expired' || $filterStatus === 'suspended') $badgeClass = 'badge-expired';
+                            if ($filterStatus === 'revoked') $badgeClass = 'badge-revoked';
+                        ?>
+                        <tr data-license-card data-status="<?= htmlspecialchars($filterStatus) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
+                            <td>
+                                <div class="cell-main" style="flex-direction:row; align-items:center; gap:8px;">
+                                    <code dir="ltr" title="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>" style="font-size:13px; font-weight:600;"><?= htmlspecialchars($shortKey) ?></code>
+                                    <button type="button" class="copy-key" style="background:transparent; border:none; cursor:pointer; color:var(--text-dim);" data-copy-key="<?= htmlspecialchars($l['license_key'], ENT_QUOTES) ?>" aria-label="Copy license key">
+                                        <svg viewBox="0 0 24 24" style="width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2;"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5H5v11h3"/></svg>
                                     </button>
-                                </form>
-                            </div>
-                        </details>
-                    </div>
-                </article>
-            <?php endforeach; ?>
-        </section>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="cell-main">
+                                    <strong><?= htmlspecialchars($l['customer_name']) ?></strong>
+                                </div>
+                            </td>
+                            <td>
+                                <span style="color:var(--text-dim); text-transform:capitalize;"><?= htmlspecialchars(str_replace('_', ' ', $l['plan'])) ?></span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($filterStatus) ?></span>
+                            </td>
+                            <td>
+                                <span style="color:var(--text-dim);"><?= $l['expires_at'] ? htmlspecialchars(date('M j, Y', strtotime($l['expires_at']))) : 'Never' ?></span>
+                            </td>
+                            <td>
+                                <div class="cell-actions">
+                                    <a href="/public/admin/license_detail.php?id=<?= $l['id'] ?>" class="table-btn">
+                                        Manage
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
 
         <?php if ($totalPages > 1): ?>
             <nav class="app-pagination" aria-label="License pages">

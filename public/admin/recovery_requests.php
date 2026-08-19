@@ -71,10 +71,10 @@ flash_render();
             <input id="recovery-search" type="search" placeholder="Search username, customer, or key" autocomplete="off">
             <kbd id="recovery-result-count"><?= count($requests) ?></kbd>
         </label>
-        <div class="filter-chips" id="recovery-filters" role="group" aria-label="Filter requests">
+        <div class="pill-filters" id="recovery-filters" role="group" aria-label="Filter requests">
             <?php foreach (['all' => 'All', 'pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected', 'expired' => 'Expired'] as $value => $label): ?>
-                <button type="button" data-recovery-filter="<?= $value ?>" class="<?= $value === 'all' ? 'active' : '' ?>">
-                    <?= $label ?><span><?= $recoveryCounts[$value] ?></span>
+                <button type="button" data-recovery-filter="<?= $value ?>" class="pill-filter <?= $value === 'all' ? 'active' : '' ?>" style="background:var(--panel-alt); cursor:pointer;">
+                    <?= $label ?><span class="count"><?= $recoveryCounts[$value] ?></span>
                 </button>
             <?php endforeach; ?>
         </div>
@@ -89,40 +89,58 @@ flash_render();
             <p>New requests from locked-out users will appear here.</p>
         </section>
     <?php else: ?>
-        <section class="recovery-list" id="recovery-list" aria-live="polite">
-            <?php foreach ($requests as $r): ?>
-                <?php
-                    $li = $r['_license_info'];
-                    $customerName = $li['customer_name'] ?? 'Unknown customer';
-                    $searchText = implode(' ', [$r['requested_username'], $customerName, $r['license_key'], $r['status']]);
-                ?>
-                <article class="recovery-card status-border-<?= htmlspecialchars($r['status']) ?>" data-recovery-card data-status="<?= htmlspecialchars($r['status']) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
-                    <div class="recovery-card-icon status-icon-<?= htmlspecialchars($r['status']) ?>">
-                        <?php if ($r['status'] === 'pending'): ?>?
-                        <?php elseif ($r['status'] === 'approved'): ?>✓
-                        <?php elseif ($r['status'] === 'rejected'): ?>×
-                        <?php else: ?>!
-                        <?php endif; ?>
-                    </div>
-                    <div class="recovery-card-main">
-                        <div class="recovery-card-title">
-                            <div>
-                                <h2 dir="auto"><?= htmlspecialchars($r['requested_username']) ?></h2>
-                                <span dir="auto"><?= htmlspecialchars($customerName) ?></span>
-                            </div>
-                            <span class="license-status status-<?= htmlspecialchars($r['status']) ?>"><?= htmlspecialchars($r['status']) ?></span>
-                        </div>
-                        <div class="recovery-card-meta">
-                            <span>Request #<?= (int) $r['id'] ?></span>
-                            <span><?= htmlspecialchars(date('M j, Y · H:i', strtotime($r['created_at']))) ?></span>
-                            <?php if ($li): ?><span><?= htmlspecialchars(str_replace('_', ' ', $li['plan'])) ?> plan</span><?php endif; ?>
-                        </div>
-                    </div>
-                    <button type="button" class="recovery-open" data-open-recovery-dialog="recovery-dialog-<?= (int) $r['id'] ?>">
-                        <span><?= $r['status'] === 'pending' ? 'Review' : 'Details' ?></span>
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                    </button>
-                </article>
+        <div class="modern-table-wrapper">
+            <table class="modern-table">
+                <thead>
+                    <tr>
+                        <th>Request ID</th>
+                        <th>User & Customer</th>
+                        <th>License & Plan</th>
+                        <th>Status</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="recovery-list" aria-live="polite">
+                    <?php foreach ($requests as $r): ?>
+                        <?php
+                            $li = $r['_license_info'];
+                            $customerName = $li['customer_name'] ?? 'Unknown customer';
+                            $searchText = implode(' ', [$r['requested_username'], $customerName, $r['license_key'], $r['status']]);
+                            
+                            $badgeClass = 'badge-ok';
+                            if ($r['status'] === 'pending') $badgeClass = 'badge-pending';
+                            if ($r['status'] === 'rejected' || $r['status'] === 'expired') $badgeClass = 'badge-expired';
+                        ?>
+                        <tr data-recovery-card data-status="<?= htmlspecialchars($r['status']) ?>" data-search="<?= htmlspecialchars($searchText, ENT_QUOTES) ?>">
+                            <td>
+                                <div class="cell-main">
+                                    <strong>#<?= (int) $r['id'] ?></strong>
+                                    <span><?= htmlspecialchars(date('M j, Y', strtotime($r['created_at']))) ?></span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="cell-main">
+                                    <strong><?= htmlspecialchars($r['requested_username']) ?></strong>
+                                    <span><?= htmlspecialchars($customerName) ?></span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="cell-main">
+                                    <code dir="ltr" style="font-size:13px; font-weight:600;" title="<?= htmlspecialchars($r['license_key'], ENT_QUOTES) ?>"><?= htmlspecialchars(strlen($r['license_key']) > 16 ? '•••• ' . substr($r['license_key'], -12) : $r['license_key']) ?></code>
+                                    <span><?= $li ? htmlspecialchars(str_replace('_', ' ', $li['plan'])) . ' plan' : 'N/A' ?></span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($r['status']) ?></span>
+                            </td>
+                            <td>
+                                <div class="cell-actions">
+                                    <button type="button" class="table-btn" data-open-recovery-dialog="recovery-dialog-<?= (int) $r['id'] ?>">
+                                        <?= $r['status'] === 'pending' ? 'Review' : 'Details' ?>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
 
                 <dialog class="app-dialog recovery-dialog" id="recovery-dialog-<?= (int) $r['id'] ?>">
                     <div class="recovery-dialog-content">
@@ -200,7 +218,9 @@ flash_render();
                     </div>
                 </dialog>
             <?php endforeach; ?>
-        </section>
+                </tbody>
+            </table>
+        </div>
 
         <div class="search-empty" id="recovery-search-empty" hidden>
             <strong>No matching requests</strong>

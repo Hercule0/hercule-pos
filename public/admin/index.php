@@ -135,8 +135,8 @@ render_header('Dashboard');
                 <h2 class="panel-title">Recent Licenses</h2>
                 <a href="/public/admin/licenses.php" class="panel-link">View all →</a>
             </div>
-            <div class="table-scroll">
-                <table class="data-table">
+            <div class="modern-table-wrapper">
+                <table class="modern-table">
                     <thead>
                         <tr>
                             <th>License Key</th>
@@ -152,22 +152,37 @@ render_header('Dashboard');
                         <tr><td colspan="6" class="table-empty">No licenses yet. <a href="/public/admin/licenses.php?action=new">Issue one →</a></td></tr>
                         <?php else: ?>
                         <?php foreach ($recentLicenses as $lic): ?>
+                        <?php
+                            $badgeClass = 'badge-ok';
+                            if ($lic['status'] === 'suspended' || $lic['status'] === 'expired') $badgeClass = 'badge-expired';
+                            if ($lic['status'] === 'revoked') $badgeClass = 'badge-revoked';
+                        ?>
                         <tr>
                             <td>
-                                <a href="/public/admin/license_detail.php?id=<?= $lic['id'] ?>" class="license-key-link">
-                                    <?= htmlspecialchars($lic['license_key']) ?>
-                                </a>
+                                <div class="cell-main">
+                                    <a href="/public/admin/license_detail.php?id=<?= $lic['id'] ?>" class="license-key-link" style="background:transparent; border:none; padding:0;">
+                                        <code dir="ltr" style="font-size:13px; font-weight:600; color:var(--text);"><?= htmlspecialchars($lic['license_key']) ?></code>
+                                    </a>
+                                </div>
                             </td>
-                            <td><?= htmlspecialchars($lic['customer_name'] ?? '—') ?></td>
-                            <td><span class="badge badge-plan"><?= htmlspecialchars($lic['plan']) ?></span></td>
-                            <td><?= (int)$lic['active_devices'] ?> / <?= (int)$lic['max_activations'] ?></td>
                             <td>
-                                <span class="status-badge status-<?= htmlspecialchars($lic['status']) ?>">
+                                <div class="cell-main">
+                                    <strong><?= htmlspecialchars($lic['customer_name'] ?? '—') ?></strong>
+                                </div>
+                            </td>
+                            <td><span style="color:var(--text-dim); text-transform:capitalize;"><?= htmlspecialchars(str_replace('_', ' ', $lic['plan'])) ?></span></td>
+                            <td>
+                                <span style="color:var(--text-dim);"><?= (int)$lic['active_devices'] ?> / <?= (int)$lic['max_activations'] ?></span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $badgeClass ?>">
                                     <?= htmlspecialchars(ucfirst($lic['status'])) ?>
                                 </span>
                             </td>
-                            <td class="<?= (!empty($lic['expires_at']) && strtotime($lic['expires_at']) < strtotime('+30 days')) ? 'text-amber' : '' ?>">
-                                <?= $lic['expires_at'] ? date('M j, Y', strtotime($lic['expires_at'])) : 'Lifetime' ?>
+                            <td>
+                                <span style="color:var(--text-dim);" class="<?= (!empty($lic['expires_at']) && strtotime($lic['expires_at']) < strtotime('+30 days')) ? 'text-amber' : '' ?>">
+                                    <?= $lic['expires_at'] ? date('M j, Y', strtotime($lic['expires_at'])) : 'Lifetime' ?>
+                                </span>
                             </td>
                         </tr>
                         <?php endforeach; ?>
