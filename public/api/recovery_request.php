@@ -25,9 +25,28 @@ if (!RateLimiter::check(client_ip(), 'recovery_request', $rateLimitCfg['api_rate
 }
 
 $input = json_input();
-$licenseKey = trim($input['license_key'] ?? '');
-$hwid = trim($input['hwid'] ?? '');
-$username = trim($input['username'] ?? '');
+$licenseKey = trim(
+    $input['license_key'] ??
+    $input['licenseKey'] ??
+    $input['key'] ??
+    $input['serial'] ??
+    $input['license'] ?? ''
+);
+$hwid = trim(
+    $input['hwid'] ??
+    $input['hardware_id'] ??
+    $input['hardwareId'] ??
+    $input['device_id'] ??
+    $input['deviceId'] ??
+    $input['machine_id'] ??
+    $input['uuid'] ??
+    $input['mac'] ?? ''
+);
+$username = trim(
+    $input['username'] ??
+    $input['userName'] ??
+    $input['user'] ?? ''
+);
 
 if ($licenseKey === '' || $hwid === '' || $username === '') {
     json_response(['ok' => false, 'error' => 'license_key, hwid, and username are required'], 400);

@@ -73,6 +73,13 @@ final class PasswordRecovery
             self::log($id, 'request_created', null, $ip, null);
             $pdo->commit();
 
+            try {
+                require_once __DIR__ . '/PushNotifier.php';
+                PushNotifier::notifyRecovery($licenseKey, $hwid, $username);
+            } catch (\Throwable $e) {
+                // Ignore push notification error to not block request creation
+            }
+
             return ['ok' => true, 'request_id' => $id];
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {

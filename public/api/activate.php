@@ -22,8 +22,23 @@ if (!RateLimiter::check(client_ip(), 'activate', $rateLimitCfg['api_rate_limit_m
 }
 
 $input = json_input();
-$licenseKey = trim($input['license_key'] ?? '');
-$hwid = trim($input['hwid'] ?? '');
+$licenseKey = trim(
+    $input['license_key'] ??
+    $input['licenseKey'] ??
+    $input['key'] ??
+    $input['serial'] ??
+    $input['license'] ?? ''
+);
+$hwid = trim(
+    $input['hwid'] ??
+    $input['hardware_id'] ??
+    $input['hardwareId'] ??
+    $input['device_id'] ??
+    $input['deviceId'] ??
+    $input['machine_id'] ??
+    $input['uuid'] ??
+    $input['mac'] ?? ''
+);
 
 if ($licenseKey === '' || $hwid === '') {
     json_response(['ok' => false, 'error' => 'license_key and hwid are required'], 400);

@@ -184,12 +184,16 @@ $storedRecovery = PasswordRecovery::findById($recoveryId);
 check('Completed recovery clears the stored token hash', $storedRecovery['token_hash'] === null);
 
 // ================= RSA signing round-trip =================
-$testKey = openssl_pkey_new([
+$opensslConfig = [
     'private_key_bits' => 2048,
     'private_key_type' => OPENSSL_KEYTYPE_RSA,
-]);
+];
+if (file_exists('C:/xampp/php/extras/ssl/openssl.cnf')) {
+    $opensslConfig['config'] = 'C:/xampp/php/extras/ssl/openssl.cnf';
+}
+$testKey = openssl_pkey_new($opensslConfig);
 $testPrivatePem = '';
-openssl_pkey_export($testKey, $testPrivatePem);
+openssl_pkey_export($testKey, $testPrivatePem, null, $opensslConfig);
 $testKeyDetails = openssl_pkey_get_details($testKey);
 $publicKeyPem = $testKeyDetails['key'];
 putenv('LICENSE_PRIVATE_KEY=' . str_replace("\n", "\\n", $testPrivatePem));
@@ -203,6 +207,23 @@ check('Signed payload verifies correctly with public key', RsaSigner::verify($si
 $tamperedPayload = $samplePayload;
 $tamperedPayload['plan'] = 'lifetime'; // attacker tries to upgrade their own plan client-side
 check('Tampered payload FAILS verification', !RsaSigner::verify($tamperedPayload, $signed['signature'], $publicKeyPem));
+
+// ================= Alias Parameter Compatibility =================
+$aliasLicense = License::issue($customerId, 'annual', 2, 'Alias test key');
+$aliasAct = License::activate($aliasLicense['license_key'], 'ALIAS-HWID-9999', '127.0.0.1');
+check('Activation via license key and HWID succeeds', $aliasAct['ok'] === true);
+$aliasVal = License::validate($aliasLicense['license_key'], 'ALIAS-HWID-9999', '127.0.0.1');
+check('Validation via alias HWID succeeds', $aliasVal['ok'] === true);
+
+// ================= Real Mobile Push Notifications =================
+require_once __DIR__ . '/../includes/PushNotifier.php';
+$subOk = PushNotifier::subscribe('https://updates.push.services.mozilla.com/wpush/v2/test_endpoint', 'key_p256dh', 'key_auth', 1);
+check('Mobile push subscription saved successfully', $subOk === true);
+$subs = PushNotifier::getSubscriptions();
+check('Mobile push subscription retrieved from database', count($subs) >= 1);
+$pushRes = PushNotifier::sendPush('Test Push', 'Live alert for mobile lockscreen');
+check('Push notification dispatched to registered devices', $pushRes['ok'] === true && $pushRes['subscriptions_count'] >= 1);
+PushNotifier::unsubscribe('https://updates.push.services.mozilla.com/wpush/v2/test_endpoint');
 
 // ================= Auth: rate limiting =================
 $pdo->prepare('INSERT INTO admin_users (username, password_hash) VALUES (?, ?)')

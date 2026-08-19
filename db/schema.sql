@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
     INDEX idx_admin_audit_target (target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    admin_id        INT UNSIGNED NULL,
+    endpoint        TEXT NOT NULL,
+    p256dh          VARCHAR(255) NULL,
+    auth            VARCHAR(255) NULL,
+    user_agent      VARCHAR(255) NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS login_attempts (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     username        VARCHAR(64) NOT NULL,

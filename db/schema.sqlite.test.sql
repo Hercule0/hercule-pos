@@ -24,6 +24,16 @@ CREATE TABLE admin_audit_log (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE push_subscriptions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id        INTEGER NULL,
+    endpoint        TEXT NOT NULL UNIQUE,
+    p256dh          TEXT NULL,
+    auth            TEXT NULL,
+    user_agent      TEXT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE login_attempts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT NOT NULL,

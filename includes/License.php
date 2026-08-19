@@ -305,6 +305,14 @@ final class License
 
             self::log((int) $license['id'], $licenseKey, $hwid, 'ok', $ip);
             $pdo->commit();
+
+            try {
+                require_once __DIR__ . '/PushNotifier.php';
+                PushNotifier::notifyActivation($licenseKey, $hwid);
+            } catch (\Throwable $e) {
+                // Ignore push notification error to not block activation response
+            }
+
             return ['ok' => true, 'license' => self::findById((int) $license['id'])];
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) {

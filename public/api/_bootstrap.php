@@ -17,6 +17,14 @@ header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('X-Frame-Options: DENY');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 
 function json_input(): array
 {
@@ -25,23 +33,27 @@ function json_input(): array
         json_response(['ok' => false, 'error' => 'Request body is too large.'], 413);
     }
 
-    $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
-    if ($contentType !== 'application/json') {
-        json_response(['ok' => false, 'error' => 'Content-Type must be application/json.'], 415);
-    }
-
     $raw = file_get_contents('php://input', false, null, 0, 16385);
     if ($raw === false || strlen($raw) > 16384) {
         json_response(['ok' => false, 'error' => 'Request body is too large.'], 413);
     }
 
-    try {
-        $data = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-    } catch (JsonException $e) {
-        json_response(['ok' => false, 'error' => 'Invalid JSON body.'], 400);
+    if (trim($raw) !== '') {
+        try {
+            $data = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
+            if (is_array($data)) {
+                return $data;
+            }
+        } catch (JsonException $e) {
+            // Fall through to $_POST fallback if present
+        }
     }
 
-    return is_array($data) ? $data : [];
+    if (!empty($_POST) && is_array($_POST)) {
+        return $_POST;
+    }
+
+    return [];
 }
 
 function json_response(array $data, int $statusCode = 200): void

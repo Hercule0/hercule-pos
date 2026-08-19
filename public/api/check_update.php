@@ -36,7 +36,13 @@ if (!RateLimiter::check(client_ip(), 'check_update', $rateLimitCfg['api_rate_lim
 }
 
 $input = json_input();
-$licenseKey = trim($input['license_key'] ?? '');
+$licenseKey = trim(
+    $input['license_key'] ??
+    $input['licenseKey'] ??
+    $input['key'] ??
+    $input['serial'] ??
+    $input['license'] ?? ''
+);
 
 if ($licenseKey === '') {
     json_response(['ok' => false, 'error' => 'license_key is required'], 400);

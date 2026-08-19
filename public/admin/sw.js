@@ -70,3 +70,52 @@ self.addEventListener("fetch", function (event) {
     })
   );
 });
+
+// Fast Mobile Push Event Listener
+self.addEventListener("push", function (event) {
+  var data = {
+    title: "🔔 Hercule POS Alert",
+    body: "New real-time activity on license server.",
+    url: "/public/admin/index.php"
+  };
+
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  var options = {
+    body: data.body || "New alert from Hercule POS Server",
+    icon: "/public/admin/assets/icons/app-icon-192.png",
+    badge: "/public/admin/assets/icons/app-icon-192.png",
+    vibrate: [200, 100, 200, 100, 200],
+    tag: data.tag || "hercule-push-" + Date.now(),
+    renotify: true,
+    data: { url: data.url || "/public/admin/index.php" }
+  };
+
+  event.waitUntil(self.registration.showNotification(data.title, options));
+});
+
+// Mobile Push Tap Action Listener
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : "/public/admin/index.php";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url.includes("/public/admin/") && "focus" in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
