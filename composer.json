@@ -11,5 +11,10 @@
     "require": {
         "minishlink/web-push": "^11.0",
         "guzzlehttp/guzzle": "*"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     }
 }
