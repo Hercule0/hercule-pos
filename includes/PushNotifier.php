@@ -8,62 +8,13 @@
  */
 
 require_once __DIR__ . '/Database.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Minishlink\WebPush\WebPush;
+use Minishlink\WebPush\Subscription;
 
 final class PushNotifier
 {
-    /**
-     * Save or update a mobile WebPush subscription endpoint.
-     */
-    public static function subscribe(
-        string $endpoint,
-        ?string $p256dh = null,
-        ?string $auth = null,
-        ?int $adminId = null,
-        ?string $userAgent = null
-    ): bool {
-        if (trim($endpoint) === '') {
-            return false;
-        }
-
-        $pdo = Database::pdo();
-        $isDriverSqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
-
-        if ($isDriverSqlite) {
-            $stmt = $pdo->prepare(
-                'INSERT INTO push_subscriptions (admin_id, endpoint, p256dh, auth, user_agent)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON CONFLICT(endpoint) DO UPDATE SET
-                   admin_id = excluded.admin_id,
-                   p256dh = excluded.p256dh,
-                   auth = excluded.auth,
-                   user_agent = excluded.user_agent,
-                   created_at = CURRENT_TIMESTAMP'
-            );
-        } else {
-            $stmt = $pdo->prepare(
-                'INSERT INTO push_subscriptions (admin_id, endpoint, p256dh, auth, user_agent)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                   admin_id = VALUES(admin_id),
-                   p256dh = VALUES(p256dh),
-                   auth = VALUES(auth),
-                   user_agent = VALUES(user_agent),
-                   created_at = CURRENT_TIMESTAMP'
-            );
-        }
-
-        return $stmt->execute([$adminId, $endpoint, $p256dh, $auth, $userAgent]);
-    }
-
-    /**
-     * Remove a mobile WebPush subscription endpoint.
-     */
-    public static function unsubscribe(string $endpoint): bool
-    {
-        $stmt = Database::pdo()->prepare('DELETE FROM push_subscriptions WHERE endpoint = ?');
-        return $stmt->execute([$endpoint]);
-    }
-
     /**
      * Get active subscriptions list.
      */
@@ -100,37 +51,52 @@ final class PushNotifier
     }
 
     /**
-     * Dispatch push payload to all registered mobile devices.
+     * Dispatch push payload to all registered mobile devices using VAPID.
      */
     public static function sendPush(string $title, string $body, ?string $url = null, ?string $tag = null): array
     {
         $subscriptions = self::getSubscriptions();
+        if (empty($subscriptions)) {
+            return ['ok' => true, 'subscriptions_count' => 0, 'dispatched' => 0];
+        }
+
+        $config = require __DIR__ . '/../config/config.php';
+        $auth = [
+            'VAPID' => [
+                'subject' => $config['vapid']['subject'],
+                'publicKey' => $config['vapid']['public_key'],
+                'privateKey' => $config['vapid']['private_key'],
+            ],
+        ];
+
+        $webPush = new WebPush($auth);
+        
         $payload = json_encode([
             'title' => $title,
-            'body' => $body,
-            'url' => $url ?? '/public/admin/index.php',
+            'message' => $body,
+            'actionUrl' => $url ?? '/public/admin/index.php',
             'tag' => $tag ?? 'hercule-alert-' . time(),
-            'timestamp' => date('c'),
         ]);
 
-        $dispatched = 0;
-        foreach ($subscriptions as $sub) {
-            $endpoint = $sub['endpoint'] ?? '';
-            if (empty($endpoint)) continue;
+        foreach ($subscriptions as $row) {
+            $subscription = Subscription::create([
+                'endpoint' => $row['endpoint'],
+                'publicKey' => $row['p256dh_key'],
+                'authToken' => $row['auth_key'],
+            ]);
+            $webPush->queueNotification($subscription, $payload);
+        }
 
-            // Dispatch via curl HTTP request if external WebPush gateway endpoint
-            if (filter_var($endpoint, FILTER_VALIDATE_URL)) {
-                $ch = curl_init($endpoint);
-                curl_setopt_array($ch, [
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => $payload,
-                    CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'TTL: 60'],
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT => 3,
-                ]);
-                @curl_exec($ch);
-                curl_close($ch);
+        $dispatched = 0;
+        foreach ($webPush->flush() as $report) {
+            $endpoint = $report->getRequest()->getUri()->__toString();
+            if ($report->isSuccess()) {
                 $dispatched++;
+            } else {
+                if ($report->isSubscriptionExpired()) {
+                    $stmt = Database::pdo()->prepare('DELETE FROM push_subscriptions WHERE endpoint = ?');
+                    $stmt->execute([$endpoint]);
+                }
             }
         }
 

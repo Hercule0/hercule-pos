@@ -1,43 +1,35 @@
 <?php
-/**
- * POST /public/admin/push_subscribe.php
- * Endpoint for mobile devices & PWAs to save Web Push subscriptions.
- */
-
 require_once __DIR__ . '/includes/bootstrap.php';
-require_once __DIR__ . '/../../includes/PushNotifier.php';
+Auth::require();
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+$input = json_decode(file_get_contents('php://input'), true);
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
-
-if (!Auth::check()) {
-    http_response_code(401);
-    echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
-    exit;
-}
-
-$raw = file_get_contents('php://input');
-$data = json_decode($raw, true) ?? $_POST;
-
-$endpoint = trim($data['endpoint'] ?? '');
-$p256dh = $data['keys']['p256dh'] ?? $data['p256dh'] ?? null;
-$auth = $data['keys']['auth'] ?? $data['auth'] ?? null;
-$userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
-$adminId = Auth::currentUserId();
-
-if ($endpoint === '') {
+if (!$input || !isset($input['endpoint'])) {
     http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => 'Push subscription endpoint is required.']);
+    echo json_encode(['ok' => false, 'error' => 'Invalid subscription payload']);
     exit;
 }
 
-$success = PushNotifier::subscribe($endpoint, $p256dh, $auth, $adminId, $userAgent);
+$endpoint = $input['endpoint'];
+$p256dh = $input['keys']['p256dh'] ?? '';
+$auth = $input['keys']['auth'] ?? '';
+$adminUsername = Auth::currentUsername();
 
-echo json_encode(['ok' => $success]);
+$pdo = Database::pdo();
+$stmt = $pdo->prepare("
+    INSERT INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE 
+        admin_username = VALUES(admin_username),
+        p256dh_key = VALUES(p256dh_key),
+        auth_key = VALUES(auth_key),
+        created_at = CURRENT_TIMESTAMP
+");
+
+try {
+    $stmt->execute([$adminUsername, $endpoint, $p256dh, $auth]);
+    echo json_encode(['ok' => true]);
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'Database error']);
+}

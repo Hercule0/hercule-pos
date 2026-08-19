@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS api_requests (
     INDEX idx_api_requests_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS verification_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    license_key VARCHAR(255) NOT NULL,
+    hwid VARCHAR(255) NOT NULL,
+    result ENUM('ok', 'failed', 'revoked', 'expired', 'suspended', 'device_mismatch', 'invalid_signature') NOT NULL,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (license_key),
+    INDEX (hwid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    admin_username VARCHAR(255) NOT NULL,
+    endpoint VARCHAR(2048) NOT NULL,
+    p256dh_key VARCHAR(255) NOT NULL,
+    auth_key VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX(admin_username),
+    UNIQUE(endpoint(255))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS customers (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name            VARCHAR(150) NOT NULL,

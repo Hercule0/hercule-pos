@@ -29,7 +29,7 @@ function render_header(string $title): void
 <html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
 <meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -378,7 +378,7 @@ function render_footer(): void
     var pushPermBtn = document.getElementById("push-perm-btn");
     function updatePushBtn() {
         if (!pushPermBtn) return;
-        if (!("Notification" in window)) {
+        if (!("Notification" in window) || !("serviceWorker" in navigator)) {
             pushPermBtn.hidden = true;
             return;
         }
@@ -390,16 +390,53 @@ function render_footer(): void
             pushPermBtn.classList.remove("is-granted");
         }
     }
+    
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/public/admin/service-worker.js').catch(function(err) {
+            console.error('Service Worker registration failed:', err);
+        });
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+        var rawData = window.atob(base64);
+        var outputArray = new Uint8Array(rawData.length);
+        for (var i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+
     if (pushPermBtn) {
         pushPermBtn.addEventListener("click", function () {
-            if ("Notification" in window) {
+            if ("Notification" in window && "serviceWorker" in navigator) {
                 Notification.requestPermission().then(function (perm) {
                     updatePushBtn();
                     if (perm === "granted") {
-                        showToast({
-                            title: "Push Notifications Enabled",
-                            message: "You will now receive emergency recovery and expiry alerts directly on this device.",
-                            type: "success"
+                        navigator.serviceWorker.ready.then(function(registration) {
+                            var vapidPublicKey = "BKraEuulwXx3knDp50hkOAI1QaJBnFxTngjhnfi48WkMMKcDSBCwxn4WePT0RSrEnJWEmgX-DpG9WiVgK_rNAAY";
+                            return registration.pushManager.subscribe({
+                                userVisibleOnly: true,
+                                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+                            });
+                        }).then(function(subscription) {
+                            return fetch('/public/admin/push_subscribe.php', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(subscription)
+                            });
+                        }).then(function() {
+                            showToast({
+                                title: "Push Notifications Enabled",
+                                message: "You will now receive emergency recovery and expiry alerts directly on this device.",
+                                type: "success"
+                            });
+                        }).catch(function(err) {
+                            console.error('Failed to subscribe to push', err);
                         });
                     }
                 });
@@ -413,13 +450,12 @@ function render_footer(): void
     testBtns.forEach(function (btn) {
         if (!btn) return;
         btn.addEventListener("click", function () {
-            showToast({
-                title: "Emergency Terminal Recovery #REQ-" + Math.floor(1000 + Math.random() * 9000),
-                message: "POS Terminal 01 (HWID-7X9B) requested hardware recovery. One-time PIN generated.",
-                actionUrl: "/public/admin/recovery_requests.php",
-                actionLabel: "Open Recovery Queue",
-                type: "warning",
-                tag: "test-recovery-" + Date.now()
+            btn.disabled = true;
+            fetch('/public/admin/test_push.php').then(function() {
+                setTimeout(function() { btn.disabled = false; }, 2000);
+            }).catch(function(err) {
+                console.error("Test push failed", err);
+                btn.disabled = false;
             });
         });
     });

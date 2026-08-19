@@ -71,4 +71,11 @@ return [
         'key_rate_limit_max_requests' => 30,
         'key_rate_limit_window_minutes' => 5,
     ],
+
+    // VAPID keys for Web Push Notifications
+    'vapid' => [
+        'subject' => env('VAPID_SUBJECT', 'mailto:admin@herculepos.com'),
+        'public_key' => env('VAPID_PUBLIC_KEY', 'BKraEuulwXx3knDp50hkOAI1QaJBnFxTngjhnfi48WkMMKcDSBCwxn4WePT0RSrEnJWEmgX-DpG9WiVgK_rNAAY'),
+        'private_key' => env('VAPID_PRIVATE_KEY', '-d2Tb1JOz-SEIDHQyvZNFqg54QP476Y8otgZmwVY9kg'),
+    ],
 ];
