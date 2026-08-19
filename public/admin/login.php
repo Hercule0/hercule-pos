@@ -23,7 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $username = trim($_POST['username'] ?? '');
         $password = $_POST['password'] ?? '';
-        $result = Auth::attemptLogin($username, $password, $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $remember = !empty($_POST['remember']);
+        $result = Auth::attemptLogin($username, $password, $_SERVER['REMOTE_ADDR'] ?? 'unknown', $remember);
         if ($result['ok']) {
             header('Location: /public/admin/index.php');
             exit;
@@ -94,6 +95,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span>Password</span>
                     <div class="auth-input"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Your password"><button type="button" class="password-toggle" data-toggle-password="login-password" aria-label="Show password"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z"/><circle cx="12" cy="12" r="2"/></svg></button></div>
                 </label>
+                <div class="auth-field-checkbox">
+                    <label>
+                        <input type="checkbox" name="remember" value="1">
+                        <span>Remember me on this device</span>
+                    </label>
+                </div>
             <?php endif; ?>
 
             <button type="submit" class="auth-submit"><span><?= $mfaPending ? 'Verify and continue' : 'Sign in securely' ?></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>

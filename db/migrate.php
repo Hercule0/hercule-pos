@@ -121,6 +121,7 @@ $tables = [
     'password_recovery_requests',
     'recovery_audit_log',
     'push_subscriptions',
+    'user_sessions',
 ];
 
 foreach ($tables as $tableName) {

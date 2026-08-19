@@ -58,7 +58,7 @@ final class Auth
     {
         self::ensureSession();
         if (empty($_SESSION['admin_id'])) {
-            return false;
+            return self::attemptRememberMeLogin();
         }
 
         $lifetime = (int) self::config()['security']['session_lifetime_minutes'] * 60;
@@ -69,6 +69,61 @@ final class Auth
         }
 
         $_SESSION['last_activity'] = time();
+        return true;
+    }
+
+    private static function attemptRememberMeLogin(): bool
+    {
+        $cookie = $_COOKIE['hercule_remember'] ?? '';
+        if (!$cookie || strpos($cookie, ':') === false) {
+            return false;
+        }
+
+        [$selector, $validator] = explode(':', $cookie, 2);
+        
+        $stmt = Database::pdo()->prepare(
+            'SELECT us.id, us.admin_id, us.validator_hash, us.user_agent, us.ip_address, us.expires_at, 
+                    a.username, a.role, a.is_active, a.must_change_password 
+             FROM user_sessions us 
+             JOIN admin_users a ON us.admin_id = a.id 
+             WHERE us.selector = ?'
+        );
+        $stmt->execute([$selector]);
+        $session = $stmt->fetch();
+
+        if (!$session) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Verify validator hash
+        if (!hash_equals($session['validator_hash'], hash('sha256', $validator))) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Check expiration
+        if (strtotime($session['expires_at']) < time()) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Verify Trusted Device (IP and User-Agent)
+        $currentIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $currentUa = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        if ($session['ip_address'] !== $currentIp || $session['user_agent'] !== $currentUa) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Check if user is still active
+        if (empty($session['is_active'])) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Proceed with login
+        self::finishLogin((int) $session['admin_id'], $session['username'], $session['role'], !empty($session['must_change_password']), false);
         return true;
     }
 
@@ -128,9 +183,9 @@ final class Auth
     }
 
     /**
-     * @return array{ok: bool, error?: string}
+     * @return array{ok: bool, error?: string, requires_mfa?: bool}
      */
-    public static function attemptLogin(string $username, string $password, string $ip): array
+    public static function attemptLogin(string $username, string $password, string $ip, bool $remember = false): array
     {
         self::ensureSession();
 
@@ -182,16 +237,17 @@ final class Auth
                 'must_change_password' => !empty($user['must_change_password']),
                 'expires_at' => time() + 300,
                 'failures' => 0,
+                'remember' => $remember,
             ];
             unset($_SESSION['csrf_token']);
             return ['ok' => false, 'requires_mfa' => true];
         }
 
-        self::finishLogin((int) $user['id'], $username, $role, !empty($user['must_change_password']));
+        self::finishLogin((int) $user['id'], $username, $role, !empty($user['must_change_password']), $remember);
         return ['ok' => true];
     }
 
-    private static function finishLogin(int $adminId, string $username, string $role, bool $mustChangePassword = false): void
+    private static function finishLogin(int $adminId, string $username, string $role, bool $mustChangePassword = false, bool $remember = false): void
     {
         if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             session_regenerate_id(true);
@@ -203,6 +259,33 @@ final class Auth
         $_SESSION['must_change_password'] = $mustChangePassword;
         $_SESSION['last_activity'] = time();
         $_SESSION['logged_in_at'] = time();
+
+        if ($remember) {
+            $selector = bin2hex(random_bytes(12));
+            $validator = bin2hex(random_bytes(32));
+            $hashedValidator = hash('sha256', $validator);
+            $expiresAt = time() + (86400 * 30); // 30 days
+            
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+            $stmt = Database::pdo()->prepare(
+                'INSERT INTO user_sessions (admin_id, selector, validator_hash, user_agent, ip_address, expires_at) 
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([$adminId, $selector, $hashedValidator, $ua, $ip, date('Y-m-d H:i:s', $expiresAt)]);
+
+            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+            setcookie('hercule_remember', $selector . ':' . $validator, [
+                'expires' => $expiresAt,
+                'path' => '/',
+                'secure' => $isHttps,
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+        }
     }
 
     /** @return array{ok: bool, error?: string} */
@@ -255,7 +338,8 @@ final class Auth
             return ['ok' => false, 'error' => 'Invalid authentication or recovery code.'];
         }
 
-        self::finishLogin((int) $pending['admin_id'], $pending['username'], $pending['role'], !empty($pending['must_change_password']));
+        $remember = !empty($pending['remember']);
+        self::finishLogin((int) $pending['admin_id'], $pending['username'], $pending['role'], !empty($pending['must_change_password']), $remember);
         return ['ok' => true];
     }
 
@@ -361,6 +445,9 @@ final class Auth
     public static function logout(): void
     {
         self::ensureSession();
+
+        self::clearRememberCookie();
+
         $_SESSION = [];
         
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -376,6 +463,28 @@ final class Auth
                 ]);
             }
             session_destroy();
+        }
+    }
+
+    private static function clearRememberCookie(): void
+    {
+        $cookie = $_COOKIE['hercule_remember'] ?? '';
+        if ($cookie && strpos($cookie, ':') !== false) {
+            [$selector, ] = explode(':', $cookie, 2);
+            $stmt = Database::pdo()->prepare('DELETE FROM user_sessions WHERE selector = ?');
+            $stmt->execute([$selector]);
+        }
+
+        if (!headers_sent()) {
+            $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            setcookie('hercule_remember', '', [
+                'expires' => time() - 3600,
+                'path' => '/',
+                'secure' => $isHttps,
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
         }
     }
 
