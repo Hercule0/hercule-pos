@@ -59,6 +59,7 @@ jobs:
             --exclude='deploy_package' \
             --exclude='tests' \
             --exclude='setup.sh' \
+            --exclude='web.config' \
             ./ deploy_package/
 
       - name: Azure Login
