@@ -43,19 +43,9 @@ jobs:
       - name: Run test suite
         run: php tests/run_test.php
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build frontend assets
-        run: |
-          npm ci || npm install
-          npm run build
-
       - name: Prepare deployment package
         run: |
-          echo "Preparing PHP & Frontend application..."
+          echo "Preparing PHP application..."
           if [ -f composer.json ]; then
             composer install --no-dev --prefer-dist --no-progress --no-interaction
           fi
@@ -67,26 +57,9 @@ jobs:
             --exclude='.git' \
             --exclude='.github' \
             --exclude='deploy_package' \
-            --exclude='get_key.php' \
-            --exclude='New Text Document.txt' \
             --exclude='tests' \
-            --exclude='db' \
             --exclude='setup.sh' \
-            --exclude='README.md' \
-            --exclude='.htaccess' \
             ./ deploy_package/
-
-          # Copy built modern React client into deploy_package
-          if [ -d "dist" ]; then
-            mkdir -p deploy_package/assets deploy_package/public/assets deploy_package/public/admin/assets deploy_package/dist
-            cp -rf dist/* deploy_package/dist/ 2>/dev/null || true
-            cp -rf dist/assets/* deploy_package/assets/ 2>/dev/null || true
-            cp -rf dist/assets/* deploy_package/public/assets/ 2>/dev/null || true
-            cp -rf dist/assets/* deploy_package/public/admin/assets/ 2>/dev/null || true
-            cp dist/index.html deploy_package/public/app.html 2>/dev/null || true
-            cp dist/index.html deploy_package/public/index.html 2>/dev/null || true
-            cp dist/index.html deploy_package/index.html 2>/dev/null || true
-          fi
 
       - name: Azure Login
         if: github.event_name != 'pull_request'
