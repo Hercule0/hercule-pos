@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/PushNotifier.php';
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 
 if (!Auth::isLoggedIn()) {
     http_response_code(401);
@@ -10,10 +11,12 @@ if (!Auth::isLoggedIn()) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+// The current admin header invokes this endpoint with GET. Keep that authenticated
+// compatibility path until the header client is moved to POST in a later cleanup.
+if (!in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'POST'], true)) {
     http_response_code(405);
-    header('Allow: POST');
-    echo json_encode(['ok' => false, 'error' => 'POST required']);
+    header('Allow: GET, POST');
+    echo json_encode(['ok' => false, 'error' => 'Unsupported request method']);
     exit;
 }
 
