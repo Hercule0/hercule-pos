@@ -26,11 +26,10 @@ CREATE TABLE admin_audit_log (
 
 CREATE TABLE push_subscriptions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_id        INTEGER NULL,
+    admin_username  TEXT NOT NULL,
     endpoint        TEXT NOT NULL UNIQUE,
-    p256dh          TEXT NULL,
-    auth            TEXT NULL,
-    user_agent      TEXT NULL,
+    p256dh_key      TEXT NULL,
+    auth_key        TEXT NULL,
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

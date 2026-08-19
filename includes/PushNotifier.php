@@ -25,6 +25,27 @@ final class PushNotifier
     }
 
     /**
+     * Subscribe a new device for push notifications.
+     */
+    public static function subscribe(string $endpoint, string $p256dh, string $auth, $adminUsername): bool
+    {
+        $stmt = Database::pdo()->prepare("
+            REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key)
+            VALUES (?, ?, ?, ?)
+        ");
+        return $stmt->execute([(string)$adminUsername, $endpoint, $p256dh, $auth]);
+    }
+
+    /**
+     * Unsubscribe a device.
+     */
+    public static function unsubscribe(string $endpoint): bool
+    {
+        $stmt = Database::pdo()->prepare('DELETE FROM push_subscriptions WHERE endpoint = ?');
+        return $stmt->execute([$endpoint]);
+    }
+
+    /**
      * Trigger activation push alert when a new POS terminal activates a key.
      */
     public static function notifyActivation(string $licenseKey, string $hwid, ?string $deviceName = null): void

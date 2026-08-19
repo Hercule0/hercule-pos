@@ -17,13 +17,8 @@ $adminUsername = Auth::currentUsername();
 
 $pdo = Database::pdo();
 $stmt = $pdo->prepare("
-    INSERT INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key)
+    REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key)
     VALUES (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE 
-        admin_username = VALUES(admin_username),
-        p256dh_key = VALUES(p256dh_key),
-        auth_key = VALUES(auth_key),
-        created_at = CURRENT_TIMESTAMP
 ");
 
 try {
