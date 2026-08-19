@@ -1,13 +1,29 @@
 (function () {
   var deferredPrompt = null;
   var registrationReady = false;
+  var vapidPublicKeyPromise = null;
   var installButtons = Array.prototype.slice.call(document.querySelectorAll("[data-install-app]"));
   var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   var isiOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
-  var VAPID_PUBLIC_KEY = "BKraEuulwXx3knDp50hkOAI1QaJBnFxTngjhnfi48WkMMKcDSBCwxn4WePT0RSrEnJWEmgX-DpG9WiVgK_rNAAY";
 
   function setInstallVisible(visible) {
     installButtons.forEach(function (button) { button.hidden = !visible; });
+  }
+
+  function getVapidPublicKey() {
+    if (vapidPublicKeyPromise) return vapidPublicKeyPromise;
+    vapidPublicKeyPromise = fetch("/public/admin/push_config.php", {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    }).then(function (response) {
+      if (!response.ok) throw new Error("Push configuration returned " + response.status);
+      return response.json();
+    }).then(function (data) {
+      if (!data || !data.ok || !data.publicKey) throw new Error((data && data.error) || "VAPID public key is missing");
+      return data.publicKey;
+    });
+    return vapidPublicKeyPromise;
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -38,11 +54,13 @@
     if (!("PushManager" in window) || !("Notification" in window) || Notification.permission !== "granted") {
       return Promise.resolve(null);
     }
-    return registration.pushManager.getSubscription().then(function (subscription) {
+    return Promise.all([registration.pushManager.getSubscription(), getVapidPublicKey()]).then(function (values) {
+      var subscription = values[0];
+      var publicKey = values[1];
       if (subscription) return subscription;
       return registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
     }).then(function (subscription) {
       if (!subscription) return null;
@@ -52,7 +70,6 @@
 
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator) || (location.protocol !== "https:" && location.hostname !== "localhost")) return;
-
     navigator.serviceWorker.register("/public/admin/sw.js", {
       scope: "/public/admin/",
       updateViaCache: "none"
@@ -63,8 +80,6 @@
       return navigator.serviceWorker.ready;
     }).then(function (registration) {
       registrationReady = true;
-      // Repair an existing granted installation automatically. This is important
-      // for already-installed PWAs whose browser permission survived an app update.
       return ensurePushSubscription(registration);
     }).catch(function (error) {
       registrationReady = false;
@@ -72,7 +87,6 @@
     });
   }
 
-  // Shared API used by the admin header button. Keeps one SW and one subscription flow.
   window.HerculePush = {
     enable: function () {
       if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
@@ -92,41 +106,19 @@
   registerServiceWorker();
 
   window.addEventListener("beforeinstallprompt", function (event) {
-    event.preventDefault();
-    deferredPrompt = event;
-    if (!standalone) setInstallVisible(true);
+    event.preventDefault(); deferredPrompt = event; if (!standalone) setInstallVisible(true);
   });
-
-  window.addEventListener("appinstalled", function () {
-    deferredPrompt = null;
-    setInstallVisible(false);
-  });
-
+  window.addEventListener("appinstalled", function () { deferredPrompt = null; setInstallVisible(false); });
   installButtons.forEach(function (button) {
     button.addEventListener("click", function () {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.finally(function () { deferredPrompt = null; });
-        return;
-      }
-      if (isiOS && !standalone) {
-        window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen.");
-        return;
-      }
-      if (!standalone) {
-        window.alert(registrationReady
-          ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu."
-          : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
-      }
+      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.finally(function () { deferredPrompt = null; }); return; }
+      if (isiOS && !standalone) { window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen."); return; }
+      if (!standalone) window.alert(registrationReady ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu." : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
     });
   });
-
   if (!standalone) setInstallVisible(true);
   document.documentElement.classList.toggle("is-standalone", standalone);
-  window.addEventListener("online", function () {
-    document.documentElement.classList.remove("is-offline");
-    if (window.HerculePush) window.HerculePush.sync().catch(function () {});
-  });
+  window.addEventListener("online", function () { document.documentElement.classList.remove("is-offline"); if (window.HerculePush) window.HerculePush.sync().catch(function () {}); });
   window.addEventListener("offline", function () { document.documentElement.classList.add("is-offline"); });
   if (!navigator.onLine) document.documentElement.classList.add("is-offline");
 })();
