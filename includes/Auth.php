@@ -44,7 +44,7 @@ final class Auth
             'path' => '/',
             'secure' => $isHttps,
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => 'Lax',
         ]);
         session_start();
     }
@@ -287,7 +287,7 @@ final class Auth
                 'path' => '/',
                 'secure' => $isHttps,
                 'httponly' => true,
-                'samesite' => 'Strict',
+                'samesite' => 'Lax',
             ]);
         }
     }
@@ -463,7 +463,7 @@ final class Auth
                     'domain' => $params['domain'] ?? '',
                     'secure' => (bool) ($params['secure'] ?? false),
                     'httponly' => true,
-                    'samesite' => 'Strict',
+                    'samesite' => 'Lax',
                 ]);
             }
             session_destroy();
@@ -487,7 +487,7 @@ final class Auth
                 'path' => '/',
                 'secure' => $isHttps,
                 'httponly' => true,
-                'samesite' => 'Strict',
+                'samesite' => 'Lax',
             ]);
         }
     }
