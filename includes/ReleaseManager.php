@@ -32,6 +32,13 @@ final class ReleaseManager
         $mandatory = !empty($data['is_mandatory']) ? 1 : 0;
         $published = !empty($data['is_published']) ? 1 : 0;
 
+        if ($minimum !== null && self::compare($minimum, $version) > 0) {
+            throw new InvalidArgumentException('Minimum supported version cannot be newer than the release version.');
+        }
+        if ($published && $downloadUrl === null) {
+            throw new InvalidArgumentException('A published release must have an HTTPS download URL.');
+        }
+
         $stmt = Database::pdo()->prepare(
             'INSERT INTO app_releases
              (version, minimum_supported_version, download_url, release_notes, is_mandatory, is_published, published_at, created_by)
@@ -52,10 +59,30 @@ final class ReleaseManager
 
     public static function setPublished(int $releaseId, bool $published): void
     {
-        $stmt = Database::pdo()->prepare(
+        $pdo = Database::pdo();
+        if ($published) {
+            $check = $pdo->prepare('SELECT download_url FROM app_releases WHERE id = ?');
+            $check->execute([$releaseId]);
+            $downloadUrl = $check->fetchColumn();
+            if ($downloadUrl === false) {
+                throw new InvalidArgumentException('Release not found.');
+            }
+            if (trim((string) $downloadUrl) === '') {
+                throw new InvalidArgumentException('Add an HTTPS download URL before publishing this release.');
+            }
+        }
+
+        $stmt = $pdo->prepare(
             'UPDATE app_releases SET is_published = ?, published_at = ? WHERE id = ?'
         );
         $stmt->execute([$published ? 1 : 0, $published ? date('Y-m-d H:i:s') : null, $releaseId]);
+        if ($stmt->rowCount() === 0 && !$published) {
+            $exists = $pdo->prepare('SELECT 1 FROM app_releases WHERE id = ?');
+            $exists->execute([$releaseId]);
+            if (!$exists->fetchColumn()) {
+                throw new InvalidArgumentException('Release not found.');
+            }
+        }
     }
 
     public static function setMandatory(int $releaseId, bool $mandatory): void
