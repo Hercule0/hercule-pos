@@ -1,17 +1,10 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/DeviceManager.php';
 Auth::require();
 
 $pdo = Database::pdo();
-
-$columnCheck = $pdo->prepare(
-    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = ?
-       AND COLUMN_NAME IN (?, ?)'
-);
-$columnCheck->execute(['license_activations', 'device_name', 'admin_note']);
-$deviceSchemaReady = (int) $columnCheck->fetchColumn() === 2;
+$deviceSchemaReady = DeviceManager::schemaReady();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
@@ -66,9 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $event->execute([(int) $activation['license_id'], 'device_updated', $eventNote, $admin]);
         flash_set('Device details updated.');
     } elseif ($action === 'reset_slot') {
-        $stmt = $pdo->prepare(
-            'UPDATE license_activations SET is_active = 0 WHERE id = ?'
-        );
+        $stmt = $pdo->prepare('UPDATE license_activations SET is_active = 0 WHERE id = ?');
         $stmt->execute([$activationId]);
 
         $event = $pdo->prepare(
@@ -83,6 +74,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $admin,
         ]);
         flash_set('Device slot reset. The slot is available for another activation.');
+    } elseif ($action === 'block_device') {
+        if (DeviceManager::setBlocked($activationId, true, $admin)) {
+            flash_set('Device blocked. Future activation and validation requests from this HWID will be denied.');
+        } else {
+            flash_set('Unable to block device.', 'error');
+        }
+    } elseif ($action === 'unblock_device') {
+        if (DeviceManager::setBlocked($activationId, false, $admin)) {
+            flash_set('Device unblocked.');
+        } else {
+            flash_set('Unable to unblock device.', 'error');
+        }
     }
 
     header('Location: /public/admin/devices.php');
@@ -91,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $searchQuery = mb_substr(trim($_GET['q'] ?? ''), 0, 100);
 $statusFilter = $_GET['status'] ?? 'all';
-if (!in_array($statusFilter, ['all', 'active', 'inactive'], true)) {
+if (!in_array($statusFilter, ['all', 'active', 'inactive', 'blocked'], true)) {
     $statusFilter = 'all';
 }
 $currentPage = max(1, (int) ($_GET['page'] ?? 1));
@@ -100,13 +103,17 @@ $perPage = 18;
 $where = [];
 $params = [];
 if ($searchQuery !== '') {
-    $where[] = '(a.hwid LIKE ? OR l.license_key LIKE ? OR c.name LIKE ?' . ($deviceSchemaReady ? ' OR a.device_name LIKE ?' : '') . ')';
+    $where[] = '(a.hwid LIKE ? OR l.license_key LIKE ? OR c.name LIKE ?' . ($deviceSchemaReady ? ' OR a.device_name LIKE ? OR a.app_version LIKE ?' : '') . ')';
     $pattern = '%' . $searchQuery . '%';
     $params = [$pattern, $pattern, $pattern];
-    if ($deviceSchemaReady) $params[] = $pattern;
+    if ($deviceSchemaReady) {
+        $params[] = $pattern;
+        $params[] = $pattern;
+    }
 }
-if ($statusFilter === 'active') $where[] = 'a.is_active = 1';
-if ($statusFilter === 'inactive') $where[] = 'a.is_active = 0';
+if ($statusFilter === 'active') $where[] = 'a.is_active = 1' . ($deviceSchemaReady ? ' AND a.is_blocked = 0' : '');
+if ($statusFilter === 'inactive') $where[] = 'a.is_active = 0' . ($deviceSchemaReady ? ' AND a.is_blocked = 0' : '');
+if ($statusFilter === 'blocked' && $deviceSchemaReady) $where[] = 'a.is_blocked = 1';
 $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
 $countSql = 'SELECT COUNT(*)
@@ -120,7 +127,9 @@ $totalPages = max(1, (int) ceil($totalDevices / $perPage));
 $currentPage = min($currentPage, $totalPages);
 $offset = ($currentPage - 1) * $perPage;
 
-$selectDeviceFields = $deviceSchemaReady ? 'a.device_name, a.admin_note,' : 'NULL AS device_name, NULL AS admin_note,';
+$selectDeviceFields = $deviceSchemaReady
+    ? 'a.device_name, a.app_version, a.admin_note, a.is_blocked, a.blocked_at, a.blocked_by,'
+    : 'NULL AS device_name, NULL AS app_version, NULL AS admin_note, 0 AS is_blocked, NULL AS blocked_at, NULL AS blocked_by,';
 $sql = "SELECT a.id, a.license_id, a.hwid, {$selectDeviceFields}
                a.is_active, a.activated_at, a.last_seen_at, a.ip_address,
                l.license_key, l.status AS license_status, l.plan,
@@ -129,7 +138,7 @@ $sql = "SELECT a.id, a.license_id, a.hwid, {$selectDeviceFields}
         JOIN licenses l ON l.id = a.license_id
         JOIN customers c ON c.id = l.customer_id"
         . $whereSql .
-       ' ORDER BY a.is_active DESC, a.last_seen_at DESC LIMIT ? OFFSET ?';
+       ' ORDER BY a.is_blocked DESC, a.is_active DESC, a.last_seen_at DESC LIMIT ? OFFSET ?';
 $stmt = $pdo->prepare($sql);
 $position = 1;
 foreach ($params as $value) {
@@ -140,12 +149,23 @@ $stmt->bindValue($position, $offset, PDO::PARAM_INT);
 $stmt->execute();
 $devices = $stmt->fetchAll();
 
-$summary = $pdo->query(
-    'SELECT COUNT(*) AS total_count,
-            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count,
-            SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS inactive_count
-     FROM license_activations'
-)->fetch();
+if ($deviceSchemaReady) {
+    $summary = $pdo->query(
+        'SELECT COUNT(*) AS total_count,
+                SUM(CASE WHEN is_active = 1 AND is_blocked = 0 THEN 1 ELSE 0 END) AS active_count,
+                SUM(CASE WHEN is_active = 0 AND is_blocked = 0 THEN 1 ELSE 0 END) AS inactive_count,
+                SUM(CASE WHEN is_blocked = 1 THEN 1 ELSE 0 END) AS blocked_count
+         FROM license_activations'
+    )->fetch();
+} else {
+    $summary = $pdo->query(
+        'SELECT COUNT(*) AS total_count,
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count,
+                SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS inactive_count,
+                0 AS blocked_count
+         FROM license_activations'
+    )->fetch();
+}
 
 $pageUrl = static function (int $page) use ($searchQuery, $statusFilter): string {
     $query = ['page' => $page];
@@ -162,7 +182,7 @@ flash_render();
         <div>
             <p class="eyebrow">Hardware</p>
             <h1>Device Management</h1>
-            <p class="page-subtitle">Track every bound POS terminal, label hardware, add internal notes, and free activation slots.</p>
+            <p class="page-subtitle">Track POS terminals, capture client versions, label hardware, block risky devices, and free activation slots.</p>
         </div>
         <a href="/public/admin/licenses.php" class="app-secondary-action">View licenses</a>
     </section>
@@ -170,7 +190,7 @@ flash_render();
     <?php if (!$deviceSchemaReady): ?>
         <section class="device-migration-warning">
             <strong>Migration required</strong>
-            <p>Run <code>php db/migrate_device_management.php</code> on production before editing device names or notes.</p>
+            <p>Run <code>php db/migrate_device_management.php</code> on production before using device controls.</p>
         </section>
     <?php endif; ?>
 
@@ -178,6 +198,7 @@ flash_render();
         <article><span>Total devices</span><strong><?= (int)($summary['total_count'] ?? 0) ?></strong></article>
         <article><span>Active</span><strong class="text-emerald"><?= (int)($summary['active_count'] ?? 0) ?></strong></article>
         <article><span>Freed slots</span><strong><?= (int)($summary['inactive_count'] ?? 0) ?></strong></article>
+        <article><span>Blocked</span><strong class="text-danger"><?= (int)($summary['blocked_count'] ?? 0) ?></strong></article>
     </section>
 
     <section class="device-tools">
@@ -185,12 +206,12 @@ flash_render();
             <?php if ($statusFilter !== 'all'): ?><input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter, ENT_QUOTES) ?>"><?php endif; ?>
             <label class="app-search" for="device-search">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
-                <input id="device-search" name="q" type="search" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES) ?>" placeholder="Search device, HWID, customer, or license" autocomplete="off">
+                <input id="device-search" name="q" type="search" value="<?= htmlspecialchars($searchQuery, ENT_QUOTES) ?>" placeholder="Search device, version, HWID, customer, or license" autocomplete="off">
                 <kbd><?= count($devices) ?></kbd>
             </label>
         </form>
         <div class="pill-filters">
-            <?php foreach (['all' => 'All', 'active' => 'Active', 'inactive' => 'Freed'] as $value => $label): ?>
+            <?php foreach (['all' => 'All', 'active' => 'Active', 'inactive' => 'Freed', 'blocked' => 'Blocked'] as $value => $label): ?>
                 <?php $query = []; if ($searchQuery !== '') $query['q'] = $searchQuery; if ($value !== 'all') $query['status'] = $value; ?>
                 <a class="pill-filter <?= $statusFilter === $value ? 'active' : '' ?>" href="/public/admin/devices.php<?= $query ? '?' . htmlspecialchars(http_build_query($query), ENT_QUOTES) : '' ?>"><?= $label ?></a>
             <?php endforeach; ?>
@@ -205,7 +226,8 @@ flash_render();
     <?php else: ?>
         <section class="device-grid">
             <?php foreach ($devices as $d): ?>
-                <article class="device-card <?= $d['is_active'] ? 'is-active' : 'is-inactive' ?>">
+                <?php $isBlocked = (bool)$d['is_blocked']; ?>
+                <article class="device-card <?= $isBlocked ? 'is-blocked' : ($d['is_active'] ? 'is-active' : 'is-inactive') ?>">
                     <header>
                         <div class="device-card-icon">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
@@ -214,14 +236,16 @@ flash_render();
                             <strong><?= htmlspecialchars($d['device_name'] ?: 'Unnamed POS device') ?></strong>
                             <span><?= htmlspecialchars($d['customer_name']) ?></span>
                         </div>
-                        <span class="badge <?= $d['is_active'] ? 'badge-ok' : 'badge-expired' ?>"><?= $d['is_active'] ? 'Active' : 'Freed' ?></span>
+                        <span class="badge <?= $isBlocked ? 'badge-revoked' : ($d['is_active'] ? 'badge-ok' : 'badge-expired') ?>"><?= $isBlocked ? 'Blocked' : ($d['is_active'] ? 'Active' : 'Freed') ?></span>
                     </header>
 
                     <dl class="device-meta">
                         <div><dt>HWID</dt><dd><code dir="ltr"><?= htmlspecialchars($d['hwid']) ?></code></dd></div>
                         <div><dt>License</dt><dd><a href="/public/admin/license_detail.php?id=<?= (int)$d['license_id'] ?>"><code dir="ltr"><?= htmlspecialchars($d['license_key']) ?></code></a></dd></div>
+                        <div><dt>App version</dt><dd><?= htmlspecialchars($d['app_version'] ?: 'Not reported') ?></dd></div>
                         <div><dt>Last seen</dt><dd><?= htmlspecialchars(date('M j, Y · H:i', strtotime($d['last_seen_at']))) ?></dd></div>
                         <div><dt>IP address</dt><dd dir="ltr"><?= htmlspecialchars($d['ip_address'] ?: '—') ?></dd></div>
+                        <?php if ($isBlocked): ?><div><dt>Blocked</dt><dd><?= htmlspecialchars($d['blocked_at'] ?: '—') ?><?= $d['blocked_by'] ? ' · ' . htmlspecialchars($d['blocked_by']) : '' ?></dd></div><?php endif; ?>
                     </dl>
 
                     <?php if (!empty($d['admin_note'])): ?>
@@ -230,6 +254,13 @@ flash_render();
 
                     <footer>
                         <button type="button" class="table-btn" data-open-device-dialog="device-dialog-<?= (int)$d['id'] ?>" <?= !$deviceSchemaReady ? 'disabled' : '' ?>>Edit</button>
+
+                        <form method="post" onsubmit="return confirm('<?= $isBlocked ? 'Unblock this device?' : 'Block this device? Its activation and validation requests will be denied.' ?>');">
+                            <?= Csrf::field() ?>
+                            <input type="hidden" name="activation_id" value="<?= (int)$d['id'] ?>">
+                            <button type="submit" name="action" value="<?= $isBlocked ? 'unblock_device' : 'block_device' ?>" class="<?= $isBlocked ? 'device-unblock-btn' : 'device-block-btn' ?>" <?= !$deviceSchemaReady ? 'disabled' : '' ?>><?= $isBlocked ? 'Unblock' : 'Block' ?></button>
+                        </form>
+
                         <?php if ($d['is_active']): ?>
                             <form method="post" onsubmit="return confirm('Free this activation slot? The current device will no longer validate until it activates again.');">
                                 <?= Csrf::field() ?>
@@ -253,6 +284,7 @@ flash_render();
                             <label><span>Device name</span><input type="text" name="device_name" maxlength="100" value="<?= htmlspecialchars($d['device_name'] ?? '', ENT_QUOTES) ?>" placeholder="Example: Main Cashier"></label>
                             <label><span>Internal note</span><textarea name="admin_note" maxlength="255" rows="3" placeholder="Location, owner, or support note"><?= htmlspecialchars($d['admin_note'] ?? '') ?></textarea></label>
                             <div class="device-readonly-block"><span>HWID</span><code dir="ltr"><?= htmlspecialchars($d['hwid']) ?></code></div>
+                            <div class="device-readonly-block"><span>Reported app version</span><code dir="ltr"><?= htmlspecialchars($d['app_version'] ?: 'Not reported') ?></code></div>
                         </div>
                         <div class="dialog-actions">
                             <button type="button" class="secondary-btn" data-close-device-dialog>Cancel</button>

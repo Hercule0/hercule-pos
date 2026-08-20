@@ -1,6 +1,6 @@
 <?php
 /**
- * Device Management phase 1 migration.
+ * Device Management migration (phase 1 + phase 2).
  *
  * Usage in production:
  *   php db/migrate_device_management.php
@@ -28,7 +28,11 @@ $columnExists = static function (string $columnName) use ($pdo): bool {
 
 $columns = [
     'device_name' => "VARCHAR(100) NULL AFTER hwid",
+    'app_version' => "VARCHAR(50) NULL AFTER device_name",
     'admin_note' => "VARCHAR(255) NULL AFTER ip_address",
+    'is_blocked' => "TINYINT(1) NOT NULL DEFAULT 0 AFTER admin_note",
+    'blocked_at' => "DATETIME NULL AFTER is_blocked",
+    'blocked_by' => "VARCHAR(64) NULL AFTER blocked_at",
 ];
 
 echo "Connecting to database... OK\n";
@@ -43,5 +47,19 @@ foreach ($columns as $columnName => $definition) {
     echo "ADDED - license_activations.{$columnName}\n";
 }
 
-$pdo->query('SELECT id, device_name, admin_note FROM license_activations LIMIT 1');
+$blockedIndex = $pdo->prepare(
+    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND INDEX_NAME = ?'
+);
+$blockedIndex->execute(['license_activations', 'idx_activations_blocked']);
+if ((int) $blockedIndex->fetchColumn() === 0) {
+    $pdo->exec('ALTER TABLE license_activations ADD INDEX idx_activations_blocked (is_blocked, is_active)');
+    echo "ADDED - idx_activations_blocked\n";
+} else {
+    echo "EXISTS - idx_activations_blocked\n";
+}
+
+$pdo->query('SELECT id, device_name, app_version, admin_note, is_blocked, blocked_at, blocked_by FROM license_activations LIMIT 1');
 echo "Device management migration complete.\n";
