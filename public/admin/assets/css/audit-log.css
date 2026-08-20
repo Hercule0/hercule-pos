@@ -1,0 +1,23 @@
+/* Audit Log */
+.audit-page { display:grid; gap:16px; }
+.audit-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.audit-summary-grid article { min-height:96px; display:flex; flex-direction:column; justify-content:space-between; padding:16px; border:1px solid rgba(148,163,184,.11); border-radius:15px; background:linear-gradient(180deg,rgba(18,26,39,.92),rgba(13,19,29,.96)); box-shadow:0 12px 30px rgba(0,0,0,.12); }
+.audit-summary-grid span { color:#8092a9; font-size:11px; font-weight:650; }
+.audit-summary-grid strong { color:#f7f9fc; font-size:1.8rem; letter-spacing:-.04em; }
+.audit-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.audit-search-form { flex:1 1 520px; max-width:760px; }
+.audit-action-filter select { min-width:190px; height:40px; border:1px solid rgba(148,163,184,.12); border-radius:10px; background:rgba(18,26,39,.86); color:#d7e0eb; padding:0 11px; }
+.audit-table td { vertical-align:top; }
+.audit-table code { font-size:11px; color:#a8b8ca; }
+.audit-details { max-width:420px; color:#93a4ba; font-size:12px; line-height:1.5; }
+.audit-action-pill { display:inline-flex; padding:5px 8px; border-radius:999px; border:1px solid rgba(76,194,255,.16); background:rgba(76,194,255,.07); color:#7fd5fb; font-size:10px; font-weight:700; text-transform:capitalize; }
+.audit-empty { padding:44px 20px; text-align:center; border:1px dashed rgba(148,163,184,.14); border-radius:16px; background:rgba(18,26,39,.38); }
+.audit-empty h2 { margin:0 0 6px; color:#f7f9fc; font-size:1rem; }
+.audit-empty p { margin:0; color:#71849c; font-size:12px; }
+@media (max-width:760px) {
+  .audit-summary-grid { grid-template-columns:1fr; gap:9px; }
+  .audit-summary-grid article { min-height:80px; }
+  .audit-tools { align-items:stretch; }
+  .audit-search-form, .audit-action-filter, .audit-action-filter select { width:100%; max-width:none; }
+  .audit-table .audit-details { max-width:none; }
+}
