@@ -36,7 +36,7 @@
   }
 
   function saveSubscription(subscription) {
-    return fetch("/public/admin/push_subscribe.php", {
+    return fetch("/public/admin/api.php?action=push_subscribe", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
