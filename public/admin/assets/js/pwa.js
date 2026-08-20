@@ -178,11 +178,48 @@
     });
   }
 
+  function wireAdminToolsNavigation() {
+    var href = "/public/admin/tools.php";
+    var current = window.location.pathname === href;
+    var sidebarNav = document.querySelector(".sidebar-nav");
+    if (sidebarNav && !sidebarNav.querySelector('[href="' + href + '"]')) {
+      var link = document.createElement("a");
+      link.href = href;
+      link.className = "sidebar-link" + (current ? " active" : "");
+      link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="7" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="17" r="1"/></svg><span>Admin Tools</span>';
+      var labels = sidebarNav.querySelectorAll(".sidebar-section-label");
+      var systemLabel = labels.length > 1 ? labels[1] : null;
+      if (systemLabel && systemLabel.nextSibling) {
+        sidebarNav.insertBefore(link, systemLabel.nextSibling);
+      } else {
+        sidebarNav.appendChild(link);
+      }
+    }
+
+    var dropdown = document.getElementById("user-dropdown-menu");
+    if (dropdown && !dropdown.querySelector('[href="' + href + '"]')) {
+      var item = document.createElement("a");
+      item.href = href;
+      item.className = "dropdown-item" + (current ? " active" : "");
+      item.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Admin Tools</span>';
+      var divider = dropdown.querySelector(".dropdown-divider");
+      if (divider && divider.nextSibling) {
+        dropdown.insertBefore(item, divider.nextSibling);
+      } else {
+        dropdown.appendChild(item);
+      }
+    }
+  }
+
   registerServiceWorker();
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", wirePushControls);
+    document.addEventListener("DOMContentLoaded", function () {
+      wirePushControls();
+      wireAdminToolsNavigation();
+    });
   } else {
     wirePushControls();
+    wireAdminToolsNavigation();
   }
 
   window.addEventListener("beforeinstallprompt", function (event) {
