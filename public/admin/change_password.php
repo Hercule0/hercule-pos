@@ -12,10 +12,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($new !== $confirm) {
         $error = 'New password and confirmation do not match.';
+    } elseif ($new === $current) {
+        $error = 'Choose a password different from your current password.';
+    } elseif (strlen($new) < 12) {
+        $error = 'New password must be at least 12 characters.';
+    } elseif (!preg_match('/[a-z]/', $new) || !preg_match('/[A-Z]/', $new)) {
+        $error = 'New password must include uppercase and lowercase letters.';
+    } elseif (!preg_match('/[0-9]/', $new)) {
+        $error = 'New password must include at least one number.';
+    } elseif (!preg_match('/[^A-Za-z0-9]/', $new)) {
+        $error = 'New password must include at least one symbol.';
     } else {
-        $result = Auth::changePassword((int) $_SESSION['admin_id'], $current, $new);
+        $adminId = (int) $_SESSION['admin_id'];
+        $result = Auth::changePassword($adminId, $current, $new);
         if ($result['ok']) {
-            flash_set('Password changed successfully.');
+            // Password changes invalidate every remembered-login token for this account.
+            // The current authenticated session remains valid and has already been rotated
+            // by Auth::changePassword().
+            $stmt = Database::pdo()->prepare('DELETE FROM user_sessions WHERE admin_id = ?');
+            $stmt->execute([$adminId]);
+
+            flash_set('Password changed successfully. Remembered sessions were signed out.');
             header('Location: /public/admin/index.php');
             exit;
         }
@@ -69,7 +86,7 @@ render_header('Change Password');
                 <span>New password</span>
                 <div class="auth-input">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10a5 5 0 1 1 9.5 2H21v3h-3v2h-3v2h-4l-2-2"/></svg>
-                    <input id="new-password" type="password" name="new_password" required minlength="10" autocomplete="new-password" placeholder="At least 10 characters">
+                    <input id="new-password" type="password" name="new_password" required minlength="12" autocomplete="new-password" placeholder="At least 12 characters">
                     <button type="button" class="password-toggle" data-toggle-password="new-password" aria-label="Show password"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z"/><circle cx="12" cy="12" r="2"/></svg></button>
                 </div>
             </label>
@@ -83,7 +100,7 @@ render_header('Change Password');
                 <span>Confirm new password</span>
                 <div class="auth-input">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>
-                    <input id="confirm-password" type="password" name="confirm_password" required minlength="10" autocomplete="new-password" placeholder="Repeat new password">
+                    <input id="confirm-password" type="password" name="confirm_password" required minlength="12" autocomplete="new-password" placeholder="Repeat new password">
                     <button type="button" class="password-toggle" data-toggle-password="confirm-password" aria-label="Show password"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z"/><circle cx="12" cy="12" r="2"/></svg></button>
                 </div>
                 <small class="match-message" id="match-message"></small>
@@ -101,12 +118,13 @@ render_header('Change Password');
             </span>
             <h2>Password checklist</h2>
             <ul>
-                <li data-rule="length"><i>✓</i>At least 10 characters</li>
+                <li data-rule="length"><i>✓</i>At least 12 characters</li>
                 <li data-rule="case"><i>✓</i>Uppercase and lowercase letters</li>
                 <li data-rule="number"><i>✓</i>At least one number</li>
+                <li data-rule="symbol"><i>✓</i>At least one symbol</li>
                 <li data-rule="different"><i>✓</i>Different from current password</li>
             </ul>
-            <p>Changing your password does not affect customer licenses or activated devices.</p>
+            <p>Changing your password signs out remembered sessions but does not affect customer licenses or activated devices.</p>
         </aside>
     </div>
 </div>
@@ -134,9 +152,10 @@ render_header('Change Password');
     function updateStrength() {
         var value = next.value;
         var rules = {
-            length: value.length >= 10,
+            length: value.length >= 12,
             case: /[a-z]/.test(value) && /[A-Z]/.test(value),
             number: /[0-9]/.test(value),
+            symbol: /[^A-Za-z0-9]/.test(value),
             different: value.length > 0 && value !== current.value
         };
         Object.keys(rules).forEach(function (name) {
@@ -144,9 +163,9 @@ render_header('Change Password');
             if (item) item.classList.toggle('valid', rules[name]);
         });
         var score = Object.values(rules).filter(Boolean).length;
-        bar.style.width = (score * 25) + '%';
+        bar.style.width = (score * 20) + '%';
         bar.dataset.score = score;
-        label.textContent = value.length === 0 ? 'Enter a new password' : ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'][score];
+        label.textContent = value.length === 0 ? 'Enter a new password' : ['Very weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong'][score];
 
         if (confirm.value.length) {
             var matches = confirm.value === value;
