@@ -28,10 +28,11 @@ The current open PRs are individually mergeable against the current `main`, but 
 - PR #48 changes `includes/DeviceManager.php`. Preserve its audit hooks together with the existing block/unblock behavior and Device Management columns.
 - PR #50 writes lifecycle events, realtime license-change markers and admin audit records. Preserve all three behaviors when resolving any future conflict around lifecycle logic.
 - PR #52 writes session-revocation actions to `admin_audit_log`. These audit writes are fail-open and must not prevent the actual security revocation.
-- PR #56 changes `includes/PushNotifier.php`. Treat the existing VAPID configuration and working subscribe/send flow as protected behavior; only the per-admin preference filtering should be added.
+- PR #56 changes `includes/PushNotifier.php`. Treat the existing VAPID configuration and working subscribe/send flow as protected behavior. Preserve per-admin category filtering, active-admin filtering, and stale-subscription isolation across deleted/recreated usernames.
 - PR #58 changes the central `includes/Auth.php`. After it lands, re-run login, MFA, role checks, Remember Me, forced password change, and permission tests before continuing.
-- Feature PRs #48, #50, #51, #52, #56, #57 and #58 contain focused `*_test.php` files. After PR #59 is on the integration base, refresh those feature branches so `tests/run_regressions.php` discovers and executes their focused suites in CI.
+- Feature PRs #48, #50, #51, #52, #53, #56, #57 and #58 contain focused `*_test.php` files. After PR #59 is on the integration base, refresh those feature branches so `tests/run_regressions.php` discovers and executes their focused suites in CI.
 - PR #55 intentionally passes the `expiry` event category to `PushNotifier::sendPush()`. Once PR #56 is integrated, expiry pushes must respect per-admin notification preferences.
+- Password Recovery already has a dedicated `recovery_audit_log` for request/claim/reset lifecycle security events. Keep that evidence even when admin-facing events are also visible in `admin_audit_log`; do not replace one audit stream with the other.
 
 Never resolve a conflict by replacing an entire shared file with an older branch copy. Resolve the smallest conflicting hunk and retain newer `main` behavior.
 
@@ -93,17 +94,18 @@ After deployment and migrations:
 4. Existing license validation succeeds for a known active device.
 5. A blocked device is rejected by activate/validate and succeeds again after unblock.
 6. License lifecycle: extend a disposable/test license, switch a finite plan and confirm the new term is recalculated, change activation limit, transfer to a test customer, and verify both history + audit records are written.
-7. Recovery request: submit from a test device, approve, claim and complete once; confirm token reuse is rejected.
+7. Recovery request: submit from a test device, approve, claim and complete once; confirm token reuse is rejected and the dedicated recovery audit trail records the security lifecycle.
 8. Web Push: run Fast Test, then trigger a real Recovery notification.
-9. Notification settings: disable one category for a test admin and verify only that category is suppressed; re-enable it afterward.
-10. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins. Also verify a zero-recipient run does not record the threshold as sent.
-11. Release API: publish a test release and verify the client-version response, then unpublish it.
-12. Remembered sessions: create a Remember Me login, attempt an out-of-scope revoke from a non-owner, revoke a valid session, then confirm successful revocations appear in Audit Log.
-13. Password hardening: verify weak passwords are rejected by the server-side `PasswordPolicy`, a strong password succeeds, and a successful password change invalidates remembered sessions.
-14. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted and release publishing remains separately controlled by `releases.manage`.
-15. Audit Log: verify login failure, MFA failure, device block/unblock, lifecycle mutations and session revocations appear without passwords or MFA codes.
-16. Backup Health shows the expected encrypted backup status; do not perform web-based restore/decrypt.
-17. Re-test the admin PWA on mobile and confirm there is no horizontal overflow.
+9. Notification settings: disable one category for a test admin and verify only that category is suppressed; temporarily mute the account and verify delivery resumes after the mute is removed.
+10. Push authorization: disable a test administrator and confirm its browser subscription receives no operational/recovery push. Delete and recreate a test username and confirm a subscription created before the recreated account is ignored until the new account subscribes again.
+11. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins. Also verify a zero-recipient run does not record the threshold as sent.
+12. Release API: publish a test release and verify the client-version response, then unpublish it.
+13. Remembered sessions: create a Remember Me login, attempt an out-of-scope revoke from a non-owner, revoke a valid session, then confirm successful revocations appear in Audit Log.
+14. Password hardening: verify weak passwords are rejected by the server-side `PasswordPolicy`, a strong password succeeds, and a successful password change invalidates remembered sessions.
+15. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted and release publishing remains separately controlled by `releases.manage`.
+16. Audit Log: verify login failure, MFA failure, device block/unblock, lifecycle mutations and session revocations appear without passwords or MFA codes.
+17. Backup Health shows the expected encrypted backup status; do not perform web-based restore/decrypt.
+18. Re-test the admin PWA on mobile and confirm there is no horizontal overflow.
 
 ## Rollback rule
 
