@@ -13,18 +13,6 @@ function sm_check(string $label, bool $condition): void
 $pdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->exec(file_get_contents(__DIR__ . '/../db/schema.sqlite.test.sql'));
-$pdo->exec(
-    'CREATE TABLE user_sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        admin_id INTEGER NOT NULL,
-        selector TEXT NOT NULL UNIQUE,
-        validator_hash TEXT NOT NULL,
-        user_agent TEXT NULL,
-        ip_address TEXT NULL,
-        expires_at TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )'
-);
 Database::setTestInstance($pdo);
 
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
