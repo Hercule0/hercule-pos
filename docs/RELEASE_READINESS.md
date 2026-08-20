@@ -4,21 +4,21 @@ This checklist is for the current admin/backend development batch. Do not merge 
 
 ## Recommended merge order
 
-1. PR #48 — Audit Log
-2. PR #49 — Monitoring Dashboard
-3. PR #50 — License Lifecycle
-4. PR #51 — Release Management
-5. PR #52 — Remembered Sessions
-6. PR #53 — Backup Health Dashboard
-7. PR #54 — Performance Indexes
-8. PR #55 — License Expiry Push
-9. PR #56 — Notification Settings
-10. PR #57 — Password Security Hardening
-11. PR #58 — Granular Permissions
-12. PR #59 — Focused Regression Runner
+1. PR #59 — Focused Regression Runner
+2. PR #48 — Audit Log
+3. PR #49 — Monitoring Dashboard
+4. PR #50 — License Lifecycle
+5. PR #51 — Release Management
+6. PR #52 — Remembered Sessions
+7. PR #53 — Backup Health Dashboard
+8. PR #54 — Performance Indexes
+9. PR #55 — License Expiry Push
+10. PR #56 — Notification Settings
+11. PR #57 — Password Security Hardening
+12. PR #58 — Granular Permissions
 13. PR #60 — Release readiness checklist
 
-Resolve any branch conflicts against the final main before merging. Prefer one PR at a time so a regression can be traced to a specific merge.
+The regression runner lands first so every later feature can be validated by the same focused-suite gate once its branch is refreshed against the updated `main`. Resolve any branch conflicts against the latest `main` before merging. Prefer one PR at a time so a regression can be traced to a specific merge.
 
 ## Known integration hotspots
 
@@ -28,7 +28,8 @@ The current open PRs are individually mergeable against the current `main`, but 
 - PR #48 changes `includes/DeviceManager.php`. Preserve its audit hooks together with the existing block/unblock behavior and Device Management columns.
 - PR #56 changes `includes/PushNotifier.php`. Treat the existing VAPID configuration and working subscribe/send flow as protected behavior; only the per-admin preference filtering should be added.
 - PR #58 changes the central `includes/Auth.php`. After it lands, re-run login, MFA, role checks, Remember Me, forced password change, and permission tests before continuing.
-- Feature PRs #50, #51, #52, #56 and #58 contain focused `*_test.php` files. PR #59's regression runner discovers them only after those files are present on the integration base.
+- Feature PRs #48, #50, #51, #52, #56, #57 and #58 contain focused `*_test.php` files. After PR #59 is on the integration base, refresh those feature branches so `tests/run_regressions.php` discovers and executes their focused suites in CI.
+- PR #55 intentionally passes the `expiry` event category to `PushNotifier::sendPush()`. Once PR #56 is integrated, expiry pushes must respect per-admin notification preferences.
 
 Never resolve a conflict by replacing an entire shared file with an older branch copy. Resolve the smallest conflicting hunk and retain newer `main` behavior.
 
@@ -61,7 +62,7 @@ License expiry push alerts are inert until explicitly scheduled. After `migrate_
 php scripts/send_expiry_alerts.php
 ```
 
-Daily is sufficient for 30-day / 7-day / 1-day / expired thresholds. Hourly is also safe because the alert table prevents duplicate threshold notifications.
+Daily is sufficient for 30-day / 7-day / 1-day / expired thresholds. Hourly is also safe because the alert table prevents duplicate threshold notifications. A threshold is not consumed when no eligible push recipient exists, so a later run can still deliver it after an admin subscribes or re-enables expiry alerts.
 
 ## CI gates before merging
 
@@ -90,10 +91,10 @@ After deployment and migrations:
 7. Recovery request: submit from a test device, approve, claim and complete once; confirm token reuse is rejected.
 8. Web Push: run Fast Test, then trigger a real Recovery notification.
 9. Notification settings: disable one category for a test admin and verify only that category is suppressed; re-enable it afterward.
-10. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins.
+10. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins. Also verify a zero-recipient run does not record the threshold as sent.
 11. Release API: publish a test release and verify the client-version response, then unpublish it.
 12. Remembered sessions: create a Remember Me login and revoke it from Sessions.
-13. Password hardening: verify weak passwords are rejected and a successful password change invalidates remembered sessions.
+13. Password hardening: verify weak passwords are rejected by the server-side `PasswordPolicy`, a strong password succeeds, and a successful password change invalidates remembered sessions.
 14. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted.
 15. Audit Log: verify login failure, MFA failure and device block/unblock events appear without passwords or MFA codes.
 16. Backup Health shows the expected encrypted backup status; do not perform web-based restore/decrypt.
