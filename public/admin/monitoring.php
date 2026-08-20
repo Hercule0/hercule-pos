@@ -1,6 +1,10 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 Auth::require();
+// Monitoring exposes license keys, HWIDs, IP addresses, recovery counts and
+// security events. Keep it behind an operational permission instead of making
+// those details visible to read-only administrators.
+Auth::requirePermission('licenses.manage');
 
 $pdo = Database::pdo();
 
