@@ -44,7 +44,9 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run test suite
-        run: php tests/run_test.php
+        run: |
+          php tests/run_test.php
+          php tests/device_manager_test.php
 
       - name: Prepare deployment package
         run: |
