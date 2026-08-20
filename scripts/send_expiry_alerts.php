@@ -38,6 +38,7 @@ $licenses = $stmt->fetchAll() ?: [];
 $sent = 0;
 $skipped = 0;
 $failed = 0;
+$noRecipients = 0;
 
 foreach ($licenses as $license) {
     $expiresTs = strtotime((string) $license['expires_at']);
@@ -94,6 +95,14 @@ foreach ($licenses as $license) {
         continue;
     }
 
+    // Do not consume the threshold when there was nobody eligible to receive it.
+    // This lets a later run deliver the alert after an admin enables/subscribes to
+    // expiry notifications instead of permanently recording a zero-recipient send.
+    if ((int) ($result['dispatched'] ?? 0) < 1) {
+        $noRecipients++;
+        continue;
+    }
+
     $insert = $pdo->prepare(
         'INSERT IGNORE INTO license_expiry_alerts (license_id, threshold_days, expires_at) VALUES (?, ?, ?)'
     );
@@ -101,5 +110,11 @@ foreach ($licenses as $license) {
     $sent++;
 }
 
-printf("Expiry alerts complete: sent=%d skipped=%d failed=%d\n", $sent, $skipped, $failed);
+printf(
+    "Expiry alerts complete: sent=%d skipped=%d no_recipients=%d failed=%d\n",
+    $sent,
+    $skipped,
+    $noRecipients,
+    $failed
+);
 exit($failed > 0 ? 2 : 0);
