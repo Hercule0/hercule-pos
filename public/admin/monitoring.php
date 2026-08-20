@@ -12,12 +12,20 @@ $dbStart = microtime(true);
 $pdo->query('SELECT 1')->fetchColumn();
 $dbLatencyMs = round((microtime(true) - $dbStart) * 1000, 1);
 
+try {
+    $pushSubscribers = (int)$pdo->query("SELECT COUNT(*) FROM push_subscriptions WHERE last_seen_at >= DATE_SUB(NOW(), INTERVAL 45 DAY)")->fetchColumn();
+    $pushMetricLabel = 'active browser profiles';
+} catch (PDOException $e) {
+    $pushSubscribers = (int)$pdo->query("SELECT COUNT(*) FROM push_subscriptions")->fetchColumn();
+    $pushMetricLabel = 'browser endpoints';
+}
+
 $metrics = [
     'active_devices' => (int)$pdo->query("SELECT COUNT(*) FROM license_activations WHERE is_active = 1")->fetchColumn(),
     'online_devices' => (int)$pdo->query("SELECT COUNT(*) FROM license_activations WHERE is_active = 1 AND last_seen_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)")->fetchColumn(),
     'failed_validations_24h' => (int)$pdo->query("SELECT COUNT(*) FROM verification_log WHERE result <> 'ok' AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)")->fetchColumn(),
     'pending_recovery' => (int)$pdo->query("SELECT COUNT(*) FROM password_recovery_requests WHERE status = 'pending'")->fetchColumn(),
-    'push_subscriptions' => (int)$pdo->query("SELECT COUNT(*) FROM push_subscriptions")->fetchColumn(),
+    'push_subscriptions' => $pushSubscribers,
     'expiring_7d' => (int)$pdo->query("SELECT COUNT(*) FROM licenses WHERE status = 'active' AND expires_at BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)")->fetchColumn(),
     'api_requests_1h' => (int)$pdo->query("SELECT COUNT(*) FROM api_requests WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)")->fetchColumn(),
     'audit_events_24h' => (int)$pdo->query("SELECT COUNT(*) FROM admin_audit_log WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)")->fetchColumn(),
@@ -61,7 +69,7 @@ render_header('Monitoring');
     <section class="monitor-health-strip">
         <article><span>Database</span><strong><?= htmlspecialchars($dbState) ?></strong><small><?= htmlspecialchars((string)$dbLatencyMs) ?> ms</small></article>
         <article><span>PHP runtime</span><strong><?= htmlspecialchars(PHP_VERSION) ?></strong><small><?= htmlspecialchars(PHP_SAPI) ?></small></article>
-        <article><span>Push subscribers</span><strong><?= $metrics['push_subscriptions'] ?></strong><small>browser endpoints</small></article>
+        <article><span>Push subscribers</span><strong><?= $metrics['push_subscriptions'] ?></strong><small><?= htmlspecialchars($pushMetricLabel) ?></small></article>
         <article><span>API traffic</span><strong><?= $metrics['api_requests_1h'] ?></strong><small>requests / 1h</small></article>
     </section>
 

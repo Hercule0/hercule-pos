@@ -11,6 +11,7 @@ migrations=(
   "db/migrate_expiry_alerts.php"
   "db/migrate_notification_preferences.php"
   "db/migrate_admin_permissions.php"
+  "db/migrate_push_subscription_hygiene.php"
 )
 
 echo "Hercule POS release migration preflight"

@@ -10,8 +10,19 @@ use Minishlink\WebPush\Subscription;
 
 final class PushNotifier
 {
+    private static function pruneStaleSubscriptions(): void
+    {
+        try {
+            Database::pdo()->exec("DELETE FROM push_subscriptions WHERE last_seen_at < DATE_SUB(NOW(), INTERVAL 45 DAY)");
+        } catch (PDOException $e) {
+            // The hygiene columns are additive. During a rolling deploy, keep
+            // push delivery working until the migration has been applied.
+        }
+    }
+
     private static function activeSubscriptions(): array
     {
+        self::pruneStaleSubscriptions();
         $stmt = Database::pdo()->query(
             'SELECT ps.*
              FROM push_subscriptions ps
@@ -42,6 +53,7 @@ final class PushNotifier
             return self::activeSubscriptions();
         }
 
+        self::pruneStaleSubscriptions();
         try {
             $sql = "SELECT ps.*
                     FROM push_subscriptions ps

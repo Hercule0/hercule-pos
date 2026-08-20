@@ -10,6 +10,28 @@
     installButtons.forEach(function (button) { button.hidden = !visible; });
   }
 
+  function getPushDeviceId() {
+    var key = "hercule_push_device_id";
+    try {
+      var existing = window.localStorage.getItem(key);
+      if (existing && /^[A-Za-z0-9_-]{16,64}$/.test(existing)) return existing;
+      var generated;
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        generated = window.crypto.randomUUID().replace(/-/g, "");
+      } else if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+        var bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        generated = Array.prototype.map.call(bytes, function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
+      } else {
+        generated = (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+      }
+      window.localStorage.setItem(key, generated);
+      return generated;
+    } catch (error) {
+      return (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+    }
+  }
+
   function getVapidPublicKey() {
     if (vapidPublicKeyPromise) return vapidPublicKeyPromise;
     vapidPublicKeyPromise = fetch("/public/admin/push_config.php", {
@@ -36,11 +58,14 @@
   }
 
   function saveSubscription(subscription) {
+    var payload = subscription.toJSON ? subscription.toJSON() : subscription;
+    payload.device_id = getPushDeviceId();
+    payload.user_agent = String(window.navigator.userAgent || "").slice(0, 255);
     return fetch("/public/admin/api.php?action=push_subscribe", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(subscription.toJSON ? subscription.toJSON() : subscription)
+      body: JSON.stringify(payload)
     }).then(function (response) {
       return response.json().catch(function () {
         throw new Error("Subscription endpoint returned invalid JSON (HTTP " + response.status + ")");
@@ -135,7 +160,7 @@
           var label = enableButton.querySelector("span");
           if (label) label.textContent = "Alerts Active";
           enableButton.classList.add("is-granted");
-          showPushToast("Push Notifications Enabled", "This phone is subscribed and synced with the server.", "success");
+          showPushToast("Push Notifications Enabled", "This browser is subscribed and synced with the server.", "success");
         }).catch(function (error) {
           showPushToast("Could not enable alerts", error.message || String(error), "error");
         }).finally(function () {
@@ -166,9 +191,9 @@
             return data;
           });
         }).then(function (data) {
-          var sent = data.sent != null ? data.sent : (data.successful != null ? data.successful : 0);
+          var sent = data.dispatched != null ? data.dispatched : (data.sent != null ? data.sent : 0);
           var failed = data.failed != null ? data.failed : 0;
-          showPushToast("Test Push", data.message || ("Delivered: " + sent + ", failed: " + failed), failed ? "warning" : "success");
+          showPushToast("Test Push", data.message || ("Delivered endpoints: " + sent + ", failed: " + failed), failed ? "warning" : "success");
         }).catch(function (error) {
           showPushToast("Test Push Failed", error.message || String(error), "error");
         }).finally(function () {

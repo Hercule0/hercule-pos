@@ -202,6 +202,9 @@ try {
             $endpoint = trim((string)($data['endpoint'] ?? ''));
             $p256dh = trim((string)($data['keys']['p256dh'] ?? ''));
             $auth = trim((string)($data['keys']['auth'] ?? ''));
+            $deviceId = trim((string)($data['device_id'] ?? ''));
+            $userAgent = mb_substr(trim((string)($data['user_agent'] ?? ($_SERVER['HTTP_USER_AGENT'] ?? ''))), 0, 255);
+            $adminUsername = (string)Auth::currentUsername();
 
             if ($endpoint === '' || $p256dh === '' || $auth === '') {
                 throw new Exception('Incomplete browser push subscription');
@@ -209,10 +212,47 @@ try {
             if (!filter_var($endpoint, FILTER_VALIDATE_URL) || stripos($endpoint, 'https://') !== 0) {
                 throw new Exception('Invalid push endpoint');
             }
+            if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/', $deviceId)) {
+                throw new Exception('Invalid push device identity');
+            }
 
-            $stmt = $pdo->prepare("REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)");
-            $stmt->execute([(string)Auth::currentUsername(), $endpoint, $p256dh, $auth]);
-            echo json_encode(['ok' => true, 'saved' => true]);
+            try {
+                $pdo->beginTransaction();
+                // One row per administrator/browser profile. If the push service
+                // rotates the endpoint, the old row is removed before the new one
+                // is saved instead of accumulating another apparent "device".
+                $delete = $pdo->prepare('DELETE FROM push_subscriptions WHERE admin_username = ? AND device_id = ? AND endpoint <> ?');
+                $delete->execute([$adminUsername, $deviceId, $endpoint]);
+
+                $stmt = $pdo->prepare(
+                    "INSERT INTO push_subscriptions
+                        (admin_username, device_id, endpoint, p256dh_key, auth_key, user_agent, created_at, last_seen_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                     ON DUPLICATE KEY UPDATE
+                        admin_username = VALUES(admin_username),
+                        device_id = VALUES(device_id),
+                        p256dh_key = VALUES(p256dh_key),
+                        auth_key = VALUES(auth_key),
+                        user_agent = VALUES(user_agent),
+                        last_seen_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP"
+                );
+                $stmt->execute([$adminUsername, $deviceId, $endpoint, $p256dh, $auth, $userAgent]);
+
+                // Remove abandoned browser profiles after 45 days without a sync.
+                $pdo->exec("DELETE FROM push_subscriptions WHERE last_seen_at < DATE_SUB(NOW(), INTERVAL 45 DAY)");
+                $pdo->commit();
+            } catch (PDOException $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                // Keep rollout non-breaking until the additive migration is run.
+                if (stripos($e->getMessage(), 'device_id') === false && stripos($e->getMessage(), 'last_seen_at') === false) {
+                    throw $e;
+                }
+                $stmt = $pdo->prepare("REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)");
+                $stmt->execute([$adminUsername, $endpoint, $p256dh, $auth]);
+            }
+
+            echo json_encode(['ok' => true, 'saved' => true, 'device_id' => $deviceId]);
             break;
 
         default:
