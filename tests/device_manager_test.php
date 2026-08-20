@@ -17,6 +17,13 @@ function dm_check(string $label, bool $condition): void
 $pdo = new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->exec(file_get_contents(__DIR__ . '/../db/schema.sqlite.test.sql'));
+// Mirror the production Device Management migration for the SQLite regression DB.
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN device_name TEXT NULL');
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN admin_note TEXT NULL');
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN app_version TEXT NULL');
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0');
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN blocked_at TEXT NULL');
+$pdo->exec('ALTER TABLE license_activations ADD COLUMN blocked_by TEXT NULL');
 Database::setTestInstance($pdo);
 
 $pdo->prepare('INSERT INTO customers (name, email) VALUES (?, ?)')->execute(['Device Test', 'device@example.com']);
