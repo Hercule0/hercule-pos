@@ -33,6 +33,18 @@ CREATE TABLE push_subscriptions (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE user_sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id        INTEGER NOT NULL,
+    selector        TEXT NOT NULL UNIQUE,
+    validator_hash  TEXT NOT NULL,
+    user_agent      TEXT NOT NULL,
+    ip_address      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE login_attempts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT NOT NULL,
