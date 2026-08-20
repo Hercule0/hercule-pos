@@ -2,6 +2,8 @@
 
 final class BackupManager
 {
+    private const CHECKSUM_MAX_BYTES = 268435456; // 256 MiB per archive in web request
+
     public static function directory(): ?string
     {
         $dir = trim((string) (getenv('BACKUP_DIR') ?: ''));
@@ -49,8 +51,11 @@ final class BackupManager
 
         $rows = [];
         foreach ($paths as $path) {
+            $size = (int) filesize($path);
             $checksumPath = $path . '.sha256';
             $checksum = null;
+            $checksumStatus = 'missing';
+
             if (is_readable($checksumPath)) {
                 $raw = trim((string) file_get_contents($checksumPath));
                 if ($raw !== '') {
@@ -58,12 +63,29 @@ final class BackupManager
                 }
             }
 
+            $checksumOk = null;
+            if ($checksum) {
+                if ($size <= self::CHECKSUM_MAX_BYTES) {
+                    $actual = hash_file('sha256', $path);
+                    $checksumOk = is_string($actual)
+                        ? hash_equals(strtolower($checksum), strtolower($actual))
+                        : false;
+                    $checksumStatus = $checksumOk ? 'verified' : 'mismatch';
+                } else {
+                    // Avoid hashing very large archives synchronously inside an HTTP
+                    // request. The server-side verify script remains the authoritative
+                    // path for full-size restore-readiness checks.
+                    $checksumStatus = 'deferred';
+                }
+            }
+
             $rows[] = [
                 'name' => basename($path),
-                'size_bytes' => (int) filesize($path),
+                'size_bytes' => $size,
                 'modified_at' => gmdate('Y-m-d H:i:s', (int) filemtime($path)),
                 'checksum' => $checksum,
-                'checksum_ok' => $checksum ? hash_equals(strtolower($checksum), strtolower(hash_file('sha256', $path))) : null,
+                'checksum_ok' => $checksumOk,
+                'checksum_status' => $checksumStatus,
             ];
         }
         return $rows;
