@@ -88,20 +88,69 @@ foreach ($mfaColumns as $columnName => $definition) {
     }
 }
 
-// Older deployments may already have push_subscriptions without admin_username.
-// CREATE TABLE IF NOT EXISTS will not add missing columns to an existing table,
-// so repair the legacy shape explicitly before push subscription writes occur.
-$pushAdminColumn = $pdo->prepare(
-    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
-);
-$pushAdminColumn->execute(['push_subscriptions', 'admin_username']);
-if ((int) $pushAdminColumn->fetchColumn() === 0) {
-    $pdo->exec(
-        "ALTER TABLE push_subscriptions
-         ADD COLUMN admin_username VARCHAR(255) NOT NULL DEFAULT 'legacy' AFTER id"
+// Legacy production databases used admin_id / p256dh / auth while the current
+// push runtime expects admin_username / p256dh_key / auth_key. CREATE TABLE IF
+// NOT EXISTS does not evolve an existing table, so normalize that table here.
+$pushColumnExists = static function (string $columnName) use ($pdo): bool {
+    $check = $pdo->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
     );
-    echo "COLUMN - push_subscriptions.admin_username added\n";
+    $check->execute(['push_subscriptions', $columnName]);
+    return (int) $check->fetchColumn() > 0;
+};
+
+$pushColumns = [
+    'admin_username' => "VARCHAR(255) NOT NULL DEFAULT 'legacy'",
+    'p256dh_key' => "VARCHAR(255) NULL",
+    'auth_key' => "VARCHAR(255) NULL",
+];
+foreach ($pushColumns as $columnName => $definition) {
+    if (!$pushColumnExists($columnName)) {
+        $pdo->exec("ALTER TABLE push_subscriptions ADD COLUMN {$columnName} {$definition}");
+        echo "COLUMN - push_subscriptions.{$columnName} added\n";
+    }
+}
+
+// Preserve usable subscriptions created by the legacy schema.
+if ($pushColumnExists('p256dh')) {
+    $pdo->exec(
+        "UPDATE push_subscriptions
+         SET p256dh_key = p256dh
+         WHERE (p256dh_key IS NULL OR p256dh_key = '')
+           AND p256dh IS NOT NULL AND p256dh <> ''"
+    );
+    echo "DATA - legacy push_subscriptions.p256dh copied to p256dh_key\n";
+}
+if ($pushColumnExists('auth')) {
+    $pdo->exec(
+        "UPDATE push_subscriptions
+         SET auth_key = auth
+         WHERE (auth_key IS NULL OR auth_key = '')
+           AND auth IS NOT NULL AND auth <> ''"
+    );
+    echo "DATA - legacy push_subscriptions.auth copied to auth_key\n";
+}
+if ($pushColumnExists('admin_id')) {
+    $pdo->exec(
+        "UPDATE push_subscriptions ps
+         JOIN admin_users au ON au.id = ps.admin_id
+         SET ps.admin_username = au.username
+         WHERE ps.admin_username = 'legacy'"
+    );
+    echo "DATA - legacy push subscription admin IDs mapped to usernames\n";
+}
+
+// Rows without complete browser keys cannot ever receive Web Push. Remove only
+// those unusable legacy rows so PushNotifier never attempts to send through them.
+$removedLegacyPushRows = $pdo->exec(
+    "DELETE FROM push_subscriptions
+     WHERE endpoint IS NULL OR endpoint = ''
+        OR p256dh_key IS NULL OR p256dh_key = ''
+        OR auth_key IS NULL OR auth_key = ''"
+);
+if ($removedLegacyPushRows > 0) {
+    echo "DATA - removed {$removedLegacyPushRows} unusable legacy push subscription(s)\n";
 }
 
 $pushAdminIndex = $pdo->prepare(
