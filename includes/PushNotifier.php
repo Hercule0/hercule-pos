@@ -10,10 +10,43 @@ use Minishlink\WebPush\Subscription;
 
 final class PushNotifier
 {
-    public static function getSubscriptions(): array
+    public static function getSubscriptions(?string $eventType = null): array
     {
-        $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
-        return $stmt->fetchAll() ?: [];
+        if ($eventType === null) {
+            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
+            return $stmt->fetchAll() ?: [];
+        }
+
+        $columns = [
+            'activation' => 'activation_enabled',
+            'recovery' => 'recovery_enabled',
+            'expiry' => 'expiry_enabled',
+            'security' => 'security_enabled',
+            'system' => 'system_enabled',
+        ];
+        $column = $columns[$eventType] ?? null;
+        if ($column === null) {
+            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
+            return $stmt->fetchAll() ?: [];
+        }
+
+        try {
+            $sql = "SELECT ps.*
+                    FROM push_subscriptions ps
+                    LEFT JOIN admin_notification_preferences np
+                      ON np.admin_username = ps.admin_username
+                    WHERE np.id IS NULL
+                       OR (np.{$column} = 1
+                           AND (np.muted_until IS NULL OR np.muted_until <= CURRENT_TIMESTAMP))
+                    ORDER BY ps.created_at DESC";
+            $stmt = Database::pdo()->query($sql);
+            return $stmt->fetchAll() ?: [];
+        } catch (PDOException $e) {
+            // Fail open during rollout if the preference table is not migrated yet.
+            error_log('Notification preference lookup unavailable: ' . $e->getMessage());
+            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
+            return $stmt->fetchAll() ?: [];
+        }
     }
 
     public static function subscribe(string $endpoint, string $p256dh, string $auth, $adminUsername): bool
@@ -34,7 +67,8 @@ final class PushNotifier
             '⚡ Live POS Terminal Activation',
             "License [{$licenseKey}] activated on device HWID [{$hwid}]" . ($deviceName ? " ({$deviceName})" : ''),
             '/public/admin/licenses.php',
-            'activation-' . time()
+            'activation-' . time(),
+            'activation'
         );
     }
 
@@ -44,13 +78,14 @@ final class PushNotifier
             '🚨 Urgent Store PIN Reset Request',
             "Staff \"{$username}\" on terminal [{$hwid}] requested emergency password recovery.",
             '/public/admin/recovery_requests.php',
-            'recovery-' . time()
+            'recovery-' . time(),
+            'recovery'
         );
     }
 
-    public static function sendPush(string $title, string $body, ?string $url = null, ?string $tag = null): array
+    public static function sendPush(string $title, string $body, ?string $url = null, ?string $tag = null, ?string $eventType = null): array
     {
-        $subscriptions = self::getSubscriptions();
+        $subscriptions = self::getSubscriptions($eventType);
         if (empty($subscriptions)) {
             return ['ok' => true, 'subscriptions_count' => 0, 'dispatched' => 0];
         }
@@ -61,9 +96,6 @@ final class PushNotifier
         $publicKey = trim((string)($vapid['public_key'] ?? ''));
         $privateKey = trim((string)($vapid['private_key'] ?? ''));
 
-        // Never attempt to construct WebPush with incomplete credentials. This
-        // makes a missing Azure setting visible to the test endpoint instead of
-        // producing a library-level exception or an ambiguous delivery failure.
         if ($subject === '' || $publicKey === '' || $privateKey === '') {
             return [
                 'ok' => false,
