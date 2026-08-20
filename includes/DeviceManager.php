@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/Database.php';
+require_once __DIR__ . '/AuditLog.php';
 
 final class DeviceManager
 {
@@ -119,6 +120,12 @@ final class DeviceManager
              VALUES (?, ?, ?, ?)'
         );
         $event->execute([(int) $activation['license_id'], $eventType, $note, $adminUsername]);
+
+        AuditLog::adminAction(
+            $eventType,
+            $activationId,
+            'License #' . (int)$activation['license_id'] . ' · HWID ' . mb_substr((string)$activation['hwid'], 0, 90)
+        );
         return true;
     }
 }
