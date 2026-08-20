@@ -1,5 +1,9 @@
 <?php
 $files = glob(__DIR__ . '/*_test.php') ?: [];
+$files = array_values(array_filter(
+    $files,
+    static fn(string $file): bool => basename($file) !== 'run_test.php'
+));
 sort($files);
 
 if (!$files) {
