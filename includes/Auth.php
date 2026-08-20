@@ -1,13 +1,12 @@
 <?php
 /**
  * Admin authentication: session-based login, is_admin() guard for every
- * protected page, and a DB-backed rate limiter on login attempts (the same
- * class of bug that was fixed in Ur Library's login flow — handled up
- * front here instead).
+ * protected page, and a DB-backed rate limiter on login attempts.
  */
 
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Totp.php';
+require_once __DIR__ . '/AuthPermissionBridge.php';
 
 final class Auth
 {
@@ -18,6 +17,7 @@ final class Auth
         'support' => ['licenses.manage', 'recovery.review', 'exports.download'],
         'read_only' => [],
     ];
+
     private static function config(): array
     {
         static $config = null;
@@ -80,12 +80,12 @@ final class Auth
         }
 
         [$selector, $validator] = explode(':', $cookie, 2);
-        
+
         $stmt = Database::pdo()->prepare(
-            'SELECT us.id, us.admin_id, us.validator_hash, us.user_agent, us.ip_address, us.expires_at, 
-                    a.username, a.role, a.is_active, a.must_change_password 
-             FROM user_sessions us 
-             JOIN admin_users a ON us.admin_id = a.id 
+            'SELECT us.id, us.admin_id, us.validator_hash, us.user_agent, us.ip_address, us.expires_at,
+                    a.username, a.role, a.is_active, a.must_change_password
+             FROM user_sessions us
+             JOIN admin_users a ON us.admin_id = a.id
              WHERE us.selector = ?'
         );
         $stmt->execute([$selector]);
@@ -96,42 +96,25 @@ final class Auth
             return false;
         }
 
-        // Verify validator hash
         if (!hash_equals($session['validator_hash'], hash('sha256', $validator))) {
             self::clearRememberCookie();
             return false;
         }
 
-        // Check expiration
         if (strtotime($session['expires_at']) < time()) {
             self::clearRememberCookie();
             return false;
         }
 
-        // Removed strict Trusted Device (IP and User-Agent) verification
-        // PWAs on mobile networks frequently change IP addresses, and the standalone
-        // User-Agent can differ slightly from the browser User-Agent.
-        /*
-        $currentIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        $currentUa = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        if ($session['ip_address'] !== $currentIp || $session['user_agent'] !== $currentUa) {
-            self::clearRememberCookie();
-            return false;
-        }
-        */
-
-        // Check if user is still active
         if (empty($session['is_active'])) {
             self::clearRememberCookie();
             return false;
         }
 
-        // Proceed with login
         self::finishLogin((int) $session['admin_id'], $session['username'], $session['role'], !empty($session['must_change_password']), false);
         return true;
     }
 
-    /** Call at the top of every admin page. Redirects to login if not authenticated. */
     public static function require(): void
     {
         self::ensureSession();
@@ -147,10 +130,6 @@ final class Auth
         }
     }
 
-    /**
-     * Returns true/false for whether this username+IP is currently allowed
-     * to attempt a login, based on recent failures.
-     */
     public static function isRateLimited(string $username, string $ip): bool
     {
         $cfg = self::config()['security'];
@@ -186,9 +165,6 @@ final class Auth
         }
     }
 
-    /**
-     * @return array{ok: bool, error?: string, requires_mfa?: bool}
-     */
     public static function attemptLogin(string $username, string $password, string $ip, bool $remember = false): array
     {
         self::ensureSession();
@@ -203,7 +179,6 @@ final class Auth
             $stmt->execute([$username]);
             $user = $stmt->fetch();
         } catch (PDOException $e) {
-            // Backward-compatible during rollout: the CLI migration adds role.
             error_log('admin_users.role is not migrated yet: ' . $e->getMessage());
             $stmt = Database::pdo()->prepare('SELECT id, password_hash FROM admin_users WHERE username = ?');
             $stmt->execute([$username]);
@@ -215,10 +190,6 @@ final class Auth
             }
         }
 
-        // Always run password_verify even on a missing user, against a fixed
-        // dummy hash, so response timing doesn't reveal whether the
-        // username exists (timing-safe login, same class of fix as
-        // Ur Library's timing-safe token comparison).
         $hashToCheck = $user['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuVGA5G8B1t2b8lFVOoW8n8W8n8W8n8W8n';
         $passwordOk = password_verify($password, $hashToCheck);
 
@@ -268,13 +239,13 @@ final class Auth
             $selector = bin2hex(random_bytes(12));
             $validator = bin2hex(random_bytes(32));
             $hashedValidator = hash('sha256', $validator);
-            $expiresAt = time() + (86400 * 30); // 30 days
-            
+            $expiresAt = time() + (86400 * 30);
+
             $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
             $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
             $stmt = Database::pdo()->prepare(
-                'INSERT INTO user_sessions (admin_id, selector, validator_hash, user_agent, ip_address, expires_at) 
+                'INSERT INTO user_sessions (admin_id, selector, validator_hash, user_agent, ip_address, expires_at)
                  VALUES (?, ?, ?, ?, ?, ?)'
             );
             $stmt->execute([$adminId, $selector, $hashedValidator, $ua, $ip, date('Y-m-d H:i:s', $expiresAt)]);
@@ -292,7 +263,6 @@ final class Auth
         }
     }
 
-    /** @return array{ok: bool, error?: string} */
     public static function verifySecondFactor(string $code): array
     {
         self::ensureSession();
@@ -358,7 +328,6 @@ final class Auth
         ];
     }
 
-    /** @return array{ok: bool, error?: string, recovery_codes?: array<int,string>} */
     public static function enableMfa(string $currentPassword, string $code): array
     {
         self::require();
@@ -396,7 +365,6 @@ final class Auth
         return ['ok' => true, 'recovery_codes' => $codes];
     }
 
-    /** @return array{ok: bool, error?: string} */
     public static function disableMfa(string $currentPassword, string $code): array
     {
         self::require();
@@ -449,11 +417,9 @@ final class Auth
     public static function logout(): void
     {
         self::ensureSession();
-
         self::clearRememberCookie();
-
         $_SESSION = [];
-        
+
         if (session_status() === PHP_SESSION_ACTIVE) {
             $params = session_get_cookie_params();
             if (!headers_sent()) {
@@ -500,7 +466,7 @@ final class Auth
     public static function currentUserId(): ?int
     {
         self::ensureSession();
-        return isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : null;
+        return isset($_SESSION['admin_id']) ? (int) $_SESSION['admin_id'] : null;
     }
 
     public static function currentUsername(): ?string
@@ -522,8 +488,11 @@ final class Auth
             return false;
         }
 
-        $permissions = self::ROLE_PERMISSIONS[self::currentRole()] ?? [];
-        return in_array('*', $permissions, true) || in_array($permission, $permissions, true);
+        $role = self::currentRole();
+        $permissions = self::ROLE_PERMISSIONS[$role] ?? [];
+        $roleDefault = in_array('*', $permissions, true) || in_array($permission, $permissions, true);
+
+        return AuthPermissionBridge::resolve(self::currentUserId(), $permission, $roleDefault, $role);
     }
 
     public static function requirePermission(string $permission): void
@@ -537,9 +506,6 @@ final class Auth
         }
     }
 
-    /**
-     * @return array{ok: bool, error?: string}
-     */
     public static function changePassword(int $adminId, string $currentPassword, string $newPassword): array
     {
         if (strlen($newPassword) < 10) {
