@@ -1,11 +1,10 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/SessionManager.php';
 
 Auth::require();
-$pdo = Database::pdo();
 $currentAdminId = Auth::currentUserId() ?? 0;
-$currentRole = Auth::currentRole();
-$isOwner = $currentRole === 'owner';
+$isOwner = Auth::currentRole() === 'owner';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
@@ -13,20 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if ($action === 'revoke_one') {
             $sessionId = max(0, (int) ($_POST['session_id'] ?? 0));
-            if ($isOwner) {
-                $stmt = $pdo->prepare('DELETE FROM user_sessions WHERE id = ?');
-                $stmt->execute([$sessionId]);
-            } else {
-                $stmt = $pdo->prepare('DELETE FROM user_sessions WHERE id = ? AND admin_id = ?');
-                $stmt->execute([$sessionId, $currentAdminId]);
-            }
+            SessionManager::revokeOne($sessionId, $currentAdminId, $isOwner);
             flash_set('Remembered session revoked.');
         } elseif ($action === 'revoke_all_own') {
-            $stmt = $pdo->prepare('DELETE FROM user_sessions WHERE admin_id = ?');
-            $stmt->execute([$currentAdminId]);
+            SessionManager::revokeOwn($currentAdminId);
             flash_set('All remembered sessions for your account were revoked.');
         } elseif ($action === 'revoke_all' && $isOwner) {
-            $pdo->exec('DELETE FROM user_sessions');
+            SessionManager::revokeAll();
             flash_set('All remembered administrator sessions were revoked.');
         } else {
             throw new RuntimeException('Unsupported session action.');
@@ -38,24 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($isOwner) {
-    $stmt = $pdo->query(
-        'SELECT us.id, us.admin_id, us.user_agent, us.ip_address, us.expires_at, us.created_at, au.username, au.role
-         FROM user_sessions us
-         JOIN admin_users au ON au.id = us.admin_id
-         ORDER BY us.created_at DESC'
-    );
-} else {
-    $stmt = $pdo->prepare(
-        'SELECT us.id, us.admin_id, us.user_agent, us.ip_address, us.expires_at, us.created_at, au.username, au.role
-         FROM user_sessions us
-         JOIN admin_users au ON au.id = us.admin_id
-         WHERE us.admin_id = ?
-         ORDER BY us.created_at DESC'
-    );
-    $stmt->execute([$currentAdminId]);
-}
-$sessions = $stmt->fetchAll();
+$sessions = SessionManager::visibleFor($currentAdminId, $isOwner);
 $activeCount = count(array_filter($sessions, static fn($s) => strtotime($s['expires_at']) >= time()));
 
 render_header('Sessions');
