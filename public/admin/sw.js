@@ -1,4 +1,4 @@
-const CACHE_VERSION = "hercule-admin-shell-v12-push-api";
+const CACHE_VERSION = "hercule-admin-shell-v13-scroll-sw-fix";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
   "/public/admin/manifest.json",
@@ -27,19 +27,33 @@ self.addEventListener("fetch", function (event) {
   var url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Dynamic PHP endpoints must always hit the server. Caching an auth redirect
-  // or HTML error page here breaks JSON APIs such as push_config.php.
+  // Dynamic PHP should never be cached. For top-level PHP navigation, provide the
+  // offline page on a genuine network failure. For API/subresource PHP requests,
+  // do not intercept at all so a rejected fetch cannot become an unhandled SW promise.
   if (url.pathname.endsWith(".php")) {
-    event.respondWith(fetch(request));
+    if (request.mode === "navigate") {
+      event.respondWith(fetch(request, { cache: "no-store" }).catch(function () {
+        return caches.match("/public/admin/offline.html").then(function (offline) {
+          return offline || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
+        });
+      }));
+    }
     return;
   }
 
-  if (url.pathname.endsWith(".css") || url.pathname.endsWith(".js") || request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(function () {
+  if (url.pathname.endsWith(".css") || url.pathname.endsWith(".js")) {
+    event.respondWith(fetch(request, { cache: "no-store" }).catch(function () {
       return caches.match(request).then(function (cached) {
-        if (cached) return cached;
-        if (request.mode === "navigate") return caches.match("/public/admin/offline.html");
-        return new Response("", { status: 408 });
+        return cached || new Response("", { status: 408 });
+      });
+    }));
+    return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request, { cache: "no-store" }).catch(function () {
+      return caches.match("/public/admin/offline.html").then(function (offline) {
+        return offline || new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } });
       });
     }));
     return;
@@ -68,7 +82,6 @@ self.addEventListener("push", function (event) {
     try {
       var incoming = event.data.json();
       data.title = incoming.title || data.title;
-      // PushNotifier historically sends message/actionUrl; also support body/url.
       data.body = incoming.body || incoming.message || data.body;
       data.url = incoming.url || incoming.actionUrl || data.url;
       data.tag = incoming.tag;
