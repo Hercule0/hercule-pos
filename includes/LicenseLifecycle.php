@@ -52,18 +52,16 @@ final class LicenseLifecycle
             $license = self::findLicense($licenseId, true);
             $previousPlan = $license['plan'];
             $previousExpiry = $license['expires_at'];
-            $newExpiry = $previousExpiry;
 
-            if ($plan === 'lifetime') {
-                $newExpiry = null;
-            } elseif ($previousExpiry === null) {
-                $newExpiry = self::computeExpiry($plan, $customDays);
-            }
+            // A plan change starts a fresh term from now. Keeping the old expiry when
+            // moving monthly -> annual (or trial -> monthly) would change only the
+            // label while leaving the actual entitlement duration unchanged.
+            $newExpiry = self::computeExpiry($plan, $customDays);
 
-            $stmt = $pdo->prepare('UPDATE licenses SET plan = ?, expires_at = ? WHERE id = ?');
+            $stmt = $pdo->prepare("UPDATE licenses SET plan = ?, expires_at = ?, status = 'active' WHERE id = ?");
             $stmt->execute([$plan, $newExpiry, $licenseId]);
             $note = "Plan changed from {$previousPlan} to {$plan}";
-            if ($plan === 'custom') $note .= " ({$customDays} days when expiry is recalculated)";
+            if ($plan === 'custom') $note .= " ({$customDays} days)";
             self::logEvent($licenseId, 'plan_changed', $previousExpiry, $newExpiry, $note, $adminUsername);
             self::notifyChange($license['license_key']);
             $pdo->commit();
@@ -83,6 +81,8 @@ final class LicenseLifecycle
         $pdo = Database::pdo();
         $pdo->beginTransaction();
         try {
+            // Locking the license row serializes this change with License::activate(),
+            // which locks the same row before counting/adding devices in production.
             $license = self::findLicense($licenseId, true);
             $countStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE license_id = ? AND is_active = 1');
             $countStmt->execute([$licenseId]);
@@ -116,6 +116,9 @@ final class LicenseLifecycle
             if (!$newCustomer) {
                 throw new InvalidArgumentException('Target customer was not found.');
             }
+            if ((int) $license['customer_id'] === $customerId) {
+                throw new InvalidArgumentException('License already belongs to the selected customer.');
+            }
 
             $oldStmt = $pdo->prepare('SELECT name FROM customers WHERE id = ?');
             $oldStmt->execute([(int) $license['customer_id']]);
@@ -124,6 +127,9 @@ final class LicenseLifecycle
             $stmt = $pdo->prepare('UPDATE licenses SET customer_id = ? WHERE id = ?');
             $stmt->execute([$customerId, $licenseId]);
             self::logEvent($licenseId, 'customer_transferred', null, null, "Transferred from {$oldName} to {$newCustomer['name']}", $adminUsername);
+            // Force active desktop clients to perform a fresh signed validation so any
+            // ownership/customer metadata derived from this license is not stale.
+            self::notifyChange($license['license_key']);
             $pdo->commit();
             return self::findLicense($licenseId);
         } catch (Throwable $e) {
@@ -139,10 +145,19 @@ final class LicenseLifecycle
             throw new InvalidArgumentException('Notes cannot exceed 2000 characters.');
         }
 
-        $stmt = Database::pdo()->prepare('UPDATE licenses SET notes = ? WHERE id = ?');
-        $stmt->execute([$notes !== '' ? $notes : null, $licenseId]);
-        self::logEvent($licenseId, 'notes_updated', null, null, 'License notes updated', $adminUsername);
-        return self::findLicense($licenseId);
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+        try {
+            self::findLicense($licenseId, true);
+            $stmt = $pdo->prepare('UPDATE licenses SET notes = ? WHERE id = ?');
+            $stmt->execute([$notes !== '' ? $notes : null, $licenseId]);
+            self::logEvent($licenseId, 'notes_updated', null, null, 'License notes updated', $adminUsername);
+            $pdo->commit();
+            return self::findLicense($licenseId);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
     }
 
     private static function findLicense(int $licenseId, bool $forUpdate = false): array
