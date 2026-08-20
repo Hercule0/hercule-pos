@@ -88,6 +88,32 @@ foreach ($mfaColumns as $columnName => $definition) {
     }
 }
 
+// Older deployments may already have push_subscriptions without admin_username.
+// CREATE TABLE IF NOT EXISTS will not add missing columns to an existing table,
+// so repair the legacy shape explicitly before push subscription writes occur.
+$pushAdminColumn = $pdo->prepare(
+    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+);
+$pushAdminColumn->execute(['push_subscriptions', 'admin_username']);
+if ((int) $pushAdminColumn->fetchColumn() === 0) {
+    $pdo->exec(
+        "ALTER TABLE push_subscriptions
+         ADD COLUMN admin_username VARCHAR(255) NOT NULL DEFAULT 'legacy' AFTER id"
+    );
+    echo "COLUMN - push_subscriptions.admin_username added\n";
+}
+
+$pushAdminIndex = $pdo->prepare(
+    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?'
+);
+$pushAdminIndex->execute(['push_subscriptions', 'idx_push_subscriptions_admin']);
+if ((int) $pushAdminIndex->fetchColumn() === 0) {
+    $pdo->exec("ALTER TABLE push_subscriptions ADD INDEX idx_push_subscriptions_admin (admin_username)");
+    echo "INDEX - idx_push_subscriptions_admin added\n";
+}
+
 $retentionIndexes = [
     ['login_attempts', 'idx_login_attempts_created', 'created_at'],
     ['api_requests', 'idx_api_requests_created', 'created_at'],
