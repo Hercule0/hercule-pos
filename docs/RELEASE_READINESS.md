@@ -26,6 +26,8 @@ The current open PRs are individually mergeable against the current `main`, but 
 
 - PR #48 and PR #49 both append a page-specific stylesheet import to `public/admin/assets/css/style.css`. Preserve both `audit-log.css` and `monitoring.css` imports if Git reports a conflict.
 - PR #48 changes `includes/DeviceManager.php`. Preserve its audit hooks together with the existing block/unblock behavior and Device Management columns.
+- PR #50 writes lifecycle events, realtime license-change markers and admin audit records. Preserve all three behaviors when resolving any future conflict around lifecycle logic.
+- PR #52 writes session-revocation actions to `admin_audit_log`. These audit writes are fail-open and must not prevent the actual security revocation.
 - PR #56 changes `includes/PushNotifier.php`. Treat the existing VAPID configuration and working subscribe/send flow as protected behavior; only the per-admin preference filtering should be added.
 - PR #58 changes the central `includes/Auth.php`. After it lands, re-run login, MFA, role checks, Remember Me, forced password change, and permission tests before continuing.
 - Feature PRs #48, #50, #51, #52, #56, #57 and #58 contain focused `*_test.php` files. After PR #59 is on the integration base, refresh those feature branches so `tests/run_regressions.php` discovers and executes their focused suites in CI.
@@ -35,7 +37,15 @@ Never resolve a conflict by replacing an entire shared file with an older branch
 
 ## Required production migrations
 
-Run these from the deployed application root after the corresponding PR has been deployed. Every listed migration is designed to be idempotent, but stop immediately if any command returns a non-zero exit code.
+After all feature PRs are deployed, the preferred fail-fast command is:
+
+```bash
+bash scripts/run_release_migrations.sh
+```
+
+The runner first verifies that every expected migration file exists, then executes them in order and finally runs `php db/migrate.php`. It stops on the first failure, so do not continue rollout after a non-zero exit code.
+
+Equivalent manual order:
 
 ```bash
 php db/migrate_device_management.php
@@ -44,11 +54,6 @@ php db/migrate_performance_indexes.php
 php db/migrate_expiry_alerts.php
 php db/migrate_notification_preferences.php
 php db/migrate_admin_permissions.php
-```
-
-Also run the canonical schema migration once after the full batch is deployed:
-
-```bash
 php db/migrate.php
 ```
 
@@ -87,16 +92,16 @@ After deployment and migrations:
 3. Dashboard, Licenses, Customers, Recovery, Devices, Audit Log and Monitoring load without 500 errors.
 4. Existing license validation succeeds for a known active device.
 5. A blocked device is rejected by activate/validate and succeeds again after unblock.
-6. License lifecycle: extend a disposable/test license, change activation limit, then confirm history is written.
+6. License lifecycle: extend a disposable/test license, switch a finite plan and confirm the new term is recalculated, change activation limit, transfer to a test customer, and verify both history + audit records are written.
 7. Recovery request: submit from a test device, approve, claim and complete once; confirm token reuse is rejected.
 8. Web Push: run Fast Test, then trigger a real Recovery notification.
 9. Notification settings: disable one category for a test admin and verify only that category is suppressed; re-enable it afterward.
 10. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins. Also verify a zero-recipient run does not record the threshold as sent.
 11. Release API: publish a test release and verify the client-version response, then unpublish it.
-12. Remembered sessions: create a Remember Me login and revoke it from Sessions.
+12. Remembered sessions: create a Remember Me login, attempt an out-of-scope revoke from a non-owner, revoke a valid session, then confirm successful revocations appear in Audit Log.
 13. Password hardening: verify weak passwords are rejected by the server-side `PasswordPolicy`, a strong password succeeds, and a successful password change invalidates remembered sessions.
-14. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted.
-15. Audit Log: verify login failure, MFA failure and device block/unblock events appear without passwords or MFA codes.
+14. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted and release publishing remains separately controlled by `releases.manage`.
+15. Audit Log: verify login failure, MFA failure, device block/unblock, lifecycle mutations and session revocations appear without passwords or MFA codes.
 16. Backup Health shows the expected encrypted backup status; do not perform web-based restore/decrypt.
 17. Re-test the admin PWA on mobile and confirm there is no horizontal overflow.
 
