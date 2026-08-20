@@ -1,0 +1,53 @@
+/* Desktop shell stabilization: keep sidebar fixed and preserve page scrolling. */
+@media (min-width: 769px) {
+  html,
+  body {
+    min-height: 100%;
+    overflow-y: auto !important;
+  }
+
+  .app-layout {
+    min-height: 100vh;
+    overflow: visible !important;
+  }
+
+  .app-topbar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 1100;
+  }
+
+  .app-body-container {
+    display: block !important;
+    min-height: 100vh !important;
+    padding-top: 68px;
+    padding-left: 248px;
+    overflow: visible !important;
+  }
+
+  .app-sidebar {
+    position: fixed !important;
+    top: 68px !important;
+    left: 0;
+    bottom: 0;
+    width: 248px !important;
+    height: auto !important;
+    max-height: calc(100vh - 68px);
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    z-index: 1000;
+  }
+
+  .app-main-content {
+    width: min(100%, var(--content-max, 1540px));
+    max-width: var(--content-max, 1540px) !important;
+    margin: 0 auto;
+    min-height: calc(100vh - 68px);
+    overflow: visible !important;
+  }
+}
