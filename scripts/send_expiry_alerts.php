@@ -84,7 +84,8 @@ foreach ($licenses as $license) {
         $title,
         $body,
         '/public/admin/license_detail.php?id=' . (int) $license['id'],
-        'license-expiry-' . (int) $license['id'] . '-' . $threshold
+        'license-expiry-' . (int) $license['id'] . '-' . $threshold,
+        'expiry'
     );
 
     if (empty($result['ok'])) {
