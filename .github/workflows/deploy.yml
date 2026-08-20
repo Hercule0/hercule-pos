@@ -46,7 +46,7 @@ jobs:
       - name: Run test suite
         run: |
           php tests/run_test.php
-          php tests/device_manager_test.php
+          php tests/run_regressions.php
 
       - name: Prepare deployment package
         run: |
