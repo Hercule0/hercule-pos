@@ -518,6 +518,7 @@ function render_footer(): void
     setTimeout(pollRecovery, 800);
 })();
 </script>
+<script src="/public/admin/assets/js/pwa.js?v=4" defer></script>
 </body>
 </html>
     <?php
