@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title><?= $mfaPending ? 'Verify identity' : 'Sign in' ?> — Hercule License Admin</title>
 <link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260820-login-polish">
 <link rel="stylesheet" href="/public/admin/assets/css/mobile-no-overflow.css?v=ui-mobile-4">
-<link rel="stylesheet" href="/public/admin/assets/css/login-polish.css?v=1">
+<link rel="stylesheet" href="/public/admin/assets/css/login-polish.css?v=2">
 </head>
 <body class="auth-body">
 <main class="auth-layout">
