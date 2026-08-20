@@ -13,7 +13,7 @@ $pwa = file_get_contents(__DIR__ . '/../public/admin/assets/js/pwa.js');
 nav_check('Admin tools hub exists and requires authentication', is_string($tools) && str_contains($tools, 'Auth::require();'));
 nav_check('Tools hub gates license operations by licenses.manage', str_contains($tools, "Auth::can('licenses.manage')"));
 nav_check('Tools hub gates releases by releases.manage', str_contains($tools, "Auth::can('releases.manage')"));
-nav_check('Tools hub gates owner-only controls by current owner role', str_contains($tools, "$isOwner = $role === 'owner'"));
+nav_check('Tools hub gates owner-only controls by current owner role', str_contains($tools, '\$isOwner = \$role === \'owner\''));
 nav_check('Tools hub links device management', str_contains($tools, '/public/admin/devices.php'));
 nav_check('Tools hub links monitoring', str_contains($tools, '/public/admin/monitoring.php'));
 nav_check('Tools hub links releases', str_contains($tools, '/public/admin/releases.php'));
