@@ -10,7 +10,11 @@ final class PermissionResolver
 
     public static function resolve(int $adminId, string $permission, bool $roleDefault): bool
     {
-        $key = $adminId . ':' . $permission;
+        // Include the current role default in the cache key. A live administrator
+        // session can have its role refreshed from the database during the same
+        // request/process, so caching only admin+permission can otherwise retain
+        // an allow/deny decision from the previous role.
+        $key = $adminId . ':' . $permission . ':' . ($roleDefault ? '1' : '0');
         if (array_key_exists($key, self::$cache)) {
             return self::$cache[$key];
         }
