@@ -49,6 +49,42 @@ release_check('Mandatory flag can be enabled', (int) $row['is_mandatory'] === 1)
 ReleaseManager::setPublished($id, false);
 release_check('Unpublishing removes release from public latest lookup', ReleaseManager::latestPublished() === null);
 
+$draftId = ReleaseManager::create([
+    'version' => '1.3.0',
+    'release_notes' => 'Draft without binary',
+], 'tester');
+release_check('Draft release may exist before a download URL is ready', $draftId > 0);
+$publishWithoutUrlRejected = false;
+try {
+    ReleaseManager::setPublished($draftId, true);
+} catch (InvalidArgumentException $e) {
+    $publishWithoutUrlRejected = true;
+}
+release_check('Publishing without an HTTPS download URL is rejected', $publishWithoutUrlRejected);
+
+$immediatePublishWithoutUrlRejected = false;
+try {
+    ReleaseManager::create([
+        'version' => '1.3.1',
+        'is_published' => 1,
+    ], 'tester');
+} catch (InvalidArgumentException $e) {
+    $immediatePublishWithoutUrlRejected = true;
+}
+release_check('Immediate publish without a download URL is rejected', $immediatePublishWithoutUrlRejected);
+
+$futureMinimumRejected = false;
+try {
+    ReleaseManager::create([
+        'version' => '1.4.0',
+        'minimum_supported_version' => '1.5.0',
+        'download_url' => 'https://example.com/hercule-1.4.0.exe',
+    ], 'tester');
+} catch (InvalidArgumentException $e) {
+    $futureMinimumRejected = true;
+}
+release_check('Minimum supported version cannot exceed release version', $futureMinimumRejected);
+
 $badUrlRejected = false;
 try {
     ReleaseManager::create([
@@ -69,7 +105,8 @@ try {
 release_check('Invalid version string is rejected', $badVersionRejected);
 
 ReleaseManager::delete($id);
+ReleaseManager::delete($draftId);
 $count = (int) $pdo->query('SELECT COUNT(*) FROM app_releases')->fetchColumn();
-release_check('Release can be deleted', $count === 0);
+release_check('Release records can be deleted', $count === 0);
 
 echo "RELEASE MANAGER TESTS PASSED\n";
