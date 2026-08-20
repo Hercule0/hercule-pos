@@ -74,10 +74,12 @@ render_header('Backups');
                             <td><?= htmlspecialchars(gmdate('M j, Y H:i', strtotime($file['modified_at']))) ?> UTC</td>
                             <td><?= htmlspecialchars(BackupManager::formatBytes((int)$file['size_bytes'])) ?></td>
                             <td>
-                                <?php if ($file['checksum_ok'] === true): ?>
+                                <?php if (($file['checksum_status'] ?? '') === 'verified'): ?>
                                     <span class="badge badge-ok">Verified</span>
-                                <?php elseif ($file['checksum_ok'] === false): ?>
+                                <?php elseif (($file['checksum_status'] ?? '') === 'mismatch'): ?>
                                     <span class="badge badge-expired">Mismatch</span>
+                                <?php elseif (($file['checksum_status'] ?? '') === 'deferred'): ?>
+                                    <span class="badge">Server verify required</span>
                                 <?php else: ?>
                                     <span class="badge">No checksum</span>
                                 <?php endif; ?>
@@ -94,7 +96,7 @@ render_header('Backups');
         <div class="section-heading"><div><p class="eyebrow">Recovery readiness</p><h2>Operational checklist</h2></div></div>
         <div class="event-timeline">
             <article><span class="timeline-dot"></span><div><strong>Encrypted at rest</strong><p>Backups are expected to be encrypted by <code>scripts/backup_database.sh</code> before storage.</p></div></article>
-            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>This page recalculates SHA-256 for recent archives and compares it with the sidecar checksum file.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>This page verifies normal-size archives inline. Large archives are deferred to <code>scripts/verify_backup.sh</code> so the admin request does not spend an unbounded amount of time hashing files.</p></div></article>
             <article><span class="timeline-dot"></span><div><strong>Restore testing</strong><p>Run <code>scripts/verify_backup.sh</code> from a trusted server shell on a schedule. The admin page intentionally does not decrypt or restore backups.</p></div></article>
         </div>
     </section>
