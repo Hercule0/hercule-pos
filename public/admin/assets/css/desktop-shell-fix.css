@@ -1,12 +1,23 @@
-/* Desktop shell stabilization v2: keep the desktop chrome viewport-fixed while only the page content scrolls. */
-@media (min-width: 769px) {
-  html,
-  body {
+/* Desktop shell stabilization v3: one document scroller, fixed desktop chrome, aligned breakpoints. */
+@media (min-width: 1025px) {
+  html {
     width: 100%;
     min-height: 100%;
     height: auto !important;
     overflow-x: hidden !important;
-    overflow-y: auto !important;
+    overflow-y: scroll !important;
+    overscroll-behavior-y: auto !important;
+    scroll-behavior: auto !important;
+  }
+
+  body {
+    width: 100%;
+    min-height: 100vh;
+    height: auto !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: pan-y;
   }
 
   body,
@@ -58,8 +69,9 @@
     margin: 0 !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
-    overscroll-behavior: contain;
+    overscroll-behavior-y: auto !important;
     scrollbar-gutter: stable;
+    touch-action: pan-y;
     z-index: 1000 !important;
   }
 
@@ -70,5 +82,12 @@
     margin: 0 auto !important;
     min-height: calc(100vh - 68px);
     overflow: visible !important;
+    touch-action: pan-y;
+  }
+
+  .app-mobile-nav,
+  .mobile-menu-btn,
+  .sidebar-backdrop {
+    display: none !important;
   }
 }
