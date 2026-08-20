@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/PasswordPolicy.php';
 Auth::requirePermission('admins.manage');
 
 $pdo = Database::pdo();
@@ -38,8 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!preg_match('/^[A-Za-z0-9._-]{3,64}$/', $username)) {
                     throw new RuntimeException('Username must be 3–64 letters, numbers, dots, underscores, or dashes.');
                 }
-                if (strlen($temporaryPassword) < 12) {
-                    throw new RuntimeException('Temporary password must be at least 12 characters.');
+                $passwordCheck = PasswordPolicy::validate($temporaryPassword);
+                if (!$passwordCheck['ok']) {
+                    throw new RuntimeException(str_replace('New password', 'Temporary password', $passwordCheck['error'] ?? 'Temporary password does not meet policy.'));
                 }
                 if (!in_array($role, $roles, true)) {
                     throw new RuntimeException('Invalid administrator role.');
@@ -87,8 +89,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('The final active Owner cannot be disabled.');
                     }
                     $pdo->prepare('UPDATE admin_users SET is_active = ? WHERE id = ?')->execute([$next, $targetId]);
+                    if ($next === 0) {
+                        $pdo->prepare('DELETE FROM user_sessions WHERE admin_id = ?')->execute([$targetId]);
+                    }
                     admin_audit($pdo, $currentAdminId, $targetId, $next ? 'admin_enabled' : 'admin_disabled');
-                    flash_set($next ? 'Administrator enabled.' : 'Administrator disabled and future sign-ins blocked.', 'success');
+                    flash_set($next ? 'Administrator enabled.' : 'Administrator disabled; future sign-ins and remembered sessions are revoked.', 'success');
                 } elseif ($action === 'reset_mfa') {
                     if (empty($_POST['confirm_reset_mfa'])) {
                         throw new RuntimeException('Confirm the MFA reset first.');
@@ -147,6 +152,7 @@ render_header('Administrators');
             <?= Csrf::field() ?><input type="hidden" name="action" value="create">
             <label class="auth-field"><span>Username</span><div class="auth-input"><input name="username" required minlength="3" maxlength="64" autocomplete="off"></div></label>
             <label class="auth-field"><span>Temporary password</span><div class="auth-input"><input type="password" name="temporary_password" required minlength="12" autocomplete="new-password"></div></label>
+            <small style="display:block;margin:-4px 0 10px;opacity:.7">12+ characters with uppercase, lowercase, number, and symbol.</small>
             <label class="auth-field"><span>Role</span><div class="auth-input"><select name="role"><?php foreach ($roles as $role): ?><option value="<?= $role ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select></div></label>
             <label class="auth-field"><span>Your current password</span><div class="auth-input"><input type="password" name="current_password" required autocomplete="current-password"></div></label>
             <button class="auth-submit" type="submit">Create administrator</button>
@@ -169,7 +175,6 @@ render_header('Administrators');
                     <div class="grid-card-actions">
                         <form method="post" onsubmit="return confirm('Permanently delete this administrator?');" style="display:inline;">
                             <?= Csrf::field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                            <!-- Assuming the user enters password before submitting -->
                             <button type="button" class="grid-card-action-btn" title="Delete Admin" onclick="const p = prompt('Enter your password to delete:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }">
                                 <svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>

@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
     ip_address      VARCHAR(45) NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_admin_audit_created (created_at),
-    INDEX idx_admin_audit_target (target_id)
+    INDEX idx_admin_audit_target (target_id),
+    INDEX idx_admin_audit_action_created (action, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS login_attempts (
@@ -57,6 +58,33 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     UNIQUE(endpoint(255))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS admin_notification_preferences (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    admin_username VARCHAR(64) NOT NULL UNIQUE,
+    activation_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    recovery_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    expiry_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    security_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    system_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    muted_until DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_notification_prefs_mute (muted_until)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS admin_permission_overrides (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    admin_id INT UNSIGNED NOT NULL,
+    permission VARCHAR(80) NOT NULL,
+    allowed TINYINT(1) NOT NULL DEFAULT 1,
+    updated_by INT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_admin_permission (admin_id, permission),
+    INDEX idx_admin_permission_admin (admin_id),
+    CONSTRAINT fk_admin_permission_admin FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS customers (
     id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name            VARCHAR(150) NOT NULL,
@@ -82,7 +110,8 @@ CREATE TABLE IF NOT EXISTS licenses (
     updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     INDEX idx_licenses_status (status),
-    INDEX idx_licenses_expires (expires_at)
+    INDEX idx_licenses_expires (expires_at),
+    INDEX idx_licenses_status_expires (status, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS license_activations (
@@ -102,7 +131,8 @@ CREATE TABLE IF NOT EXISTS license_activations (
     FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE,
     UNIQUE KEY uq_license_hwid (license_id, hwid),
     INDEX idx_activations_license (license_id),
-    INDEX idx_activations_blocked (is_blocked, is_active)
+    INDEX idx_activations_blocked (is_blocked, is_active),
+    INDEX idx_activations_active_seen (is_active, last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS verification_log (
@@ -114,7 +144,8 @@ CREATE TABLE IF NOT EXISTS verification_log (
     ip_address      VARCHAR(45),
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_verification_log_license (license_id),
-    INDEX idx_verification_log_created (created_at)
+    INDEX idx_verification_log_created (created_at),
+    INDEX idx_verification_result_created (result, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS subscription_events (
@@ -126,7 +157,8 @@ CREATE TABLE IF NOT EXISTS subscription_events (
     note            VARCHAR(255),
     created_by      VARCHAR(64),
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
+    FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE,
+    INDEX idx_subscription_license_created (license_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS license_change_notifications (
@@ -153,7 +185,8 @@ CREATE TABLE IF NOT EXISTS password_recovery_requests (
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_recovery_license (license_key),
-    INDEX idx_recovery_status (status)
+    INDEX idx_recovery_status (status),
+    INDEX idx_recovery_status_created (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS recovery_audit_log (
@@ -179,4 +212,31 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE,
     INDEX idx_user_sessions_selector (selector)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS app_releases (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    version VARCHAR(50) NOT NULL,
+    minimum_supported_version VARCHAR(50) NULL,
+    download_url VARCHAR(2048) NULL,
+    release_notes TEXT NULL,
+    is_mandatory TINYINT(1) NOT NULL DEFAULT 0,
+    is_published TINYINT(1) NOT NULL DEFAULT 0,
+    published_at DATETIME NULL,
+    created_by VARCHAR(64) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_app_releases_version (version),
+    INDEX idx_app_releases_published (is_published, published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS license_expiry_alerts (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    license_id INT UNSIGNED NOT NULL,
+    threshold_days INT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_license_expiry_alert (license_id, threshold_days, expires_at),
+    INDEX idx_license_expiry_alert_sent (sent_at),
+    FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
