@@ -43,7 +43,7 @@ render_header('Backups');
     <?php if (!$status['configured']): ?>
         <section class="device-migration-warning">
             <strong>Backup storage needs one server secret</strong>
-            <p>The app now uses <code>/home/backups/hercule-pos</code> as the default Azure backup directory. Add <code>BACKUP_ENCRYPTION_KEY</code> in Azure App Settings, restart the Web App, then schedule <code>scripts/backup_database.sh</code>.</p>
+            <p>The app uses <code>/home/backups/hercule-pos</code> as the default Azure backup directory. Add <code>BACKUP_ENCRYPTION_KEY</code> in Azure App Settings, restart the Web App, then schedule <code>scripts/backup_database.sh</code>.</p>
         </section>
     <?php elseif (!$status['readable']): ?>
         <section class="device-migration-warning">
@@ -93,11 +93,21 @@ render_header('Backups');
     </section>
 
     <section class="detail-section">
+        <div class="section-heading"><div><p class="eyebrow">Load control</p><h2>Retention & schedule</h2></div></div>
+        <div class="backup-checklist">
+            <article><span class="timeline-dot"></span><div><strong>One production dump per day</strong><p>The automated verified backup runs once daily at 03:30 Iraq time, keeping database load predictable during low traffic.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Seven local copies</strong><p><code>scripts/backup_database.sh</code> keeps the newest 7 local encrypted backups by default and removes older normal copies automatically. Override with <code>BACKUP_RETENTION_COUNT</code> if needed.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>No overlapping jobs</strong><p>A server-side lock prevents a second backup from starting while another backup is still running.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Verified off-server history</strong><p>GitHub Actions restores each daily backup into a disposable MySQL instance before keeping the encrypted artifact for 14 days.</p></div></article>
+        </div>
+    </section>
+
+    <section class="detail-section">
         <div class="section-heading"><div><p class="eyebrow">Recovery readiness</p><h2>Operational checklist</h2></div></div>
         <div class="backup-checklist">
             <article><span class="timeline-dot"></span><div><strong>Encrypted at rest</strong><p>Backups are encrypted by <code>scripts/backup_database.sh</code> before they are stored.</p></div></article>
-            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>Normal-size archives are verified inline. Large archives are deferred to <code>scripts/verify_backup.sh</code> so the admin page stays responsive.</p></div></article>
-            <article><span class="timeline-dot"></span><div><strong>Restore testing</strong><p>Run <code>scripts/verify_backup.sh</code> from a trusted server shell on a schedule. The admin page intentionally never decrypts or restores a backup.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>Normal-size archives are verified inline. Full restore verification uses <code>scripts/verify_backup.sh</code> against a disposable database.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Guarded production restore</strong><p>Production recovery is intentionally CLI-only. Use <code>RESTORE_CONFIRM=RESTORE-PRODUCTION bash scripts/restore_database.sh /home/backups/hercule-pos/&lt;backup&gt;.sql.enc</code>. The script validates the archive and creates a separate encrypted pre-restore safety snapshot before importing anything.</p></div></article>
         </div>
     </section>
 </div>
