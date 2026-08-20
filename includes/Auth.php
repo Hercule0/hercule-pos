@@ -7,6 +7,7 @@
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Totp.php';
 require_once __DIR__ . '/AuthPermissionBridge.php';
+require_once __DIR__ . '/PasswordPolicy.php';
 
 final class Auth
 {
@@ -68,6 +69,23 @@ final class Auth
             return false;
         }
 
+        // Revalidate the account on every protected request. This makes account
+        // disable/delete and role changes effective immediately for live PHP
+        // sessions instead of waiting for the inactivity timeout.
+        $stmt = Database::pdo()->prepare(
+            'SELECT username, role, is_active, must_change_password FROM admin_users WHERE id = ?'
+        );
+        $stmt->execute([(int) $_SESSION['admin_id']]);
+        $user = $stmt->fetch();
+        if (!$user || empty($user['is_active'])) {
+            self::logout();
+            return false;
+        }
+
+        $role = in_array($user['role'] ?? '', self::ROLES, true) ? $user['role'] : 'read_only';
+        $_SESSION['admin_username'] = $user['username'];
+        $_SESSION['admin_role'] = $role;
+        $_SESSION['must_change_password'] = !empty($user['must_change_password']);
         $_SESSION['last_activity'] = time();
         return true;
     }
@@ -508,10 +526,6 @@ final class Auth
 
     public static function changePassword(int $adminId, string $currentPassword, string $newPassword): array
     {
-        if (strlen($newPassword) < 10) {
-            return ['ok' => false, 'error' => 'New password must be at least 10 characters.'];
-        }
-
         $stmt = Database::pdo()->prepare('SELECT password_hash FROM admin_users WHERE id = ?');
         $stmt->execute([$adminId]);
         $user = $stmt->fetch();
@@ -520,9 +534,26 @@ final class Auth
             return ['ok' => false, 'error' => 'Current password is incorrect.'];
         }
 
+        $policy = PasswordPolicy::validate($newPassword, $currentPassword);
+        if (!$policy['ok']) {
+            return $policy;
+        }
+
         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $update = Database::pdo()->prepare('UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?');
-        $update->execute([$newHash, $adminId]);
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+        try {
+            $update = $pdo->prepare('UPDATE admin_users SET password_hash = ?, must_change_password = 0 WHERE id = ?');
+            $update->execute([$newHash, $adminId]);
+            $pdo->prepare('DELETE FROM user_sessions WHERE admin_id = ?')->execute([$adminId]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
         $_SESSION['must_change_password'] = false;
 
         if (session_status() === PHP_SESSION_ACTIVE) {
