@@ -1,0 +1,112 @@
+# Hercule POS release readiness checklist
+
+This checklist is for the current admin/backend development batch. Do not merge the feature PRs in arbitrary order.
+
+## Recommended merge order
+
+1. PR #59 — Focused Regression Runner
+2. PR #48 — Audit Log
+3. PR #49 — Monitoring Dashboard
+4. PR #50 — License Lifecycle
+5. PR #51 — Release Management
+6. PR #52 — Remembered Sessions
+7. PR #53 — Backup Health Dashboard
+8. PR #54 — Performance Indexes
+9. PR #55 — License Expiry Push
+10. PR #56 — Notification Settings
+11. PR #57 — Password Security Hardening
+12. PR #58 — Granular Permissions
+13. PR #60 — Release readiness checklist
+
+The regression runner lands first so every later feature can be validated by the same focused-suite gate once its branch is refreshed against the updated `main`. Resolve any branch conflicts against the latest `main` before merging. Prefer one PR at a time so a regression can be traced to a specific merge.
+
+## Known integration hotspots
+
+The current open PRs are individually mergeable against the current `main`, but several branches were created from the same base and touch shared files. Re-check these after every preceding merge rather than assuming the next PR is still conflict-free.
+
+- PR #48 and PR #49 both append a page-specific stylesheet import to `public/admin/assets/css/style.css`. Preserve both `audit-log.css` and `monitoring.css` imports if Git reports a conflict.
+- PR #48 changes `includes/DeviceManager.php`. Preserve its audit hooks together with the existing block/unblock behavior and Device Management columns.
+- PR #50 writes lifecycle events, realtime license-change markers and admin audit records. Preserve all three behaviors when resolving any future conflict around lifecycle logic.
+- PR #52 writes session-revocation actions to `admin_audit_log`. These audit writes are fail-open and must not prevent the actual security revocation.
+- PR #56 changes `includes/PushNotifier.php`. Treat the existing VAPID configuration and working subscribe/send flow as protected behavior. Preserve per-admin category filtering, active-admin filtering, and stale-subscription isolation across deleted/recreated usernames.
+- PR #58 changes the central `includes/Auth.php`. After it lands, re-run login, MFA, role checks, Remember Me, forced password change, and permission tests before continuing.
+- Feature PRs #48, #50, #51, #52, #53, #56, #57 and #58 contain focused `*_test.php` files. After PR #59 is on the integration base, refresh those feature branches so `tests/run_regressions.php` discovers and executes their focused suites in CI.
+- PR #55 intentionally passes the `expiry` event category to `PushNotifier::sendPush()`. Once PR #56 is integrated, expiry pushes must respect per-admin notification preferences.
+- Password Recovery already has a dedicated `recovery_audit_log` for request/claim/reset lifecycle security events. Keep that evidence even when admin-facing events are also visible in `admin_audit_log`; do not replace one audit stream with the other.
+
+Never resolve a conflict by replacing an entire shared file with an older branch copy. Resolve the smallest conflicting hunk and retain newer `main` behavior.
+
+## Required production migrations
+
+After all feature PRs are deployed, the preferred fail-fast command is:
+
+```bash
+bash scripts/run_release_migrations.sh
+```
+
+The runner first verifies that every expected migration file exists, then executes them in order and finally runs `php db/migrate.php`. It stops on the first failure, so do not continue rollout after a non-zero exit code.
+
+Equivalent manual order:
+
+```bash
+php db/migrate_device_management.php
+php db/migrate_release_management.php
+php db/migrate_performance_indexes.php
+php db/migrate_expiry_alerts.php
+php db/migrate_notification_preferences.php
+php db/migrate_admin_permissions.php
+php db/migrate.php
+```
+
+Do not regenerate or replace the license-signing RSA key or the existing Web Push VAPID key pair during this rollout.
+
+## Scheduled jobs
+
+License expiry push alerts are inert until explicitly scheduled. After `migrate_expiry_alerts.php` succeeds, schedule:
+
+```bash
+php scripts/send_expiry_alerts.php
+```
+
+Daily is sufficient for 30-day / 7-day / 1-day / expired thresholds. Hourly is also safe because the alert table prevents duplicate threshold notifications. A threshold is not consumed when no eligible push recipient exists, so a later run can still deliver it after an admin subscribes or re-enables expiry alerts.
+
+## CI gates before merging
+
+All candidate PRs must pass:
+
+- PHP syntax validation
+- shell script syntax validation
+- Composer install
+- `php tests/run_test.php`
+- `php tests/run_regressions.php` once PR #59 is in the integration base
+
+PR #59 had an initial focused-test failure because the SQLite fixture did not include the Device Management migration columns. The fixture setup and runner were corrected, and the latest workflow on the corrected head completed successfully. Keep this focused runner as a hard gate for the final integration branch.
+
+A failing focused regression is a release blocker. Do not bypass it just because the legacy core suite passes.
+
+## Production smoke test order
+
+After deployment and migrations:
+
+1. `/public/health.php` returns healthy.
+2. Admin login works with an Owner account.
+3. Dashboard, Licenses, Customers, Recovery, Devices, Audit Log and Monitoring load without 500 errors.
+4. Existing license validation succeeds for a known active device.
+5. A blocked device is rejected by activate/validate and succeeds again after unblock.
+6. License lifecycle: extend a disposable/test license, switch a finite plan and confirm the new term is recalculated, change activation limit, transfer to a test customer, and verify both history + audit records are written.
+7. Recovery request: submit from a test device, approve, claim and complete once; confirm token reuse is rejected and the dedicated recovery audit trail records the security lifecycle.
+8. Web Push: run Fast Test, then trigger a real Recovery notification.
+9. Notification settings: disable one category for a test admin and verify only that category is suppressed; temporarily mute the account and verify delivery resumes after the mute is removed.
+10. Push authorization: disable a test administrator and confirm its browser subscription receives no operational/recovery push. Delete and recreate a test username and confirm a subscription created before the recreated account is ignored until the new account subscribes again.
+11. Expiry alert job: run it against a controlled test license and confirm retry/deduplication behavior without spamming real admins. Also verify a zero-recipient run does not record the threshold as sent.
+12. Release API: publish a test release and verify the client-version response, then unpublish it.
+13. Remembered sessions: create a Remember Me login, attempt an out-of-scope revoke from a non-owner, revoke a valid session, then confirm successful revocations appear in Audit Log.
+14. Password hardening: verify weak passwords are rejected by the server-side `PasswordPolicy`, a strong password succeeds, and a successful password change invalidates remembered sessions.
+15. Granular permissions: apply a harmless override to a non-owner test admin and verify Allow / Deny / Inherit behavior; confirm Owner remains unrestricted and release publishing remains separately controlled by `releases.manage`.
+16. Audit Log: verify login failure, MFA failure, device block/unblock, lifecycle mutations and session revocations appear without passwords or MFA codes.
+17. Backup Health shows the expected encrypted backup status; do not perform web-based restore/decrypt.
+18. Re-test the admin PWA on mobile and confirm there is no horizontal overflow.
+
+## Rollback rule
+
+If a production smoke test fails after a specific feature merge, stop the rollout. Revert only that feature PR first. Database migrations in this batch are additive; do not manually drop new columns/tables during an emergency rollback unless the application cannot run with them present.

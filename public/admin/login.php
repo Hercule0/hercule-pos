@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/AuditLog.php';
 
 if (Auth::isLoggedIn()) {
     header('Location: /public/admin/index.php');
@@ -12,8 +13,13 @@ $mfaPending = isset($_SESSION['mfa_pending']) && is_array($_SESSION['mfa_pending
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
     if ($mfaPending) {
+        $pendingUsername = $_SESSION['mfa_pending']['username'] ?? 'unknown';
         $result = Auth::verifySecondFactor($_POST['mfa_code'] ?? '');
-        if ($result['ok']) { header('Location: /public/admin/index.php'); exit; }
+        if ($result['ok']) {
+            AuditLog::adminAction('login_success', null, 'MFA login completed for ' . mb_substr((string)$pendingUsername, 0, 64));
+            header('Location: /public/admin/index.php'); exit;
+        }
+        AuditLog::write('mfa_failed', null, null, 'Invalid MFA code for ' . mb_substr((string)$pendingUsername, 0, 64), $_SERVER['REMOTE_ADDR'] ?? null);
         $error = $result['error'];
         $mfaPending = isset($_SESSION['mfa_pending']);
     } else {
@@ -21,8 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $remember = !empty($_POST['remember']);
         $result = Auth::attemptLogin($username, $password, $_SERVER['REMOTE_ADDR'] ?? 'unknown', $remember);
-        if ($result['ok']) { header('Location: /public/admin/index.php'); exit; }
+        if ($result['ok']) {
+            AuditLog::adminAction('login_success', null, 'Administrator signed in');
+            header('Location: /public/admin/index.php'); exit;
+        }
         if (!empty($result['requires_mfa'])) { header('Location: /public/admin/login.php'); exit; }
+        AuditLog::write('login_failed', null, null, 'Failed login for ' . mb_substr($username, 0, 64), $_SERVER['REMOTE_ADDR'] ?? null);
         $error = $result['error'];
     }
 }
