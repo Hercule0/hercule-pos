@@ -40,7 +40,12 @@ $row = DeviceManager::findByLicenseAndHwid($key, $hwid);
 dm_check('DeviceManager finds the activated HWID', is_array($row) && $row['hwid'] === $hwid);
 dm_check('Newly activated device is not blocked', DeviceManager::isBlocked($key, $hwid) === false);
 
+DeviceManager::recordClientVersion($key, $hwid, 'v2.5.7');
+$row = DeviceManager::findByLicenseAndHwid($key, $hwid);
+dm_check('Client version recording is portable and persisted', ($row['app_version'] ?? null) === 'v2.5.7');
+
 $activationId = (int) ($row['id'] ?? 0);
+$beforeNotifications = (int)$pdo->query("SELECT COUNT(*) FROM license_change_notifications WHERE license_key = " . $pdo->quote($key))->fetchColumn();
 dm_check('Blocking an existing activation succeeds', DeviceManager::setBlocked($activationId, true, 'test-admin') === true);
 dm_check('Blocked flag is visible through DeviceManager', DeviceManager::isBlocked($key, $hwid) === true);
 
@@ -50,12 +55,18 @@ $blockedEvent = $event->fetch();
 dm_check('Blocking writes a device_blocked subscription event', ($blockedEvent['event_type'] ?? null) === 'device_blocked');
 dm_check('Blocking event records the acting administrator', ($blockedEvent['created_by'] ?? null) === 'test-admin');
 
+$afterBlockNotifications = (int)$pdo->query("SELECT COUNT(*) FROM license_change_notifications WHERE license_key = " . $pdo->quote($key))->fetchColumn();
+dm_check('Blocking emits a realtime license-change marker', $afterBlockNotifications === $beforeNotifications + 1);
+
 dm_check('Unblocking the activation succeeds', DeviceManager::setBlocked($activationId, false, 'test-admin') === true);
 dm_check('Blocked flag clears after unblock', DeviceManager::isBlocked($key, $hwid) === false);
 
 $event->execute([$licenseId]);
 $unblockedEvent = $event->fetch();
 dm_check('Unblocking writes a device_unblocked subscription event', ($unblockedEvent['event_type'] ?? null) === 'device_unblocked');
+
+$afterUnblockNotifications = (int)$pdo->query("SELECT COUNT(*) FROM license_change_notifications WHERE license_key = " . $pdo->quote($key))->fetchColumn();
+dm_check('Unblocking emits a realtime license-change marker', $afterUnblockNotifications === $afterBlockNotifications + 1);
 
 dm_check('Blocking a missing activation returns false', DeviceManager::setBlocked(999999, true, 'test-admin') === false);
 

@@ -68,12 +68,12 @@ final class DeviceManager
 
         $version = mb_substr($version, 0, 50);
         $stmt = Database::pdo()->prepare(
-            'UPDATE license_activations a
-             JOIN licenses l ON l.id = a.license_id
-             SET a.app_version = ?
-             WHERE l.license_key = ? AND a.hwid = ?'
+            'UPDATE license_activations
+             SET app_version = ?
+             WHERE hwid = ?
+               AND license_id = (SELECT id FROM licenses WHERE license_key = ? LIMIT 1)'
         );
-        $stmt->execute([$version, $licenseKey, $hwid]);
+        $stmt->execute([$version, $hwid, $licenseKey]);
     }
 
     public static function setBlocked(int $activationId, bool $blocked, string $adminUsername): bool
@@ -84,8 +84,9 @@ final class DeviceManager
 
         $pdo = Database::pdo();
         $stmt = $pdo->prepare(
-            'SELECT a.id, a.license_id, a.hwid
+            'SELECT a.id, a.license_id, a.hwid, l.license_key
              FROM license_activations a
+             JOIN licenses l ON l.id = a.license_id
              WHERE a.id = ?'
         );
         $stmt->execute([$activationId]);
@@ -94,32 +95,49 @@ final class DeviceManager
             return false;
         }
 
-        if ($blocked) {
-            $update = $pdo->prepare(
-                'UPDATE license_activations
-                 SET is_blocked = 1, blocked_at = CURRENT_TIMESTAMP, blocked_by = ?
-                 WHERE id = ?'
-            );
-            $update->execute([$adminUsername, $activationId]);
-            $eventType = 'device_blocked';
-            $note = 'Blocked device HWID ' . mb_substr((string) $activation['hwid'], 0, 90);
-        } else {
-            $update = $pdo->prepare(
-                'UPDATE license_activations
-                 SET is_blocked = 0, blocked_at = NULL, blocked_by = NULL
-                 WHERE id = ?'
-            );
-            $update->execute([$activationId]);
-            $eventType = 'device_unblocked';
-            $note = 'Unblocked device HWID ' . mb_substr((string) $activation['hwid'], 0, 90);
-        }
+        $pdo->beginTransaction();
+        try {
+            if ($blocked) {
+                $update = $pdo->prepare(
+                    'UPDATE license_activations
+                     SET is_blocked = 1, blocked_at = CURRENT_TIMESTAMP, blocked_by = ?
+                     WHERE id = ?'
+                );
+                $update->execute([$adminUsername, $activationId]);
+                $eventType = 'device_blocked';
+                $note = 'Blocked device HWID ' . mb_substr((string) $activation['hwid'], 0, 90);
+            } else {
+                $update = $pdo->prepare(
+                    'UPDATE license_activations
+                     SET is_blocked = 0, blocked_at = NULL, blocked_by = NULL
+                     WHERE id = ?'
+                );
+                $update->execute([$activationId]);
+                $eventType = 'device_unblocked';
+                $note = 'Unblocked device HWID ' . mb_substr((string) $activation['hwid'], 0, 90);
+            }
 
-        $event = $pdo->prepare(
-            'INSERT INTO subscription_events
-             (license_id, event_type, note, created_by)
-             VALUES (?, ?, ?, ?)'
-        );
-        $event->execute([(int) $activation['license_id'], $eventType, $note, $adminUsername]);
+            $event = $pdo->prepare(
+                'INSERT INTO subscription_events
+                 (license_id, event_type, note, created_by)
+                 VALUES (?, ?, ?, ?)'
+            );
+            $event->execute([(int) $activation['license_id'], $eventType, $note, $adminUsername]);
+
+            // Wake polling clients immediately so a running terminal does not
+            // wait for a later lifecycle change to discover block/unblock state.
+            $notify = $pdo->prepare(
+                'INSERT INTO license_change_notifications (license_key) VALUES (?)'
+            );
+            $notify->execute([(string) $activation['license_key']]);
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
 
         AuditLog::adminAction(
             $eventType,
