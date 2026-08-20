@@ -17,6 +17,9 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->exec(file_get_contents(__DIR__ . '/../db/schema.sqlite.test.sql'));
 Database::setTestInstance($pdo);
 
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+$pdo->prepare('INSERT INTO admin_users (username, password_hash, role) VALUES (?, ?, ?)')->execute(['tester', 'x', 'support']);
+$testerId = (int) $pdo->lastInsertId();
 $pdo->prepare('INSERT INTO customers (name, email) VALUES (?, ?)')->execute(['Lifecycle A', 'a@example.com']);
 $customerA = (int) $pdo->lastInsertId();
 $pdo->prepare('INSERT INTO customers (name, email) VALUES (?, ?)')->execute(['Lifecycle B', 'b@example.com']);
@@ -72,6 +75,9 @@ lifecycle_check('Internal notes can be updated', $noted['notes'] === 'Priority s
 
 $eventCount = (int) $pdo->query('SELECT COUNT(*) FROM subscription_events WHERE license_id = ' . $id)->fetchColumn();
 lifecycle_check('Lifecycle changes create history events', $eventCount >= 6);
+
+$auditCount = (int) $pdo->query('SELECT COUNT(*) FROM admin_audit_log WHERE actor_id = ' . $testerId . ' AND target_id = ' . $id)->fetchColumn();
+lifecycle_check('Lifecycle mutations are recorded in admin audit log', $auditCount >= 6);
 
 $changeCount = (int) $pdo->query("SELECT COUNT(*) FROM license_change_notifications WHERE license_key = " . $pdo->quote($key))->fetchColumn();
 lifecycle_check('Client-relevant lifecycle changes create realtime markers', $changeCount >= 5);
