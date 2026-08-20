@@ -196,6 +196,25 @@ try {
             echo json_encode(['ok' => true]);
             break;
 
+        case 'push_subscribe':
+            if ($method !== 'POST') throw new Exception('POST required');
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            $endpoint = trim((string)($data['endpoint'] ?? ''));
+            $p256dh = trim((string)($data['keys']['p256dh'] ?? ''));
+            $auth = trim((string)($data['keys']['auth'] ?? ''));
+
+            if ($endpoint === '' || $p256dh === '' || $auth === '') {
+                throw new Exception('Incomplete browser push subscription');
+            }
+            if (!filter_var($endpoint, FILTER_VALIDATE_URL) || stripos($endpoint, 'https://') !== 0) {
+                throw new Exception('Invalid push endpoint');
+            }
+
+            $stmt = $pdo->prepare("REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)");
+            $stmt->execute([(string)Auth::currentUsername(), $endpoint, $p256dh, $auth]);
+            echo json_encode(['ok' => true, 'saved' => true]);
+            break;
+
         default:
             echo json_encode(['ok' => false, 'error' => 'Unknown action']);
             break;
