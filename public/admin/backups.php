@@ -13,7 +13,7 @@ $latestHealthy = $status['latest_age_hours'] !== null && $status['latest_age_hou
 
 render_header('Backups');
 ?>
-<div class="page-container">
+<div class="page-container backup-page">
     <section class="page-hero">
         <div>
             <p class="eyebrow">Resilience</p>
@@ -26,7 +26,7 @@ render_header('Backups');
         <article>
             <span>Configuration</span>
             <strong><?= $status['configured'] ? 'Configured' : 'Missing' ?></strong>
-            <small><?= $status['configured'] ? ($status['readable'] ? 'Directory readable' : 'Directory unavailable') : 'Set BACKUP_DIR on the server' ?></small>
+            <small><?= $status['configured'] ? ($status['readable'] ? 'Directory readable' : 'Directory unavailable') : 'Backup storage is not configured yet' ?></small>
         </article>
         <article>
             <span>Latest backup</span>
@@ -42,13 +42,13 @@ render_header('Backups');
 
     <?php if (!$status['configured']): ?>
         <section class="device-migration-warning">
-            <strong>Backup directory is not configured</strong>
-            <p>Set <code>BACKUP_DIR</code> and <code>BACKUP_ENCRYPTION_KEY</code> on the server, then schedule <code>scripts/backup_database.sh</code>.</p>
+            <strong>Backup storage needs one server secret</strong>
+            <p>The app now uses <code>/home/backups/hercule-pos</code> as the default Azure backup directory. Add <code>BACKUP_ENCRYPTION_KEY</code> in Azure App Settings, restart the Web App, then schedule <code>scripts/backup_database.sh</code>.</p>
         </section>
     <?php elseif (!$status['readable']): ?>
         <section class="device-migration-warning">
             <strong>Backup directory cannot be read</strong>
-            <p>Check the server path and filesystem permissions. The web process only needs read access for this page.</p>
+            <p>Current path: <code><?= htmlspecialchars((string)$status['directory']) ?></code>. Check that the directory exists and the web process has read access.</p>
         </section>
     <?php endif; ?>
 
@@ -94,10 +94,10 @@ render_header('Backups');
 
     <section class="detail-section">
         <div class="section-heading"><div><p class="eyebrow">Recovery readiness</p><h2>Operational checklist</h2></div></div>
-        <div class="event-timeline">
-            <article><span class="timeline-dot"></span><div><strong>Encrypted at rest</strong><p>Backups are expected to be encrypted by <code>scripts/backup_database.sh</code> before storage.</p></div></article>
-            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>This page verifies normal-size archives inline. Large archives are deferred to <code>scripts/verify_backup.sh</code> so the admin request does not spend an unbounded amount of time hashing files.</p></div></article>
-            <article><span class="timeline-dot"></span><div><strong>Restore testing</strong><p>Run <code>scripts/verify_backup.sh</code> from a trusted server shell on a schedule. The admin page intentionally does not decrypt or restore backups.</p></div></article>
+        <div class="backup-checklist">
+            <article><span class="timeline-dot"></span><div><strong>Encrypted at rest</strong><p>Backups are encrypted by <code>scripts/backup_database.sh</code> before they are stored.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Checksum verification</strong><p>Normal-size archives are verified inline. Large archives are deferred to <code>scripts/verify_backup.sh</code> so the admin page stays responsive.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>Restore testing</strong><p>Run <code>scripts/verify_backup.sh</code> from a trusted server shell on a schedule. The admin page intentionally never decrypts or restores a backup.</p></div></article>
         </div>
     </section>
 </div>

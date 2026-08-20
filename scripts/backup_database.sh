@@ -2,7 +2,12 @@
 set -Eeuo pipefail
 umask 077
 
-required=(DB_HOST DB_PORT DB_NAME DB_USER DB_PASS BACKUP_ENCRYPTION_KEY BACKUP_DIR)
+# Azure App Service keeps /home on persistent storage. BACKUP_DIR can still
+# override this path for other environments.
+BACKUP_DIR="${BACKUP_DIR:-/home/backups/hercule-pos}"
+export BACKUP_DIR
+
+required=(DB_HOST DB_PORT DB_NAME DB_USER DB_PASS BACKUP_ENCRYPTION_KEY)
 for name in "${required[@]}"; do
   if [[ -z "${!name:-}" ]]; then
     echo "Missing required environment variable: ${name}" >&2

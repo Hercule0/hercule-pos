@@ -3,11 +3,22 @@
 final class BackupManager
 {
     private const CHECKSUM_MAX_BYTES = 268435456; // 256 MiB per archive in web request
+    private const AZURE_DEFAULT_DIR = '/home/backups/hercule-pos';
 
     public static function directory(): ?string
     {
-        $dir = trim((string) (getenv('BACKUP_DIR') ?: ''));
-        return $dir !== '' ? rtrim($dir, DIRECTORY_SEPARATOR) : null;
+        $configured = trim((string) (getenv('BACKUP_DIR') ?: ''));
+        if ($configured !== '') {
+            return rtrim($configured, DIRECTORY_SEPARATOR);
+        }
+
+        // Azure App Service exposes /home as persistent storage. Use a stable
+        // application-specific path by default so BACKUP_DIR is optional there.
+        if (is_dir('/home') && is_writable('/home')) {
+            return self::AZURE_DEFAULT_DIR;
+        }
+
+        return null;
     }
 
     public static function status(): array
@@ -26,8 +37,9 @@ final class BackupManager
             ];
         }
 
-        $readable = is_dir($dir) && is_readable($dir);
-        $writable = is_dir($dir) && is_writable($dir);
+        $exists = is_dir($dir);
+        $readable = $exists && is_readable($dir);
+        $writable = $exists && is_writable($dir);
         $files = $readable ? self::listBackups($dir, 20) : [];
         $latestAt = $files[0]['modified_at'] ?? null;
 
@@ -72,9 +84,6 @@ final class BackupManager
                         : false;
                     $checksumStatus = $checksumOk ? 'verified' : 'mismatch';
                 } else {
-                    // Avoid hashing very large archives synchronously inside an HTTP
-                    // request. The server-side verify script remains the authoritative
-                    // path for full-size restore-readiness checks.
                     $checksumStatus = 'deferred';
                 }
             }

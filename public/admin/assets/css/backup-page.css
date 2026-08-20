@@ -1,0 +1,85 @@
+/* Backup page responsive layout */
+.backup-page { display:grid; gap:14px; }
+
+.backup-page .detail-facts {
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+
+.backup-page .detail-section { min-width:0; }
+
+.backup-checklist {
+  display:grid;
+  gap:0;
+  padding:4px 16px 10px;
+}
+
+.backup-checklist article {
+  position:relative;
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:10px;
+  align-items:start;
+  padding:15px 0;
+  border-bottom:1px solid rgba(148,163,184,.07);
+}
+
+.backup-checklist article:last-child { border-bottom:0; }
+
+.backup-checklist .timeline-dot {
+  position:static;
+  width:8px;
+  height:8px;
+  margin-top:5px;
+  border-radius:50%;
+  border:2px solid #0d151f;
+  background:#4cc2ff;
+  box-shadow:0 0 0 2px rgba(76,194,255,.16);
+}
+
+.backup-checklist article > div { min-width:0; }
+.backup-checklist strong {
+  display:block;
+  color:#dce6f1;
+  font-size:12px;
+  line-height:1.35;
+  white-space:normal;
+  word-break:normal;
+  overflow-wrap:normal;
+}
+
+.backup-checklist p {
+  margin:5px 0 0;
+  color:#8396ad;
+  font-size:11px;
+  line-height:1.6;
+  white-space:normal;
+  word-break:normal;
+  overflow-wrap:anywhere;
+}
+
+.backup-checklist code,
+.backup-page .device-migration-warning code {
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+
+.backup-page .table-wrap { overflow-x:auto; }
+.backup-page .data-table { min-width:680px; }
+
+@media (max-width:900px) {
+  .backup-page .detail-facts { grid-template-columns:1fr; }
+  .backup-checklist { padding-inline:14px; }
+}
+
+@media (max-width:560px) {
+  .backup-page { gap:11px; }
+  .backup-page .page-hero { padding:14px; }
+  .backup-page .detail-facts { gap:8px; }
+  .backup-page .detail-facts article { padding:12px 13px; }
+  .backup-page .section-heading { padding:12px 13px; }
+  .backup-checklist { padding:2px 12px 8px; }
+  .backup-checklist article { grid-template-columns:14px minmax(0,1fr); gap:8px; padding:13px 0; }
+  .backup-checklist strong { font-size:11px; }
+  .backup-checklist p { font-size:10px; line-height:1.55; }
+  .backup-page .device-migration-warning { padding:12px 13px; }
+}
