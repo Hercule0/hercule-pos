@@ -10,11 +10,22 @@ use Minishlink\WebPush\Subscription;
 
 final class PushNotifier
 {
+    private static function activeSubscriptions(): array
+    {
+        $stmt = Database::pdo()->query(
+            'SELECT ps.*
+             FROM push_subscriptions ps
+             INNER JOIN admin_users au
+               ON au.username = ps.admin_username AND au.is_active = 1
+             ORDER BY ps.created_at DESC'
+        );
+        return $stmt->fetchAll() ?: [];
+    }
+
     public static function getSubscriptions(?string $eventType = null): array
     {
         if ($eventType === null) {
-            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
-            return $stmt->fetchAll() ?: [];
+            return self::activeSubscriptions();
         }
 
         $columns = [
@@ -26,13 +37,14 @@ final class PushNotifier
         ];
         $column = $columns[$eventType] ?? null;
         if ($column === null) {
-            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
-            return $stmt->fetchAll() ?: [];
+            return self::activeSubscriptions();
         }
 
         try {
             $sql = "SELECT ps.*
                     FROM push_subscriptions ps
+                    INNER JOIN admin_users au
+                      ON au.username = ps.admin_username AND au.is_active = 1
                     LEFT JOIN admin_notification_preferences np
                       ON np.admin_username = ps.admin_username
                     WHERE np.id IS NULL
@@ -42,10 +54,11 @@ final class PushNotifier
             $stmt = Database::pdo()->query($sql);
             return $stmt->fetchAll() ?: [];
         } catch (PDOException $e) {
-            // Fail open during rollout if the preference table is not migrated yet.
+            // During rollout the preferences table may not exist yet. Keep the
+            // existing notification behavior, but never send to disabled or
+            // deleted administrator accounts.
             error_log('Notification preference lookup unavailable: ' . $e->getMessage());
-            $stmt = Database::pdo()->query('SELECT * FROM push_subscriptions ORDER BY created_at DESC');
-            return $stmt->fetchAll() ?: [];
+            return self::activeSubscriptions();
         }
     }
 
