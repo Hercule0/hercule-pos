@@ -42,11 +42,14 @@
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(subscription.toJSON ? subscription.toJSON() : subscription)
     }).then(function (response) {
-      if (!response.ok) throw new Error("Subscription endpoint returned " + response.status);
-      return response.json();
-    }).then(function (data) {
-      if (!data || !data.ok) throw new Error((data && data.error) || "Subscription was not saved");
-      return data;
+      return response.json().catch(function () {
+        throw new Error("Subscription endpoint returned invalid JSON (HTTP " + response.status + ")");
+      }).then(function (data) {
+        if (!response.ok || !data || !data.ok) {
+          throw new Error((data && (data.error || data.message)) || ("Subscription endpoint returned " + response.status));
+        }
+        return data;
+      });
     });
   }
 
@@ -103,7 +106,84 @@
     }
   };
 
+  function showPushToast(title, message, type) {
+    var stack = document.getElementById("app-toast-stack");
+    if (!stack) {
+      window.alert(title + "\n" + message);
+      return;
+    }
+    var toast = document.createElement("div");
+    toast.className = "app-toast " + (type || "info");
+    toast.innerHTML = '<div class="toast-content"><strong></strong><span></span></div><button type="button" class="toast-close-btn">&times;</button>';
+    toast.querySelector("strong").textContent = title;
+    toast.querySelector("span").textContent = message;
+    toast.querySelector("button").onclick = function () { toast.remove(); };
+    stack.appendChild(toast);
+    requestAnimationFrame(function () { toast.classList.add("is-visible"); });
+    setTimeout(function () { if (toast.parentNode) toast.remove(); }, 9000);
+  }
+
+  function wirePushControls() {
+    var enableButton = document.getElementById("push-perm-btn");
+    if (enableButton) {
+      enableButton.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        enableButton.disabled = true;
+        window.HerculePush.enable().then(function (subscription) {
+          if (!subscription || !subscription.endpoint) throw new Error("No push subscription was created");
+          var label = enableButton.querySelector("span");
+          if (label) label.textContent = "Alerts Active";
+          enableButton.classList.add("is-granted");
+          showPushToast("Push Notifications Enabled", "This phone is subscribed and synced with the server.", "success");
+        }).catch(function (error) {
+          showPushToast("Could not enable alerts", error.message || String(error), "error");
+        }).finally(function () {
+          enableButton.disabled = false;
+        });
+      }, true);
+    }
+
+    ["fast-test-alert-btn", "sidebar-fast-test-btn"].forEach(function (id) {
+      var button = document.getElementById(id);
+      if (!button) return;
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        button.disabled = true;
+        fetch("/public/admin/test_push.php", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "Accept": "application/json", "X-Hercule-Push-Test": "1" }
+        }).then(function (response) {
+          return response.json().catch(function () {
+            throw new Error("Server returned invalid JSON (HTTP " + response.status + ")");
+          }).then(function (data) {
+            if (!response.ok || !data || data.ok !== true) {
+              throw new Error((data && (data.error || data.message || data.code)) || ("HTTP " + response.status));
+            }
+            return data;
+          });
+        }).then(function (data) {
+          var sent = data.sent != null ? data.sent : (data.successful != null ? data.successful : 0);
+          var failed = data.failed != null ? data.failed : 0;
+          showPushToast("Test Push", data.message || ("Delivered: " + sent + ", failed: " + failed), failed ? "warning" : "success");
+        }).catch(function (error) {
+          showPushToast("Test Push Failed", error.message || String(error), "error");
+        }).finally(function () {
+          button.disabled = false;
+        });
+      }, true);
+    });
+  }
+
   registerServiceWorker();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wirePushControls);
+  } else {
+    wirePushControls();
+  }
 
   window.addEventListener("beforeinstallprompt", function (event) {
     event.preventDefault(); deferredPrompt = event; if (!standalone) setInstallVisible(true);
