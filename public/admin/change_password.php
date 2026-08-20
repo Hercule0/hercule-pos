@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/PasswordPolicy.php';
 Auth::require();
 
 $error = null;
@@ -12,31 +13,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($new !== $confirm) {
         $error = 'New password and confirmation do not match.';
-    } elseif ($new === $current) {
-        $error = 'Choose a password different from your current password.';
-    } elseif (strlen($new) < 12) {
-        $error = 'New password must be at least 12 characters.';
-    } elseif (!preg_match('/[a-z]/', $new) || !preg_match('/[A-Z]/', $new)) {
-        $error = 'New password must include uppercase and lowercase letters.';
-    } elseif (!preg_match('/[0-9]/', $new)) {
-        $error = 'New password must include at least one number.';
-    } elseif (!preg_match('/[^A-Za-z0-9]/', $new)) {
-        $error = 'New password must include at least one symbol.';
     } else {
-        $adminId = (int) $_SESSION['admin_id'];
-        $result = Auth::changePassword($adminId, $current, $new);
-        if ($result['ok']) {
-            // Password changes invalidate every remembered-login token for this account.
-            // The current authenticated session remains valid and has already been rotated
-            // by Auth::changePassword().
-            $stmt = Database::pdo()->prepare('DELETE FROM user_sessions WHERE admin_id = ?');
-            $stmt->execute([$adminId]);
+        $policy = PasswordPolicy::validate($new, $current);
+        if (!$policy['ok']) {
+            $error = $policy['error'] ?? 'New password does not meet the security policy.';
+        } else {
+            $adminId = (int) $_SESSION['admin_id'];
+            $result = Auth::changePassword($adminId, $current, $new);
+            if ($result['ok']) {
+                // Password changes invalidate every remembered-login token for this account.
+                // The current authenticated session remains valid and has already been rotated
+                // by Auth::changePassword().
+                $stmt = Database::pdo()->prepare('DELETE FROM user_sessions WHERE admin_id = ?');
+                $stmt->execute([$adminId]);
 
-            flash_set('Password changed successfully. Remembered sessions were signed out.');
-            header('Location: /public/admin/index.php');
-            exit;
+                flash_set('Password changed successfully. Remembered sessions were signed out.');
+                header('Location: /public/admin/index.php');
+                exit;
+            }
+            $error = $result['error'];
         }
-        $error = $result['error'];
     }
 }
 
