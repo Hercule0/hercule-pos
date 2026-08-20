@@ -1,9 +1,6 @@
 <?php
 /**
- * Central configuration. Values are pulled from environment variables —
- * set these in your hosting platform (e.g. Azure App Service ->
- * Configuration -> Application settings), never hardcode real credentials
- * here.
+ * Central configuration. Environment variables override local defaults.
  */
 
 if (!function_exists('env')) {
@@ -43,12 +40,11 @@ return [
         'key_rate_limit_window_minutes' => 5,
     ],
 
-    // Web Push credentials. Keep the private key in the hosting environment only.
-    // VAPID_PUBLIC_KEY may be public by design, but keeping both values in Azure
-    // makes rotation and multi-environment deployments safer.
+    // Web Push only. These VAPID keys are separate from the RSA license-signing keys.
+    // Environment variables can still override them later if deployment needs change.
     'vapid' => [
         'subject' => env('VAPID_SUBJECT', 'mailto:admin@herculepos.com'),
         'public_key' => env('VAPID_PUBLIC_KEY', 'BKraEuulwXx3knDp50hkOAI1QaJBnFxTngjhnfi48WkMMKcDSBCwxn4WePT0RSrEnJWEmgX-DpG9WiVgK_rNAAY'),
-        'private_key' => env('VAPID_PRIVATE_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY', '-d2Tb1JOz-SEIDHQyvZNFqg54QP476Y8otgZmwVY9kg'),
     ],
 ];
