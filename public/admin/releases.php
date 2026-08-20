@@ -3,7 +3,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/ReleaseManager.php';
 
 Auth::require();
-Auth::requirePermission('licenses.manage');
+Auth::requirePermission('releases.manage');
 
 $pdo = Database::pdo();
 $schemaReady = true;
