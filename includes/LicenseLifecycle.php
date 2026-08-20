@@ -20,14 +20,14 @@ final class LicenseLifecycle
                 throw new InvalidArgumentException('Lifetime licenses do not need an expiry extension.');
             }
 
-            $base = strtotime($license['expires_at']) > time()
-                ? new DateTime($license['expires_at'])
-                : new DateTime();
+            $base = strtotime($license['expires_at']) > time() ? new DateTime($license['expires_at']) : new DateTime();
             $newExpiry = (clone $base)->modify("+{$days} days")->format('Y-m-d H:i:s');
 
             $stmt = $pdo->prepare("UPDATE licenses SET expires_at = ?, status = 'active' WHERE id = ?");
             $stmt->execute([$newExpiry, $licenseId]);
-            self::logEvent($licenseId, 'extended', $license['expires_at'], $newExpiry, "Extended by {$days} day(s)", $adminUsername);
+            $detail = "Extended by {$days} day(s)";
+            self::logEvent($licenseId, 'extended', $license['expires_at'], $newExpiry, $detail, $adminUsername);
+            self::audit($adminUsername, $licenseId, 'license_extended', $detail);
             self::notifyChange($license['license_key']);
             $pdo->commit();
             return self::findLicense($licenseId);
@@ -52,10 +52,6 @@ final class LicenseLifecycle
             $license = self::findLicense($licenseId, true);
             $previousPlan = $license['plan'];
             $previousExpiry = $license['expires_at'];
-
-            // A plan change starts a fresh term from now. Keeping the old expiry when
-            // moving monthly -> annual (or trial -> monthly) would change only the
-            // label while leaving the actual entitlement duration unchanged.
             $newExpiry = self::computeExpiry($plan, $customDays);
 
             $stmt = $pdo->prepare("UPDATE licenses SET plan = ?, expires_at = ?, status = 'active' WHERE id = ?");
@@ -63,6 +59,7 @@ final class LicenseLifecycle
             $note = "Plan changed from {$previousPlan} to {$plan}";
             if ($plan === 'custom') $note .= " ({$customDays} days)";
             self::logEvent($licenseId, 'plan_changed', $previousExpiry, $newExpiry, $note, $adminUsername);
+            self::audit($adminUsername, $licenseId, 'license_plan_changed', $note);
             self::notifyChange($license['license_key']);
             $pdo->commit();
             return self::findLicense($licenseId);
@@ -81,8 +78,6 @@ final class LicenseLifecycle
         $pdo = Database::pdo();
         $pdo->beginTransaction();
         try {
-            // Locking the license row serializes this change with License::activate(),
-            // which locks the same row before counting/adding devices in production.
             $license = self::findLicense($licenseId, true);
             $countStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE license_id = ? AND is_active = 1');
             $countStmt->execute([$licenseId]);
@@ -94,7 +89,9 @@ final class LicenseLifecycle
             $previous = (int) $license['max_activations'];
             $stmt = $pdo->prepare('UPDATE licenses SET max_activations = ? WHERE id = ?');
             $stmt->execute([$maxActivations, $licenseId]);
-            self::logEvent($licenseId, 'activation_limit_changed', null, null, "Device limit changed from {$previous} to {$maxActivations}", $adminUsername);
+            $detail = "Device limit changed from {$previous} to {$maxActivations}";
+            self::logEvent($licenseId, 'activation_limit_changed', null, null, $detail, $adminUsername);
+            self::audit($adminUsername, $licenseId, 'license_activation_limit_changed', $detail);
             self::notifyChange($license['license_key']);
             $pdo->commit();
             return self::findLicense($licenseId);
@@ -113,12 +110,8 @@ final class LicenseLifecycle
             $customerStmt = $pdo->prepare('SELECT id, name FROM customers WHERE id = ?');
             $customerStmt->execute([$customerId]);
             $newCustomer = $customerStmt->fetch();
-            if (!$newCustomer) {
-                throw new InvalidArgumentException('Target customer was not found.');
-            }
-            if ((int) $license['customer_id'] === $customerId) {
-                throw new InvalidArgumentException('License already belongs to the selected customer.');
-            }
+            if (!$newCustomer) throw new InvalidArgumentException('Target customer was not found.');
+            if ((int) $license['customer_id'] === $customerId) throw new InvalidArgumentException('License already belongs to the selected customer.');
 
             $oldStmt = $pdo->prepare('SELECT name FROM customers WHERE id = ?');
             $oldStmt->execute([(int) $license['customer_id']]);
@@ -126,9 +119,9 @@ final class LicenseLifecycle
 
             $stmt = $pdo->prepare('UPDATE licenses SET customer_id = ? WHERE id = ?');
             $stmt->execute([$customerId, $licenseId]);
-            self::logEvent($licenseId, 'customer_transferred', null, null, "Transferred from {$oldName} to {$newCustomer['name']}", $adminUsername);
-            // Force active desktop clients to perform a fresh signed validation so any
-            // ownership/customer metadata derived from this license is not stale.
+            $detail = "Transferred from {$oldName} to {$newCustomer['name']}";
+            self::logEvent($licenseId, 'customer_transferred', null, null, $detail, $adminUsername);
+            self::audit($adminUsername, $licenseId, 'license_customer_transferred', $detail);
             self::notifyChange($license['license_key']);
             $pdo->commit();
             return self::findLicense($licenseId);
@@ -141,9 +134,7 @@ final class LicenseLifecycle
     public static function updateNotes(int $licenseId, ?string $notes, string $adminUsername): array
     {
         $notes = trim((string) $notes);
-        if (mb_strlen($notes) > 2000) {
-            throw new InvalidArgumentException('Notes cannot exceed 2000 characters.');
-        }
+        if (mb_strlen($notes) > 2000) throw new InvalidArgumentException('Notes cannot exceed 2000 characters.');
 
         $pdo = Database::pdo();
         $pdo->beginTransaction();
@@ -152,6 +143,7 @@ final class LicenseLifecycle
             $stmt = $pdo->prepare('UPDATE licenses SET notes = ? WHERE id = ?');
             $stmt->execute([$notes !== '' ? $notes : null, $licenseId]);
             self::logEvent($licenseId, 'notes_updated', null, null, 'License notes updated', $adminUsername);
+            self::audit($adminUsername, $licenseId, 'license_notes_updated', 'License notes updated');
             $pdo->commit();
             return self::findLicense($licenseId);
         } catch (Throwable $e) {
@@ -198,5 +190,27 @@ final class LicenseLifecycle
             'INSERT INTO subscription_events (license_id, event_type, previous_expires_at, new_expires_at, note, created_by) VALUES (?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([$licenseId, $eventType, $previousExpiry, $newExpiry, $note, $adminUsername]);
+    }
+
+    private static function audit(string $adminUsername, int $licenseId, string $action, string $details): void
+    {
+        try {
+            $pdo = Database::pdo();
+            $actor = $pdo->prepare('SELECT id FROM admin_users WHERE username = ? LIMIT 1');
+            $actor->execute([$adminUsername]);
+            $actorId = $actor->fetchColumn();
+            $stmt = $pdo->prepare(
+                'INSERT INTO admin_audit_log (actor_id, target_id, action, details, ip_address) VALUES (?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([
+                $actorId !== false ? (int) $actorId : null,
+                $licenseId,
+                $action,
+                mb_substr($details, 0, 255),
+                $_SERVER['REMOTE_ADDR'] ?? null,
+            ]);
+        } catch (Throwable $e) {
+            error_log('License lifecycle audit write failed: ' . $e->getMessage());
+        }
     }
 }
