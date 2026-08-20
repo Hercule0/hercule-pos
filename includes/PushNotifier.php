@@ -16,7 +16,9 @@ final class PushNotifier
             'SELECT ps.*
              FROM push_subscriptions ps
              INNER JOIN admin_users au
-               ON au.username = ps.admin_username AND au.is_active = 1
+               ON au.username = ps.admin_username
+              AND au.is_active = 1
+              AND ps.created_at >= au.created_at
              ORDER BY ps.created_at DESC'
         );
         return $stmt->fetchAll() ?: [];
@@ -44,7 +46,9 @@ final class PushNotifier
             $sql = "SELECT ps.*
                     FROM push_subscriptions ps
                     INNER JOIN admin_users au
-                      ON au.username = ps.admin_username AND au.is_active = 1
+                      ON au.username = ps.admin_username
+                     AND au.is_active = 1
+                     AND ps.created_at >= au.created_at
                     LEFT JOIN admin_notification_preferences np
                       ON np.admin_username = ps.admin_username
                     WHERE np.id IS NULL
@@ -55,8 +59,8 @@ final class PushNotifier
             return $stmt->fetchAll() ?: [];
         } catch (PDOException $e) {
             // During rollout the preferences table may not exist yet. Keep the
-            // existing notification behavior, but never send to disabled or
-            // deleted administrator accounts.
+            // existing notification behavior, but never send to disabled,
+            // deleted, or stale pre-recreation administrator subscriptions.
             error_log('Notification preference lookup unavailable: ' . $e->getMessage());
             return self::activeSubscriptions();
         }
