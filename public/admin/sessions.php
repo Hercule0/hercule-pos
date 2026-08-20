@@ -12,14 +12,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if ($action === 'revoke_one') {
             $sessionId = max(0, (int) ($_POST['session_id'] ?? 0));
-            SessionManager::revokeOne($sessionId, $currentAdminId, $isOwner);
-            flash_set('Remembered session revoked.');
+            $removed = SessionManager::revokeOne($sessionId, $currentAdminId, $isOwner);
+            flash_set($removed > 0 ? 'Remembered session revoked.' : 'Session was already gone or is outside your scope.', $removed > 0 ? 'success' : 'error');
         } elseif ($action === 'revoke_all_own') {
-            SessionManager::revokeOwn($currentAdminId);
-            flash_set('All remembered sessions for your account were revoked.');
+            $removed = SessionManager::revokeOwn($currentAdminId);
+            flash_set($removed > 0 ? "Revoked {$removed} remembered session(s) for your account." : 'No remembered sessions were found for your account.');
         } elseif ($action === 'revoke_all' && $isOwner) {
-            SessionManager::revokeAll();
-            flash_set('All remembered administrator sessions were revoked.');
+            $removed = SessionManager::revokeAll($currentAdminId);
+            flash_set($removed > 0 ? "Revoked {$removed} remembered administrator session(s)." : 'No remembered administrator sessions were found.');
         } else {
             throw new RuntimeException('Unsupported session action.');
         }
