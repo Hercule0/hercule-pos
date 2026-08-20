@@ -1,6 +1,13 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
-Auth::requirePermission('admins.manage');
+
+Auth::require();
+if (Auth::currentRole() !== 'owner') {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Only the Owner can manage administrator permission overrides.';
+    exit;
+}
 
 $pdo = Database::pdo();
 $currentAdminId = (int) ($_SESSION['admin_id'] ?? 0);
@@ -10,6 +17,7 @@ $permissions = [
     'customers.manage' => 'Manage customers',
     'recovery.review' => 'Review password recovery',
     'exports.download' => 'Download exports',
+    'releases.manage' => 'Manage desktop releases',
     'admins.manage' => 'Manage administrators',
 ];
 
@@ -64,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SERVER['REMOTE_ADDR'] ?? null,
             ]);
 
+            PermissionResolver::clearCache();
             flash_set('Permission updated.', 'success');
             header('Location: /public/admin/admin_permissions.php?admin_id=' . $adminId);
             exit;
@@ -106,6 +115,7 @@ $roleDefaults = [
         'customers.manage' => false,
         'recovery.review' => true,
         'exports.download' => true,
+        'releases.manage' => false,
         'admins.manage' => false,
     ],
     'read_only' => array_fill_keys(array_keys($permissions), false),
@@ -118,7 +128,7 @@ flash_render();
     <div>
         <p class="eyebrow">Access control</p>
         <h1>Granular permissions</h1>
-        <p class="page-subtitle">Keep the role as the default, then allow or deny individual capabilities for a specific administrator.</p>
+        <p class="page-subtitle">Keep the role as the default, then allow or deny individual capabilities for a specific administrator. Only the Owner can change these overrides.</p>
     </div>
 </section>
 
