@@ -1,4 +1,4 @@
-const CACHE_VERSION = "hercule-admin-shell-v11-push";
+const CACHE_VERSION = "hercule-admin-shell-v12-push-api";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
   "/public/admin/manifest.json",
@@ -26,6 +26,13 @@ self.addEventListener("fetch", function (event) {
   if (request.method !== "GET") return;
   var url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Dynamic PHP endpoints must always hit the server. Caching an auth redirect
+  // or HTML error page here breaks JSON APIs such as push_config.php.
+  if (url.pathname.endsWith(".php")) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (url.pathname.endsWith(".css") || url.pathname.endsWith(".js") || request.mode === "navigate") {
     event.respondWith(fetch(request).catch(function () {
