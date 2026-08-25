@@ -11,12 +11,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_response(['ok'=>false,'error'=>'Method not allowed'], 405);
 }
 
-$config = require __DIR__ . '/../../config/config.php';
-$security = $config['security'];
-if (!RateLimiter::check(client_ip(), 'release_check', max(30, (int)$security['api_rate_limit_max_requests']), (int)$security['api_rate_limit_window_minutes'])) {
-    json_response(['ok'=>false,'code'=>'RATE_LIMIT','error'=>'Too many update checks.'], 429);
-}
-
 $input = json_input();
 $licenseKey = trim((string)($input['license_key'] ?? $input['licenseKey'] ?? ''));
 $hwid = trim((string)($input['hwid'] ?? ''));
@@ -28,6 +22,14 @@ if ($licenseKey === '' || $hwid === '' || $version === '') {
 }
 if (strlen($licenseKey) > 64 || strlen($hwid) > 160 || strlen($version) > 50) {
     json_response(['ok'=>false,'code'=>'INVALID_REQUEST','error'=>'Update check fields are too long'], 400);
+}
+
+// Many terminals can share one public IP. Keep a generous NAT-level ceiling,
+// then enforce a tighter per-device bucket so one terminal still cannot spam.
+$deviceBucket = 'upd-' . substr(hash('sha256', $licenseKey . '|' . $hwid), 0, 36);
+if (!RateLimiter::check(client_ip(), 'release_check_ip', 600, 5)
+    || !RateLimiter::check($deviceBucket, 'release_check_device', 30, 5)) {
+    json_response(['ok'=>false,'code'=>'RATE_LIMIT','error'=>'Too many update checks.'], 429);
 }
 
 try {
