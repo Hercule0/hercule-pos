@@ -1,0 +1,78 @@
+/* Recovery request review dialog — viewport-safe desktop layout */
+.recovery-dialog {
+    width: min(560px, calc(100vw - 28px)) !important;
+    max-width: 560px !important;
+    max-height: calc(100dvh - 24px) !important;
+    margin: auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+.recovery-dialog .recovery-dialog-content {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    max-height: calc(100dvh - 24px) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.recovery-dialog .dialog-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex: 0 0 auto;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+
+.recovery-dialog .recovery-detail-body,
+.recovery-dialog .recovery-review-form,
+.recovery-dialog .verified-proof {
+    flex: 0 0 auto;
+}
+
+.recovery-dialog .recovery-review-form {
+    padding-bottom: 18px;
+}
+
+.recovery-dialog .recovery-dialog-content::-webkit-scrollbar {
+    width: 9px;
+}
+
+.recovery-dialog .recovery-dialog-content::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 999px;
+    border: 2px solid var(--panel);
+}
+
+.recovery-dialog .recovery-dialog-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+@media (max-height: 760px) {
+    .recovery-dialog {
+        max-height: calc(100dvh - 16px) !important;
+    }
+    .recovery-dialog .recovery-dialog-content {
+        max-height: calc(100dvh - 16px) !important;
+    }
+    .recovery-dialog .recovery-meta-card {
+        padding: 9px 10px;
+    }
+    .recovery-dialog .recovery-meta-grid {
+        gap: 8px;
+    }
+}
+
+@media (max-width: 760px) {
+    .recovery-dialog {
+        width: calc(100vw - 16px) !important;
+        max-width: none !important;
+        max-height: calc(100dvh - 16px) !important;
+    }
+    .recovery-dialog .recovery-dialog-content {
+        max-height: calc(100dvh - 16px) !important;
+    }
+}
