@@ -3,11 +3,12 @@
  * POST /api/recovery_claim.php
  * Body: { "request_id": 123, "license_key": "...", "hwid": "..." }
  *
- * Called by the client once it sees status === 'approved'. Returns a
- * fresh single-use authorization token exactly once, bound to the SAME
- * device that originally submitted the request. This is an intermediate
- * step — the token still has to be presented (and is re-validated in
- * full) at recovery_reset.php before anything is actually consumed.
+ * Called by the client once it sees status === 'approved'. Returns a fresh
+ * single-use authorization token bound to the SAME device that originally
+ * submitted the request. A valid unexpired approval may be claimed again if a
+ * previous HTTP response was lost; each retry invalidates the older token.
+ * The token still has to be presented and re-validated by recovery_reset.php
+ * before the request can be completed.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
