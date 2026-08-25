@@ -202,6 +202,31 @@ function ai_answer_object($value): array {
     if (is_string($value) && trim($value) !== '') return ['answer'=>trim($value)];
     return [];
 }
+function ai_followup_questions($value, int $max = 4): array {
+    if (!is_array($value)) return [];
+    $out = []; $seen = [];
+    foreach ($value as $item) {
+        if (is_array($item)) $item = $item['question'] ?? $item['text'] ?? $item['title'] ?? $item['label'] ?? '';
+        $text = trim(preg_replace('/\s+/u', ' ', (string)$item) ?? (string)$item);
+        $text = ai_cut($text, 180);
+        $length = function_exists('mb_strlen') ? mb_strlen($text, 'UTF-8') : strlen($text);
+        if ($text === '' || $length < 4 || $length > 160) continue;
+        $isQuestion = (bool)preg_match('/[؟?]\s*$/u', $text)
+            || (bool)preg_match('/^(?:شنو|شلون|كيف|شكد|كم|هل|متى|وين|أين|اين|ليش|لماذا|ما\s|من\s|أي\s|اريد|أريد|حلل|حلّل|قارن|اعرض|أعرض|اظهر|أظهر|توقع|توقّع|تنبأ|تنبّأ|اشرح|إشرح|ساعدني|what|how|why|when|where|which|can\s|could\s|show\s|analy[sz]e|compare|forecast|explain)/iu', $text);
+        if (!$isQuestion) continue;
+        $baseKey = preg_replace('/[؟?!.،,]+$/u', '', $text) ?? $text;
+        $key = function_exists('mb_strtolower') ? mb_strtolower($baseKey, 'UTF-8') : strtolower($baseKey);
+        if (isset($seen[$key])) continue;
+        $seen[$key] = true; $out[] = $text;
+        if (count($out) >= $max) break;
+    }
+    return $out;
+}
+function ai_sanitize_answer_payload(array $answer): array {
+    $answer['followups'] = ai_followup_questions($answer['followups'] ?? $answer['suggested_questions'] ?? [], 4);
+    unset($answer['suggested_questions']);
+    return $answer;
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ai_json(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);
 $body = json_input();
@@ -233,7 +258,7 @@ if ($mode === 'plan') {
         ."- 'ما توقعك للاسبوع الجاي' => forecast_sales + sales_comparison + operational_alerts.\n"
         ."- 'شلون أفعل درج النقد' => help_search.\n"
         ."Context: ".ai_prompt_json($context,14000)."\nQuestion: ".$question
-        ."\nReturn JSON only. Either {\"kind\":\"answer\",\"answer\":{\"answer\":\"useful complete answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[]},\"tool_calls\":[]} OR {\"kind\":\"tools\",\"goal\":\"...\",\"tool_calls\":[{\"tool\":\"report\",\"intent\":\"sales_summary\",...}]}. Never return an empty answer.";
+        ."\nThe followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only. Either {\"kind\":\"answer\",\"answer\":{\"answer\":\"useful complete answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[]},\"tool_calls\":[]} OR {\"kind\":\"tools\",\"goal\":\"...\",\"tool_calls\":[{\"tool\":\"report\",\"intent\":\"sales_summary\",...}]}. Never return an empty answer.";
     $res = ai_providers($prompt,1000);
     if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
     $model = $res['json'];
@@ -241,7 +266,7 @@ if ($mode === 'plan') {
     if ($calls) {
         ai_json(['ok'=>true,'provider'=>$res['provider'],'plan'=>['kind'=>'tools','goal'=>ai_cut((string)($model['goal']??''),300),'tool_calls'=>$calls]]);
     }
-    $answer = ai_answer_object($model['answer'] ?? $model['response'] ?? $model['message'] ?? $model['text'] ?? null);
+    $answer = ai_sanitize_answer_payload(ai_answer_object($model['answer'] ?? $model['response'] ?? $model['message'] ?? $model['text'] ?? null));
     if (trim((string)($answer['answer'] ?? '')) !== '') {
         ai_json(['ok'=>true,'provider'=>$res['provider'],'plan'=>['kind'=>'answer','answer'=>$answer,'tool_calls'=>[]]]);
     }
@@ -254,11 +279,11 @@ if ($mode !== 'synthesize') ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
 $plan = is_array($body['plan'] ?? null) ? $body['plan'] : [];
 $tools = is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [];
 $prompt = "You are the Hercule POS smart assistant. Use ONLY supplied local tool results for store-specific facts. Never invent numbers, causes, product names, customer names, or settings state. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. If some tools failed, clearly say what could not be read and still use the successful evidence. Answer in the user's language; use natural Iraqi Arabic when the user uses Iraqi Arabic.\n"
-    ."Return JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
+    ."The followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
     ."Question: ".$question."\nPlan: ".ai_prompt_json($plan,5000)."\nTool results: ".ai_prompt_json($tools,24000)."\nContext: ".ai_prompt_json($context,7000);
 $res = ai_providers($prompt,1400);
 if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
-$answer = $res['json'];
+$answer = ai_sanitize_answer_payload($res['json']);
 if (!trim((string)($answer['answer'] ?? ''))) ai_json(['ok'=>false,'code'=>'AI_INVALID_RESPONSE','error'=>'AI provider returned an empty answer'],502);
 $answer['answer'] = ai_cut((string)$answer['answer'],5000);
 ai_json(['ok'=>true,'provider'=>$res['provider'],'answer'=>$answer]);
