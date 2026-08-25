@@ -50,7 +50,7 @@
 
   function urlBase64ToUint8Array(base64String) {
     var padding = "=".repeat((4 - base64String.length % 4) % 4);
-    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
     var rawData = window.atob(base64);
     var outputArray = new Uint8Array(rawData.length);
     for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
@@ -263,4 +263,16 @@
   window.addEventListener("online", function () { document.documentElement.classList.remove("is-offline"); if (window.HerculePush) window.HerculePush.sync().catch(function () {}); });
   window.addEventListener("offline", function () { document.documentElement.classList.add("is-offline"); });
   if (!navigator.onLine) document.documentElement.classList.add("is-offline");
+})();
+
+// Release Management gets a dedicated uploader because large desktop bundles are
+// not suitable for a single PHP/Azure request. Load it only on the releases page.
+(function () {
+  if (!/\/public\/admin\/releases\.php$/.test(window.location.pathname)) return;
+  if (document.querySelector('script[data-hercule-release-fast]')) return;
+  var script = document.createElement('script');
+  script.src = '/public/admin/assets/js/release-upload-fast.js?v=20260826-fast2';
+  script.async = false;
+  script.dataset.herculeReleaseFast = '1';
+  document.head.appendChild(script);
 })();
