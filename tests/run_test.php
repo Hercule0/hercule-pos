@@ -142,15 +142,70 @@ $secondReview = PasswordRecovery::reject($recoveryId, 'admin', 'Too late');
 check('Already reviewed recovery cannot be reviewed again', $secondReview['ok'] === false);
 $wrongDeviceClaim = PasswordRecovery::claim($recoveryId, $licenseKey, 'WRONG-HWID', '127.0.0.1');
 check('Recovery authorization is bound to the requesting HWID', $wrongDeviceClaim['ok'] === false);
+
 $claimedRecovery = PasswordRecovery::claim($recoveryId, $licenseKey, $hwid3, '127.0.0.1');
-check('Approved recovery authorization can be claimed once', $claimedRecovery['ok'] === true);
+check('Approved recovery authorization can be claimed', $claimedRecovery['ok'] === true);
+
 $secondClaim = PasswordRecovery::claim($recoveryId, $licenseKey, $hwid3, '127.0.0.1');
-check('Delivered authorization cannot be claimed twice', $secondClaim['ok'] === false);
-$badReset = PasswordRecovery::reset($recoveryId, $licenseKey, $hwid3, str_repeat('0', 64), '127.0.0.1');
+check('Lost claim response can be recovered by reissuing authorization', $secondClaim['ok'] === true);
+check(
+    'Reissued authorization invalidates the previous token',
+    ($secondClaim['token'] ?? '') !== ($claimedRecovery['token'] ?? '')
+);
+
+$oldTokenReset = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $claimedRecovery['token'],
+    '127.0.0.1'
+);
+check('Previous token is rejected after authorization reissue', $oldTokenReset['ok'] === false);
+
+$preparedRecovery = PasswordRecovery::prepare(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $secondClaim['token'],
+    '127.0.0.1'
+);
+check('Current recovery token can enter prepared phase', $preparedRecovery['ok'] === true);
+check('Prepared recovery state is stored', PasswordRecovery::isPrepared($recoveryId));
+
+$claimAfterPrepare = PasswordRecovery::claim($recoveryId, $licenseKey, $hwid3, '127.0.0.1');
+check('Prepared authorization cannot be reissued', $claimAfterPrepare['ok'] === false);
+
+$badReset = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    str_repeat('0', 64),
+    '127.0.0.1'
+);
 check('Wrong recovery token is rejected', $badReset['ok'] === false);
-$completedRecovery = PasswordRecovery::reset($recoveryId, $licenseKey, $hwid3, $claimedRecovery['token'], '127.0.0.1');
-check('Valid recovery token is consumed successfully', $completedRecovery['ok'] === true);
-$reusedRecovery = PasswordRecovery::reset($recoveryId, $licenseKey, $hwid3, $claimedRecovery['token'], '127.0.0.1');
+
+// Simulate a long offline period after prepare. Prepared proof must survive
+// the original 30-minute authorization TTL and finalize when Internet returns.
+$pdo->prepare(
+    "UPDATE password_recovery_requests SET token_expires_at = '2020-01-01 00:00:00' WHERE id = ?"
+)->execute([$recoveryId]);
+
+$completedRecovery = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $secondClaim['token'],
+    '127.0.0.1'
+);
+check('Prepared recovery can finalize after original token TTL', $completedRecovery['ok'] === true);
+
+$reusedRecovery = PasswordRecovery::reset(
+    $recoveryId,
+    $licenseKey,
+    $hwid3,
+    $secondClaim['token'],
+    '127.0.0.1'
+);
 check('Consumed recovery token cannot be reused', $reusedRecovery['ok'] === false);
 $storedRecovery = PasswordRecovery::findById($recoveryId);
 check('Completed recovery clears the stored token hash', $storedRecovery['token_hash'] === null);
