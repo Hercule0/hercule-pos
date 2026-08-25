@@ -167,14 +167,14 @@ final class PasswordRecovery
 
     /**
      * Client calls this once it independently learns status === 'approved'.
-     * Issues a FRESH single-use token (invalidating whichever one the
-     * admin-facing approve() call generated) and returns it exactly once —
-     * "delivered" alone doesn't grant anything; reset() below still fully
-     * re-validates hash + expiry + single-use state.
+     * Each successful claim issues a fresh single-use token and invalidates
+     * any older claimed token. Re-claiming is intentionally allowed while
+     * the approval is still valid: if the server committed a token but the
+     * network dropped before the client received the response, the same
+     * verified device can safely retry instead of being permanently stranded.
      *
      * hwid is checked against the ORIGINAL requesting device on purpose —
-     * see plan §10 "Account and License Protection": recovery must not
-     * quietly move an account to a different device.
+     * recovery must not quietly move an account to a different device.
      */
     public static function claim(int $id, string $licenseKey, string $hwid, ?string $ip): array
     {
@@ -209,26 +209,27 @@ final class PasswordRecovery
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'الطلب ليس معتمداً حالياً (الحالة: ' . self::arabicStatus($request['status']) . ').'];
             }
-            if ($request['delivered_at'] !== null) {
+            if ($request['used_at'] !== null) {
                 $pdo->rollBack();
-                return ['ok' => false, 'error' => 'تم استلام التفويض مسبقاً.'];
+                return ['ok' => false, 'error' => 'تم استخدام هذا التفويض مسبقاً.'];
             }
 
+            $wasPreviouslyDelivered = $request['delivered_at'] !== null;
             $token = bin2hex(random_bytes(32));
             $tokenHash = hash('sha256', $token);
             $update = $pdo->prepare(
-                'UPDATE password_recovery_requests
+                "UPDATE password_recovery_requests
                  SET token_hash = ?, delivered_at = CURRENT_TIMESTAMP
-                 WHERE id = ? AND status = ? AND delivered_at IS NULL'
+                 WHERE id = ? AND status = 'approved' AND used_at IS NULL"
             );
-            $update->execute([$tokenHash, $id, 'approved']);
+            $update->execute([$tokenHash, $id]);
 
             if ($update->rowCount() !== 1) {
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'تعذر استلام التفويض.'];
             }
 
-            self::log($id, 'authorization_claimed', null, $ip, null);
+            self::log($id, $wasPreviouslyDelivered ? 'authorization_reissued' : 'authorization_claimed', null, $ip, null);
             $pdo->commit();
 
             return ['ok' => true, 'token' => $token, 'expires_at' => $request['token_expires_at']];
