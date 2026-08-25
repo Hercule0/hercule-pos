@@ -7,11 +7,6 @@
  *   "recovery_type": "password|username|account",
  *   "username": "..." // required only for password recovery
  * }
- *
- * POS user accounts remain local to the encrypted desktop database. For
- * username/account recovery the server intentionally does not need to know the
- * old local username: it records a human-readable marker for the primary-owner
- * recovery request and keeps the existing, battle-tested approval/token flow.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -75,19 +70,24 @@ if (!RateLimiter::check('key:' . $licenseKey, 'recovery_request_by_key', $rateLi
 
 $pdo = Database::pdo();
 
-// Expired approvals are terminal even if the client never opened the status
-// screen. Normalize them here before duplicate detection so an old expired
-// authorization can never block a fresh recovery request on the same device.
+// An approval may expire only before the desktop enters the prepared phase.
+// Prepared requests retain the frozen completion proof because local credentials
+// may already have been committed while the machine is offline.
 $expire = $pdo->prepare(
     "UPDATE password_recovery_requests
      SET status = 'expired'
      WHERE license_key = ? AND hwid = ? AND status = 'approved'
-       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP"
+       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP
+       AND NOT EXISTS (
+           SELECT 1 FROM recovery_audit_log ra
+           WHERE ra.request_id = password_recovery_requests.id
+             AND ra.event_type = 'authorization_prepared'
+       )"
 );
 $expire->execute([$licenseKey, $hwid]);
 
-// One in-flight request per activated device. This avoids the desktop client
-// losing track of an older request while a second one is pending.
+// One in-flight request per activated device. A prepared request deliberately
+// remains active until its completion acknowledgement arrives.
 $duplicate = $pdo->prepare(
     "SELECT id FROM password_recovery_requests
      WHERE license_key = ? AND hwid = ? AND status IN ('pending','approved')
@@ -98,9 +98,6 @@ if ($duplicate->fetchColumn()) {
     json_response(['ok' => false, 'error' => 'يوجد طلب استرداد فعال بالفعل لهذا الجهاز. افتح حالة الطلب الحالي أو ألغِه أولاً.'], 409);
 }
 
-// Keep the existing schema/back-office fully backward compatible. The server
-// never claims these markers are real local usernames; they simply tell support
-// what the verified device is requesting without exposing the forgotten value.
 $requestedUsername = $username;
 if ($recoveryType === 'username') {
     $requestedUsername = 'الحساب الرئيسي — استرداد اسم المستخدم';
