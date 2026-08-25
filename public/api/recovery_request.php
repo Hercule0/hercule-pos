@@ -73,9 +73,22 @@ if (!RateLimiter::check('key:' . $licenseKey, 'recovery_request_by_key', $rateLi
     json_response(['ok' => false, 'error' => 'Too many recovery requests for this license. Please try again later.'], 429);
 }
 
+$pdo = Database::pdo();
+
+// Expired approvals are terminal even if the client never opened the status
+// screen. Normalize them here before duplicate detection so an old expired
+// authorization can never block a fresh recovery request on the same device.
+$expire = $pdo->prepare(
+    "UPDATE password_recovery_requests
+     SET status = 'expired'
+     WHERE license_key = ? AND hwid = ? AND status = 'approved'
+       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP"
+);
+$expire->execute([$licenseKey, $hwid]);
+
 // One in-flight request per activated device. This avoids the desktop client
 // losing track of an older request while a second one is pending.
-$duplicate = Database::pdo()->prepare(
+$duplicate = $pdo->prepare(
     "SELECT id FROM password_recovery_requests
      WHERE license_key = ? AND hwid = ? AND status IN ('pending','approved')
      LIMIT 1"
