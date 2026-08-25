@@ -1,22 +1,264 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/_bootstrap.php';
-require_once __DIR__.'/../../includes/RateLimiter.php';
-require_once __DIR__.'/../../includes/DeviceManager.php';
-function ae(string $k,string $d=''):string{$v=$_ENV[$k]??$_SERVER[$k]??getenv($k);return($v===false||$v===null||$v==='')?$d:trim((string)$v);}
-function aj(array $x,int $s=200):never{http_response_code($s);echo json_encode($x,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
-function cut(string $s,int $n):string{return function_exists('mb_substr')?mb_substr($s,0,$n,'UTF-8'):substr($s,0,$n);}
-function js($v,int $n):string{$s=json_encode($v,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);return is_string($s)?substr($s,0,$n):'{}';}
-function postj(string $u,array $h,array $p,int $t=15):array{$b=json_encode($p,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);$h=array_merge(['Content-Type: application/json','Accept: application/json','User-Agent: HerculePOS-Agent/1.0'],$h);$c=curl_init($u);curl_setopt_array($c,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>$t,CURLOPT_HTTPHEADER=>$h,CURLOPT_POSTFIELDS=>$b]);$r=curl_exec($c);$e=curl_error($c);$s=(int)curl_getinfo($c,CURLINFO_RESPONSE_CODE);curl_close($c);$j=is_string($r)?json_decode($r,true):null;return['s'=>$s,'j'=>is_array($j)?$j:null,'e'=>$e];}
-function clean(string $s):?array{$s=trim(preg_replace('/^```(?:json)?\s*|\s*```$/i','',$s)??$s);$a=strpos($s,'{');$b=strrpos($s,'}');if($a!==false&&$b!==false)$s=substr($s,$a,$b-$a+1);$j=json_decode($s,true);return is_array($j)?$j:null;}
-function callp(string $p,string $prompt,int $max):array{
- if($p==='gemini'){$k=ae('GEMINI_API_KEY');if(!$k)return['skip'=>1];$m=ae('GEMINI_MODEL','gemini-2.5-flash-lite');$r=postj(rtrim(ae('GEMINI_API_BASE','https://generativelanguage.googleapis.com/v1beta'),'/').'/models/'.rawurlencode($m).':generateContent',['x-goog-api-key: '.$k],['contents'=>[['role'=>'user','parts'=>[['text'=>$prompt]]]],'generationConfig'=>['temperature'=>.15,'maxOutputTokens'=>$max,'responseMimeType'=>'application/json']]);return['s'=>$r['s'],'t'=>(string)($r['j']['candidates'][0]['content']['parts'][0]['text']??''),'e'=>$r['e']?:(string)($r['j']['error']['message']??'')];}
- if($p==='groq'){$k=ae('GROQ_API_KEY');if(!$k)return['skip'=>1];$m=ae('GROQ_MODEL','openai/gpt-oss-20b');$r=postj(rtrim(ae('GROQ_API_BASE','https://api.groq.com/openai/v1'),'/').'/chat/completions',['Authorization: Bearer '.$k],['model'=>$m,'messages'=>[['role'=>'system','content'=>'Return strict JSON only.'],['role'=>'user','content'=>$prompt]],'temperature'=>.15,'max_completion_tokens'=>$max,'response_format'=>['type'=>'json_object']]);return['s'=>$r['s'],'t'=>(string)($r['j']['choices'][0]['message']['content']??''),'e'=>$r['e']?:(string)($r['j']['error']['message']??'')];}
- if($p==='cloudflare'){$k=ae('CLOUDFLARE_AI_TOKEN');$id=ae('CLOUDFLARE_ACCOUNT_ID');if(!$k||!$id)return['skip'=>1];$m=ae('CLOUDFLARE_AI_MODEL','@cf/meta/llama-3.1-8b-instruct-fast');$u=rtrim(ae('CLOUDFLARE_API_BASE','https://api.cloudflare.com/client/v4'),'/').'/accounts/'.rawurlencode($id).'/ai/run/'.str_replace('%2F','/',rawurlencode($m));$r=postj($u,['Authorization: Bearer '.$k],['prompt'=>$prompt,'max_tokens'=>$max,'temperature'=>.15]);return['s'=>$r['s'],'t'=>(string)($r['j']['result']['response']??''),'e'=>$r['e']?:(string)($r['j']['errors'][0]['message']??'')];}
- return['skip'=>1];}
-function providers(string $prompt,int $max):array{$errs=[];foreach(array_filter(array_map('trim',explode(',',strtolower(ae('HERCULE_AI_PROVIDER_ORDER','gemini,groq,cloudflare')))))as$p){$r=callp($p,$prompt,$max);if(!empty($r['skip'])){$errs[]="$p:not_configured";continue;}$j=clean((string)($r['t']??''));if($j)return['ok'=>1,'provider'=>$p,'json'=>$j];$errs[]=$p.':'.($r['s']??0).':'.substr((string)($r['e']??'invalid_json'),0,100);}return['ok'=>0,'errors'=>$errs];}
-if(($_SERVER['REQUEST_METHOD']??'')!=='POST')aj(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);$b=json_input();$lk=trim((string)($b['license_key']??''));$hw=trim((string)($b['hwid']??''));$q=trim((string)($b['question']??''));$mode=strtolower(trim((string)($b['mode']??'plan')));if(!$lk||!$hw)aj(['ok'=>false,'code'=>'LICENSE_REQUIRED'],401);if(!$q||strlen($q)>6000)aj(['ok'=>false,'code'=>'INVALID_QUESTION'],400);if(DeviceManager::isBlocked($lk,$hw))aj(['ok'=>false,'code'=>'DEVICE_BLOCKED'],403);$v=License::validate($lk,$hw,client_ip());if(!($v['ok']??false))aj(['ok'=>false,'code'=>'LICENSE_INVALID'],403);$pl=max(1,(int)ae('HERCULE_AI_PER_LICENSE_RPM','12'));$gl=max($pl,(int)ae('HERCULE_AI_GLOBAL_RPM','30'));$buck='lic:'.substr(hash('sha256',$lk),0,40);if(!RateLimiter::check($buck,'ai_agent_'.$mode,$pl,1)||!RateLimiter::check('global','ai_agent_global_'.$mode,$gl,1))aj(['ok'=>false,'code'=>'AI_RATE_LIMIT','error'=>'التحليل الذكي مشغول حالياً.'],429);
-$cat=json_decode((string)@file_get_contents(__DIR__.'/intent_catalog.json'),true);if(!is_array($cat))aj(['ok'=>false,'code'=>'CATALOG_ERROR'],500);$ctx=is_array($b['context']??null)?$b['context']:[];
-if($mode==='plan'){$names=[];foreach($cat as$n=>$m)if($n!=='none')$names[]=$n.(!empty($m['entity'])?'['.$m['entity'].']':'');$prompt="You are the planning brain for Hercule POS. User can write Iraqi Arabic, Arabic or English. Never invent store data. Store facts must come from local read-only tools. You may answer general knowledge/chat directly. For Hercule usage/settings use help_search. For analysis request several reports when useful. For prediction use forecast tools, never guess numbers. Allowed tools: report{intent,entity_type,entity_query,limit,window_days}; forecast_sales{horizon_days,history_days}; forecast_inventory{horizon_days,lookback_days,limit}; forecast_product{entity_query,horizon_days,lookback_days}; help_search{query,limit}. Report intents: ".implode(',',$names).". Context: ".js($ctx,14000)." Question: $q Return JSON only: either {\"kind\":\"answer\",\"answer\":{\"answer\":\"...\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[]},\"tool_calls\":[]} or {\"kind\":\"tools\",\"goal\":\"...\",\"tool_calls\":[...max 8...]}.";$r=providers($prompt,900);if(!$r['ok'])aj(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$r['errors']],503);$x=$r['json'];$calls=[];foreach(array_slice(is_array($x['tool_calls']??null)?$x['tool_calls']:[],0,8)as$c){if(!is_array($c))continue;$t=strtolower(trim((string)($c['tool']??'')));if(!in_array($t,['report','forecast_sales','forecast_inventory','forecast_product','help_search'],true))continue;if($t==='report'){if(!isset($cat[$c['intent']??''])||($c['intent']??'')==='none')continue;$req=(string)($cat[$c['intent']]['entity']??'');$et=(string)($c['entity_type']??'none');$eq=cut(trim((string)($c['entity_query']??'')),120);if($req&&($et!==$req||!$eq))continue;$calls[]=['tool'=>'report','intent'=>$c['intent'],'entity_type'=>$et,'entity_query'=>$eq,'limit'=>max(1,min(50,(int)($c['limit']??10))),'window_days'=>max(1,min(3650,(int)($c['window_days']??30)))];}elseif($t==='forecast_product'){if(!trim((string)($c['entity_query']??'')))continue;$calls[]=['tool'=>$t,'entity_query'=>cut(trim((string)$c['entity_query']),120),'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??14))),'lookback_days'=>max(7,min(120,(int)($c['lookback_days']??30)))];}elseif($t==='help_search'){$calls[]=['tool'=>$t,'query'=>cut(trim((string)($c['query']??$q)),500),'limit'=>max(1,min(8,(int)($c['limit']??5)))];}else{$calls[]=['tool'=>$t,'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??($t==='forecast_sales'?7:14)))),'history_days'=>max(28,min(365,(int)($c['history_days']??84))),'lookback_days'=>max(7,min(180,(int)($c['lookback_days']??30))),'limit'=>max(1,min(50,(int)($c['limit']??20)))];}}
- $plan=$calls?['kind'=>'tools','goal'=>cut((string)($x['goal']??''),300),'tool_calls'=>$calls]:['kind'=>'answer','answer'=>is_array($x['answer']??null)?$x['answer']:['answer'=>(string)($x['answer']??'')],'tool_calls'=>[]];aj(['ok'=>true,'provider'=>$r['provider'],'plan'=>$plan]);}
-if($mode!=='synthesize')aj(['ok'=>false,'code'=>'INVALID_MODE'],400);$plan=is_array($b['plan']??null)?$b['plan']:[];$tools=is_array($b['tool_results']??null)?array_slice($b['tool_results'],0,8):[];$prompt="You are Hercule POS smart assistant. Use ONLY supplied local tool results for store-specific facts. Never invent numbers or causes. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. Answer in user's language, Iraqi Arabic for Iraqi Arabic. Return JSON only: {\"answer\":\"...\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Question: $q Plan: ".js($plan,5000)." Tool results: ".js($tools,24000)." Context: ".js($ctx,7000);$r=providers($prompt,1200);if(!$r['ok'])aj(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$r['errors']],503);$a=$r['json'];if(!trim((string)($a['answer']??'')))aj(['ok'=>false,'code'=>'AI_INVALID_RESPONSE'],502);$a['answer']=cut((string)$a['answer'],5000);aj(['ok'=>true,'provider'=>$r['provider'],'answer'=>$a]);
+
+require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../../includes/RateLimiter.php';
+require_once __DIR__ . '/../../includes/DeviceManager.php';
+
+function ai_env(string $key, string $default = ''): string {
+    $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+    return ($value === false || $value === null || $value === '') ? $default : trim((string)$value);
+}
+function ai_json(array $payload, int $status = 200): never {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+function ai_cut(string $text, int $limit): string {
+    return function_exists('mb_substr') ? (string)mb_substr($text, 0, $limit, 'UTF-8') : substr($text, 0, $limit);
+}
+function ai_prompt_json($value, int $maxChars): string {
+    $shrink = function ($v, int $depth = 0) use (&$shrink) {
+        if ($depth > 6) return null;
+        if ($v === null || is_bool($v) || is_int($v) || is_float($v)) return $v;
+        if (is_string($v)) return ai_cut($v, $depth <= 1 ? 1200 : 500);
+        if (!is_array($v)) return ai_cut((string)$v, 200);
+        $out = [];
+        $n = 0;
+        foreach ($v as $k => $item) {
+            if ($n++ >= ($depth <= 1 ? 30 : 18)) break;
+            $out[$k] = $shrink($item, $depth + 1);
+        }
+        return $out;
+    };
+    $candidate = $shrink($value);
+    $text = json_encode($candidate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($text)) return '{}';
+    if (strlen($text) <= $maxChars) return $text;
+    return json_encode(['truncated' => true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+}
+function ai_post_json(string $url, array $headers, array $payload, int $timeout = 15): array {
+    $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $headers = array_merge(['Content-Type: application/json', 'Accept: application/json', 'User-Agent: HerculePOS-Agent/1.1'], $headers);
+    if (!function_exists('curl_init')) return ['status'=>0,'json'=>null,'error'=>'cURL extension unavailable'];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_FOLLOWLOCATION => false,
+    ]);
+    $raw = curl_exec($ch);
+    $error = curl_error($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    return ['status'=>$status,'json'=>is_array($json)?$json:null,'error'=>$error];
+}
+function ai_clean_json(string $text): ?array {
+    $text = trim($text);
+    $text = preg_replace('/^```(?:json)?\s*/i', '', $text) ?? $text;
+    $text = preg_replace('/\s*```$/', '', $text) ?? $text;
+    $first = strpos($text, '{');
+    $last = strrpos($text, '}');
+    if ($first !== false && $last !== false && $last >= $first) $text = substr($text, $first, $last - $first + 1);
+    $json = json_decode($text, true);
+    return is_array($json) ? $json : null;
+}
+function ai_call_provider(string $provider, string $prompt, int $maxTokens): array {
+    if ($provider === 'gemini') {
+        $key = ai_env('GEMINI_API_KEY'); if ($key === '') return ['skip'=>true];
+        $model = ai_env('GEMINI_MODEL', 'gemini-2.5-flash-lite');
+        $base = rtrim(ai_env('GEMINI_API_BASE', 'https://generativelanguage.googleapis.com/v1beta'), '/');
+        $res = ai_post_json($base.'/models/'.rawurlencode($model).':generateContent', ['x-goog-api-key: '.$key], [
+            'contents'=>[['role'=>'user','parts'=>[['text'=>$prompt]]]],
+            'generationConfig'=>['temperature'=>0.12,'maxOutputTokens'=>$maxTokens,'responseMimeType'=>'application/json'],
+        ]);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['candidates'][0]['content']['parts'][0]['text']??''),'error'=>$res['error'] ?: (string)($res['json']['error']['message']??'')];
+    }
+    if ($provider === 'groq') {
+        $key = ai_env('GROQ_API_KEY'); if ($key === '') return ['skip'=>true];
+        $model = ai_env('GROQ_MODEL', 'openai/gpt-oss-20b');
+        $base = rtrim(ai_env('GROQ_API_BASE', 'https://api.groq.com/openai/v1'), '/');
+        $res = ai_post_json($base.'/chat/completions', ['Authorization: Bearer '.$key], [
+            'model'=>$model,
+            'messages'=>[['role'=>'system','content'=>'Return one strict JSON object only.'],['role'=>'user','content'=>$prompt]],
+            'temperature'=>0.12,
+            'max_completion_tokens'=>$maxTokens,
+            'response_format'=>['type'=>'json_object'],
+        ]);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['choices'][0]['message']['content']??''),'error'=>$res['error'] ?: (string)($res['json']['error']['message']??'')];
+    }
+    if ($provider === 'cloudflare') {
+        $token = ai_env('CLOUDFLARE_AI_TOKEN'); $account = ai_env('CLOUDFLARE_ACCOUNT_ID');
+        if ($token === '' || $account === '') return ['skip'=>true];
+        $model = ai_env('CLOUDFLARE_AI_MODEL', '@cf/meta/llama-3.1-8b-instruct-fast');
+        $base = rtrim(ai_env('CLOUDFLARE_API_BASE', 'https://api.cloudflare.com/client/v4'), '/');
+        $url = $base.'/accounts/'.rawurlencode($account).'/ai/run/'.str_replace('%2F','/',rawurlencode($model));
+        $res = ai_post_json($url, ['Authorization: Bearer '.$token], ['prompt'=>$prompt,'max_tokens'=>$maxTokens,'temperature'=>0.12]);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['result']['response']??''),'error'=>$res['error'] ?: (string)($res['json']['errors'][0]['message']??'')];
+    }
+    return ['skip'=>true];
+}
+function ai_providers(string $prompt, int $maxTokens): array {
+    $errors = [];
+    $order = array_filter(array_map('trim', explode(',', strtolower(ai_env('HERCULE_AI_PROVIDER_ORDER', 'gemini,groq,cloudflare')))));
+    foreach ($order as $provider) {
+        $res = ai_call_provider($provider, $prompt, $maxTokens);
+        if (!empty($res['skip'])) { $errors[] = $provider.':not_configured'; continue; }
+        $json = ai_clean_json((string)($res['text'] ?? ''));
+        if ($json) return ['ok'=>true,'provider'=>$provider,'json'=>$json];
+        $errors[] = $provider.':'.(int)($res['status']??0).':'.ai_cut((string)($res['error']??'invalid_json'), 120);
+    }
+    return ['ok'=>false,'errors'=>$errors];
+}
+function ai_decode_args($value): array {
+    if (is_array($value)) return $value;
+    if (is_string($value) && trim($value) !== '') {
+        $decoded = json_decode($value, true);
+        if (is_array($decoded)) return $decoded;
+    }
+    return [];
+}
+function ai_flatten_call(array $call): array {
+    $fn = is_array($call['function'] ?? null) ? $call['function'] : [];
+    $args = ai_decode_args($call['arguments'] ?? $call['args'] ?? $call['parameters'] ?? $fn['arguments'] ?? []);
+    return array_merge($args, $call, [
+        'tool' => (string)($call['tool'] ?? $call['name'] ?? $fn['name'] ?? $args['tool'] ?? $args['name'] ?? ''),
+    ]);
+}
+function ai_normalize_calls(array $model, array $catalog, string $question): array {
+    $rawCalls = $model['tool_calls'] ?? $model['tools'] ?? $model['calls'] ?? $model['actions'] ?? [];
+    if (!is_array($rawCalls)) $rawCalls = [];
+    $calls = [];
+    $toolAliases = [
+        'sales_forecast'=>'forecast_sales','forecast_sales_data'=>'forecast_sales',
+        'inventory_forecast'=>'forecast_inventory','stock_forecast'=>'forecast_inventory',
+        'product_forecast'=>'forecast_product','product_demand_forecast'=>'forecast_product',
+        'app_help'=>'help_search','help'=>'help_search','settings_help'=>'help_search',
+        'get_report'=>'report','query_report'=>'report','run_report'=>'report',
+    ];
+    foreach (array_slice($rawCalls, 0, 12) as $raw) {
+        if (!is_array($raw)) continue;
+        $c = ai_flatten_call($raw);
+        $tool = strtolower(trim((string)($c['tool'] ?? '')));
+        if (isset($toolAliases[$tool])) $tool = $toolAliases[$tool];
+        if (isset($catalog[$tool]) && $tool !== 'none') { $c['intent'] = $tool; $tool = 'report'; }
+        if ($tool === 'report') {
+            $intent = trim((string)($c['intent'] ?? $c['report'] ?? $c['report_intent'] ?? ''));
+            if (!isset($catalog[$intent]) || $intent === 'none') continue;
+            $required = (string)($catalog[$intent]['entity'] ?? '');
+            $entityType = trim((string)($c['entity_type'] ?? $c['entity']['type'] ?? ($required ?: 'none')));
+            $entityQuery = ai_cut(trim((string)($c['entity_query'] ?? $c['entity']['query'] ?? $c['query'] ?? '')), 120);
+            if ($required !== '' && ($entityType !== $required || $entityQuery === '')) continue;
+            $calls[] = ['tool'=>'report','intent'=>$intent,'entity_type'=>$entityType ?: 'none','entity_query'=>$entityQuery,
+                'limit'=>max(1,min(50,(int)($c['limit']??10))),'window_days'=>max(1,min(3650,(int)($c['window_days']??$c['days']??30)))];
+        } elseif ($tool === 'forecast_product') {
+            $entityQuery = ai_cut(trim((string)($c['entity_query'] ?? $c['product'] ?? $c['query'] ?? '')), 120);
+            if ($entityQuery === '') continue;
+            $calls[] = ['tool'=>$tool,'entity_query'=>$entityQuery,'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??$c['days']??14))),
+                'lookback_days'=>max(7,min(120,(int)($c['lookback_days']??30)))];
+        } elseif ($tool === 'help_search') {
+            $calls[] = ['tool'=>$tool,'query'=>ai_cut(trim((string)($c['query']??$question)),500),'limit'=>max(1,min(8,(int)($c['limit']??5)))];
+        } elseif (in_array($tool, ['forecast_sales','forecast_inventory'], true)) {
+            $calls[] = ['tool'=>$tool,'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??$c['days']??($tool==='forecast_sales'?7:14)))),
+                'history_days'=>max(28,min(365,(int)($c['history_days']??84))),
+                'lookback_days'=>max(7,min(180,(int)($c['lookback_days']??30))),
+                'limit'=>max(1,min(50,(int)($c['limit']??20)))];
+        }
+        if (count($calls) >= 8) break;
+    }
+    return $calls;
+}
+function ai_horizon(string $q): int {
+    if (preg_match('/شهر|month/iu',$q)) return 30;
+    if (preg_match('/14|اسبوعين|أسبوعين|2\s*weeks?/iu',$q)) return 14;
+    return 7;
+}
+function ai_fallback_plan(string $q): ?array {
+    $report = fn(string $intent) => ['tool'=>'report','intent'=>$intent,'entity_type'=>'none','entity_query'=>'','limit'=>10,'window_days'=>30];
+    $h = ai_horizon($q);
+    if (preg_match('/(?:ما\s*)?(?:توقعك|تتوقع|توقع|تنبؤ|forecast|predict).*?(?:الاسبوع|الأسبوع|اسبوع|أسبوع|الشهر|الجاي|القادم|المقبل)|(?:الاسبوع|الأسبوع|الشهر).*?(?:توقع|تنبؤ|forecast)/iu',$q)) {
+        return ['kind'=>'tools','goal'=>'توقع أداء المتجر للفترة القادمة','tool_calls'=>[
+            ['tool'=>'forecast_sales','horizon_days'=>$h,'history_days'=>84], $report('sales_comparison'), $report('operational_alerts')
+        ]];
+    }
+    if (preg_match('/(?:حلل|تحليل|قيّم|قيم|تقييم).*?(?:المتجر|المحل|الأداء|اداء|الوضع|الشغل|store|performance)/iu',$q)) {
+        return ['kind'=>'tools','goal'=>'تحليل شامل لأداء المتجر','tool_calls'=>array_map($report,['manager_brief','sales_comparison','net_profit','expenses_summary','discounts_summary','returns_summary','operational_alerts','top_sellers'])];
+    }
+    if (preg_match('/(?:ليش|لماذا|سبب|حلل).*?(?:ربح|ارباح|أرباح|profit)/iu',$q)) {
+        return ['kind'=>'tools','goal'=>'تحليل أسباب تغير الربح','tool_calls'=>array_map($report,['net_profit','sales_comparison','expenses_summary','discounts_summary','returns_summary','gross_profit'])];
+    }
+    if (preg_match('/(?:شلون|كيف|وين|أين|اين|ساعدني|شرح|اشرح|فعل|فعّل|تفعيل|إعداد|اعداد|setting|configure)/iu',$q)) {
+        return ['kind'=>'tools','goal'=>'شرح استخدام أو إعداد داخل Hercule','tool_calls'=>[['tool'=>'help_search','query'=>ai_cut($q,500),'limit'=>5]]];
+    }
+    return null;
+}
+function ai_answer_object($value): array {
+    if (is_array($value)) return $value;
+    if (is_string($value) && trim($value) !== '') return ['answer'=>trim($value)];
+    return [];
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ai_json(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);
+$body = json_input();
+$licenseKey = trim((string)($body['license_key'] ?? ''));
+$hwid = trim((string)($body['hwid'] ?? ''));
+$question = trim((string)($body['question'] ?? ''));
+$mode = strtolower(trim((string)($body['mode'] ?? 'plan')));
+if ($licenseKey === '' || $hwid === '') ai_json(['ok'=>false,'code'=>'LICENSE_REQUIRED'],401);
+if ($question === '' || strlen($question) > 6000) ai_json(['ok'=>false,'code'=>'INVALID_QUESTION'],400);
+if (DeviceManager::isBlocked($licenseKey,$hwid)) ai_json(['ok'=>false,'code'=>'DEVICE_BLOCKED'],403);
+$validation = License::validate($licenseKey,$hwid,client_ip());
+if (!($validation['ok'] ?? false)) ai_json(['ok'=>false,'code'=>'LICENSE_INVALID'],403);
+$perLicense = max(1,(int)ai_env('HERCULE_AI_PER_LICENSE_RPM','12'));
+$global = max($perLicense,(int)ai_env('HERCULE_AI_GLOBAL_RPM','30'));
+$bucket = 'lic:'.substr(hash('sha256',$licenseKey),0,40);
+if (!RateLimiter::check($bucket,'ai_agent_'.$mode,$perLicense,1) || !RateLimiter::check('global','ai_agent_global_'.$mode,$global,1)) {
+    ai_json(['ok'=>false,'code'=>'AI_RATE_LIMIT','error'=>'التحليل الذكي مشغول حالياً.'],429);
+}
+$catalog = json_decode((string)@file_get_contents(__DIR__.'/intent_catalog.json'),true);
+if (!is_array($catalog)) ai_json(['ok'=>false,'code'=>'CATALOG_ERROR'],500);
+$context = is_array($body['context'] ?? null) ? $body['context'] : [];
+
+if ($mode === 'plan') {
+    $intentNames = [];
+    foreach ($catalog as $name=>$meta) if ($name !== 'none') $intentNames[] = $name.(!empty($meta['entity'])?'['.$meta['entity'].']':'');
+    $prompt = "You are the planning brain for Hercule POS. The user may write Iraqi Arabic, Arabic, or English. Never invent store facts. Store facts MUST come from local read-only tools. General knowledge/chat can be answered directly. For app settings or usage, use help_search. For analysis, request multiple relevant reports. For future predictions, always use forecast tools and never guess numbers.\n"
+        ."Allowed tools: report, forecast_sales, forecast_inventory, forecast_product, help_search. Use exactly the key tool in every tool call. Report intents: ".implode(',',$intentNames).".\n"
+        ."Examples:\n- 'حلل أداء المتجر هذا الشهر' => tools: manager_brief,sales_comparison,net_profit,expenses_summary,discounts_summary,returns_summary,operational_alerts.\n"
+        ."- 'ما توقعك للاسبوع الجاي' => forecast_sales + sales_comparison + operational_alerts.\n"
+        ."- 'شلون أفعل درج النقد' => help_search.\n"
+        ."Context: ".ai_prompt_json($context,14000)."\nQuestion: ".$question
+        ."\nReturn JSON only. Either {\"kind\":\"answer\",\"answer\":{\"answer\":\"useful complete answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[]},\"tool_calls\":[]} OR {\"kind\":\"tools\",\"goal\":\"...\",\"tool_calls\":[{\"tool\":\"report\",\"intent\":\"sales_summary\",...}]}. Never return an empty answer.";
+    $res = ai_providers($prompt,1000);
+    if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
+    $model = $res['json'];
+    $calls = ai_normalize_calls($model,$catalog,$question);
+    if ($calls) {
+        ai_json(['ok'=>true,'provider'=>$res['provider'],'plan'=>['kind'=>'tools','goal'=>ai_cut((string)($model['goal']??''),300),'tool_calls'=>$calls]]);
+    }
+    $answer = ai_answer_object($model['answer'] ?? $model['response'] ?? $model['message'] ?? $model['text'] ?? null);
+    if (trim((string)($answer['answer'] ?? '')) !== '') {
+        ai_json(['ok'=>true,'provider'=>$res['provider'],'plan'=>['kind'=>'answer','answer'=>$answer,'tool_calls'=>[]]]);
+    }
+    $fallback = ai_fallback_plan($question);
+    if ($fallback) ai_json(['ok'=>true,'provider'=>$res['provider'],'plan'=>$fallback,'repaired'=>true]);
+    ai_json(['ok'=>false,'code'=>'AI_INVALID_PLAN','error'=>'AI provider returned an empty or unusable plan'],502);
+}
+
+if ($mode !== 'synthesize') ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
+$plan = is_array($body['plan'] ?? null) ? $body['plan'] : [];
+$tools = is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [];
+$prompt = "You are the Hercule POS smart assistant. Use ONLY supplied local tool results for store-specific facts. Never invent numbers, causes, product names, customer names, or settings state. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. If some tools failed, clearly say what could not be read and still use the successful evidence. Answer in the user's language; use natural Iraqi Arabic when the user uses Iraqi Arabic.\n"
+    ."Return JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
+    ."Question: ".$question."\nPlan: ".ai_prompt_json($plan,5000)."\nTool results: ".ai_prompt_json($tools,24000)."\nContext: ".ai_prompt_json($context,7000);
+$res = ai_providers($prompt,1400);
+if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
+$answer = $res['json'];
+if (!trim((string)($answer['answer'] ?? ''))) ai_json(['ok'=>false,'code'=>'AI_INVALID_RESPONSE','error'=>'AI provider returned an empty answer'],502);
+$answer['answer'] = ai_cut((string)$answer['answer'],5000);
+ai_json(['ok'=>true,'provider'=>$res['provider'],'answer'=>$answer]);
