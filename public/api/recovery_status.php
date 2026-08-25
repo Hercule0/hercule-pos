@@ -1,11 +1,11 @@
 <?php
 /**
  * POST /api/recovery_status.php
- * Body: { "request_id": 123, "license_key": "..." }
+ * Body: { "request_id": 123, "license_key": "...", "hwid": "..." }
  *
- * Step 3 of the plan: lets the client show submitted / waiting / approved
- * / rejected / expired without ever exposing the authorization token
- * itself (that only comes from recovery_claim.php, and only once).
+ * New clients include HWID so status polling is bound to the same activated
+ * device that created the request. HWID remains optional for older clients to
+ * keep the currently deployed desktop builds backward compatible.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -25,7 +25,8 @@ if (!RateLimiter::check(client_ip(), 'recovery_status', $rateLimitCfg['api_rate_
 
 $input = json_input();
 $requestId = (int) ($input['request_id'] ?? 0);
-$licenseKey = trim($input['license_key'] ?? '');
+$licenseKey = trim((string) ($input['license_key'] ?? ''));
+$hwid = trim((string) ($input['hwid'] ?? ''));
 
 if (!$requestId || $licenseKey === '') {
     json_response(['ok' => false, 'error' => 'request_id and license_key are required'], 400);
@@ -33,18 +34,52 @@ if (!$requestId || $licenseKey === '') {
 if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey)) {
     json_response(['ok' => false, 'error' => 'Invalid license_key format.'], 400);
 }
+if ($hwid !== '' && (strlen($hwid) > 128 || preg_match('/[\x00-\x1F\x7F]/', $hwid))) {
+    json_response(['ok' => false, 'error' => 'Invalid hwid.'], 400);
+}
 if (!RateLimiter::check('key:' . $licenseKey, 'recovery_status_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
     json_response(['ok' => false, 'error' => 'Too many status checks for this license. Please try again later.'], 429);
 }
 
-$status = PasswordRecovery::statusFor($requestId, $licenseKey);
+$pdo = Database::pdo();
+// Preserve the existing lazy-expiry behaviour without disclosing the token.
+$pdo->prepare(
+    "UPDATE password_recovery_requests
+     SET status = 'expired'
+     WHERE id = ? AND license_key = ? AND status = 'approved'
+       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP"
+)->execute([$requestId, $licenseKey]);
+
+$sql = 'SELECT id, status, requested_username, admin_note, created_at, reviewed_at FROM password_recovery_requests WHERE id = ? AND license_key = ?';
+$params = [$requestId, $licenseKey];
+if ($hwid !== '') {
+    $sql .= ' AND hwid = ?';
+    $params[] = $hwid;
+}
+$stmt = $pdo->prepare($sql . ' LIMIT 1');
+$stmt->execute($params);
+$status = $stmt->fetch();
 if (!$status) {
     json_response(['ok' => false, 'error' => 'Request not found.'], 404);
 }
 
+$requested = (string) ($status['requested_username'] ?? '');
+$recoveryType = 'password';
+if ($requested === 'الحساب الرئيسي — استرداد اسم المستخدم') {
+    $recoveryType = 'username';
+} elseif ($requested === 'الحساب الرئيسي — استرداد بيانات الدخول') {
+    $recoveryType = 'account';
+}
+
+$publicStatus = $status['status'];
+if ($status['status'] === 'rejected' && ($status['admin_note'] ?? '') === '__CLIENT_CANCELLED__') {
+    $publicStatus = 'cancelled';
+}
+
 json_response([
     'ok' => true,
-    'status' => $status['status'],
+    'status' => $publicStatus,
+    'recovery_type' => $recoveryType,
     'created_at' => $status['created_at'],
     'reviewed_at' => $status['reviewed_at'],
 ]);
