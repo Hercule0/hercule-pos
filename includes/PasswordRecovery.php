@@ -1,22 +1,17 @@
 <?php
 /**
- * Password Change Request System (see PASSWORD_RECOVERY_REQUEST_PLAN.md).
+ * Hercule POS account recovery authorization service.
  *
- * Core principle: the server NEVER sees, stores, or discloses a plaintext
- * password. It only records who is asking, lets an admin approve or
- * reject, and — once approved — issues a short-lived, single-use
- * authorization token. Validating that token is the server's whole job;
- * the actual credential change always happens locally on the client
- * (Hercule POS's own db.Users.setPassword/updateUsername), because that
- * is the only place the account actually lives (Offline-First — there is
- * no central "users" table on this server, only per-store local SQLite).
+ * POS credentials remain local to the encrypted desktop SQLite database.
+ * The server never receives a new username/password. It only verifies the
+ * license/device, lets support approve a request, and authorizes a local reset.
  */
 
 require_once __DIR__ . '/Database.php';
 
 final class PasswordRecovery
 {
-    /** How long an approved authorization stays claimable/usable before it self-expires. */
+    /** Approval / claim window. */
     private const TOKEN_TTL_MINUTES = 30;
 
     private static function lockingClause(PDO $pdo): string
@@ -25,12 +20,28 @@ final class PasswordRecovery
     }
 
     /**
-     * Step 2 of the plan: user submits a recovery request. Tied to the
-     * store's license_key + current hwid (the only account identifiers
-     * this server has any authority over), plus the username they're
-     * trying to recover, so the admin panel can show enough context to
-     * verify identity without ever seeing a password.
+     * Once authorization_prepared exists the exact current token is frozen as
+     * a completion proof. The original 30-minute window no longer expires that
+     * request, because local credentials may already have been committed while
+     * the client is offline. No plaintext secret is stored in the audit log.
      */
+    private static function preparedAt(PDO $pdo, int $requestId): ?string
+    {
+        $stmt = $pdo->prepare(
+            "SELECT created_at FROM recovery_audit_log
+             WHERE request_id = ? AND event_type = 'authorization_prepared'
+             ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([$requestId]);
+        $value = $stmt->fetchColumn();
+        return $value ? (string) $value : null;
+    }
+
+    public static function isPrepared(int $requestId): bool
+    {
+        return self::preparedAt(Database::pdo(), $requestId) !== null;
+    }
+
     public static function createRequest(string $licenseKey, string $hwid, string $username, ?string $ip): array
     {
         $pdo = Database::pdo();
@@ -77,7 +88,7 @@ final class PasswordRecovery
                 require_once __DIR__ . '/PushNotifier.php';
                 PushNotifier::notifyRecovery($licenseKey, $hwid, $username);
             } catch (\Throwable $e) {
-                // Ignore push notification error to not block request creation
+                // A notification failure must never block a valid recovery request.
             }
 
             return ['ok' => true, 'request_id' => $id];
@@ -97,8 +108,6 @@ final class PasswordRecovery
         return $row ?: null;
     }
 
-    /** Step 3 of the plan (client-facing status), scoped to license_key so one
-     *  store can never poll another store's request by guessing an ID. */
     public static function statusFor(int $id, string $licenseKey): ?array
     {
         self::expireIfNeeded($id);
@@ -111,7 +120,6 @@ final class PasswordRecovery
         return $row ?: null;
     }
 
-    /** Admin panel listing — newest first, capped for a sane page size. */
     public static function allList(): array
     {
         return Database::pdo()->query(
@@ -119,13 +127,6 @@ final class PasswordRecovery
         )->fetchAll();
     }
 
-    /**
-     * Admin approves a pending request. Generates the authorization token
-     * here purely so the admin panel *could* display/copy it for manual
-     * support workflows if ever needed — but the normal path is the
-     * client retrieving its own token via claim() below, independently.
-     * Only the token's SHA-256 hash is ever persisted.
-     */
     public static function approve(int $id, string $adminUsername, ?string $note): array
     {
         $token = bin2hex(random_bytes(32));
@@ -166,15 +167,9 @@ final class PasswordRecovery
     }
 
     /**
-     * Client calls this once it independently learns status === 'approved'.
-     * Each successful claim issues a fresh single-use token and invalidates
-     * any older claimed token. Re-claiming is intentionally allowed while
-     * the approval is still valid: if the server committed a token but the
-     * network dropped before the client received the response, the same
-     * verified device can safely retry instead of being permanently stranded.
-     *
-     * hwid is checked against the ORIGINAL requesting device on purpose —
-     * recovery must not quietly move an account to a different device.
+     * Issues/reissues the authorization token while the 30-minute approval
+     * window is still active. Reissue is disabled after prepare() so the token
+     * used for local commit cannot silently change before final confirmation.
      */
     public static function claim(int $id, string $licenseKey, string $hwid, ?string $ip): array
     {
@@ -192,11 +187,18 @@ final class PasswordRecovery
                 $pdo->rollBack();
                 return ['ok' => false, 'error' => 'الطلب غير موجود.'];
             }
-            if (!hash_equals($request['hwid'], $hwid)) {
+            if (!hash_equals((string) $request['hwid'], $hwid)) {
                 self::log($id, 'claim_device_mismatch', null, $ip, null);
                 $pdo->commit();
                 return ['ok' => false, 'error' => 'جهازك الحالي لا يطابق الجهاز الذي أُرسل منه الطلب الأصلي.'];
             }
+
+            $preparedAt = self::preparedAt($pdo, $id);
+            if ($preparedAt !== null) {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'تم تثبيت تصريح الاسترداد لهذا الجهاز بالفعل ولا يمكن إصدار رمز بديل.'];
+            }
+
             if ($request['status'] === 'approved' && $request['token_expires_at']
                 && strtotime($request['token_expires_at']) < time()) {
                 $pdo->prepare("UPDATE password_recovery_requests SET status = 'expired' WHERE id = ?")
@@ -207,7 +209,7 @@ final class PasswordRecovery
             }
             if ($request['status'] !== 'approved') {
                 $pdo->rollBack();
-                return ['ok' => false, 'error' => 'الطلب ليس معتمداً حالياً (الحالة: ' . self::arabicStatus($request['status']) . ').'];
+                return ['ok' => false, 'error' => 'الطلب ليس معتمداً حالياً (الحالة: ' . self::arabicStatus((string) $request['status']) . ').'];
             }
             if ($request['used_at'] !== null) {
                 $pdo->rollBack();
@@ -242,11 +244,85 @@ final class PasswordRecovery
     }
 
     /**
-     * Final step: consumes the single-use authorization. The new password
-     * is NEVER part of this call — only proof that a legitimate,
-     * un-expired, not-yet-used authorization exists. On success the
-     * request is marked 'completed' so it can never be claimed or reset
-     * again (single-use, enforced server-side per plan §8/§4).
+     * Phase 1 of the local commit. The exact claimed token is validated while
+     * its normal approval window is active, then authorization_prepared is
+     * recorded. From that moment the token is frozen: it cannot be reissued,
+     * and it may be used later only to finalize this same request/device.
+     *
+     * This closes the last crash/offline gap: after prepare succeeds, the
+     * desktop may safely commit credentials locally. If Internet disappears
+     * for hours/days before reset(), the eventual final confirmation remains
+     * valid because prepare proves the authorization was live beforehand.
+     */
+    public static function prepare(int $id, string $licenseKey, string $hwid, string $token, ?string $ip): array
+    {
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT * FROM password_recovery_requests WHERE id = ?' . self::lockingClause($pdo)
+            );
+            $stmt->execute([$id]);
+            $request = $stmt->fetch();
+
+            if (!$request || $request['license_key'] !== $licenseKey || !hash_equals((string) $request['hwid'], $hwid)) {
+                self::log($id, 'prepare_failed_mismatch', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'طلب غير صالح.'];
+            }
+            if ($request['status'] === 'completed') {
+                $pdo->commit();
+                return ['ok' => true, 'already_completed' => true];
+            }
+            if ($request['status'] !== 'approved' || $request['used_at'] !== null) {
+                self::log($id, 'prepare_failed_bad_status', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'الطلب غير معتمد أو لم يعد قابلاً للاسترداد.'];
+            }
+            if ($request['delivered_at'] === null) {
+                self::log($id, 'prepare_failed_not_claimed', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'يجب استلام تصريح الاسترداد من هذا الجهاز أولاً.'];
+            }
+            if (!$request['token_hash'] || !hash_equals((string) $request['token_hash'], hash('sha256', $token))) {
+                self::log($id, 'prepare_failed_bad_token', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'رمز التفويض غير صحيح.'];
+            }
+
+            $preparedAt = self::preparedAt($pdo, $id);
+            if ($preparedAt !== null) {
+                $pdo->commit();
+                return ['ok' => true, 'already_prepared' => true, 'prepared_at' => $preparedAt];
+            }
+
+            if ($request['token_expires_at'] && strtotime($request['token_expires_at']) < time()) {
+                $pdo->prepare("UPDATE password_recovery_requests SET status = 'expired' WHERE id = ?")
+                    ->execute([$id]);
+                self::log($id, 'authorization_expired', null, $ip, 'expired_before_prepare');
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'انتهت صلاحية التفويض قبل تثبيت عملية الاسترداد. أرسل طلباً جديداً.'];
+            }
+
+            self::log($id, 'authorization_prepared', null, $ip, null);
+            $preparedAt = self::preparedAt($pdo, $id);
+            $pdo->commit();
+
+            return ['ok' => true, 'prepared_at' => $preparedAt ?: date('Y-m-d H:i:s')];
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Final server acknowledgement. Before prepare this still obeys the normal
+     * 30-minute token TTL for old clients. After prepare, expiry no longer
+     * invalidates this exact token: it is only a durable proof that the local
+     * credential commit was authorized while the approval was live.
      */
     public static function reset(int $id, string $licenseKey, string $hwid, string $token, ?string $ip): array
     {
@@ -260,12 +336,19 @@ final class PasswordRecovery
             $stmt->execute([$id]);
             $request = $stmt->fetch();
 
-            if (!$request || $request['license_key'] !== $licenseKey || !hash_equals($request['hwid'], $hwid)) {
+            if (!$request || $request['license_key'] !== $licenseKey || !hash_equals((string) $request['hwid'], $hwid)) {
                 self::log($id, 'reset_failed_mismatch', null, $ip, null);
                 $pdo->commit();
                 return ['ok' => false, 'error' => 'طلب غير صالح.'];
             }
-            if ($request['status'] === 'approved' && $request['token_expires_at']
+            if ($request['status'] === 'completed') {
+                self::log($id, 'reset_failed_reused', null, $ip, null);
+                $pdo->commit();
+                return ['ok' => false, 'error' => 'تم استخدام هذا التفويض مسبقاً.'];
+            }
+
+            $preparedAt = self::preparedAt($pdo, $id);
+            if ($preparedAt === null && $request['status'] === 'approved' && $request['token_expires_at']
                 && strtotime($request['token_expires_at']) < time()) {
                 $pdo->prepare("UPDATE password_recovery_requests SET status = 'expired' WHERE id = ?")
                     ->execute([$id]);
@@ -273,17 +356,12 @@ final class PasswordRecovery
                 $pdo->commit();
                 return ['ok' => false, 'error' => 'انتهت صلاحية التفويض.'];
             }
-            if ($request['status'] === 'completed') {
-                self::log($id, 'reset_failed_reused', null, $ip, null);
-                $pdo->commit();
-                return ['ok' => false, 'error' => 'تم استخدام هذا التفويض مسبقاً.'];
-            }
             if ($request['status'] !== 'approved') {
                 self::log($id, 'reset_failed_bad_status', null, $ip, null);
                 $pdo->commit();
                 return ['ok' => false, 'error' => 'الطلب غير معتمد أو انتهت صلاحيته.'];
             }
-            if (!$request['token_hash'] || !hash_equals($request['token_hash'], hash('sha256', $token))) {
+            if (!$request['token_hash'] || !hash_equals((string) $request['token_hash'], hash('sha256', $token))) {
                 self::log($id, 'reset_failed_bad_token', null, $ip, null);
                 $pdo->commit();
                 return ['ok' => false, 'error' => 'رمز التفويض غير صحيح.'];
@@ -301,9 +379,9 @@ final class PasswordRecovery
                 return ['ok' => false, 'error' => 'تعذر استخدام التفويض أو تم استخدامه مسبقاً.'];
             }
 
-            self::log($id, 'password_changed', null, $ip, null);
+            self::log($id, $preparedAt !== null ? 'recovery_completed_after_prepare' : 'password_changed', null, $ip, null);
             $pdo->commit();
-            return ['ok' => true];
+            return ['ok' => true, 'prepared' => $preparedAt !== null];
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -312,16 +390,21 @@ final class PasswordRecovery
         }
     }
 
-    /** Lazily flips an approved-but-unclaimed/unused authorization to
-     *  'expired' once its TTL has passed — no cron needed, since every
-     *  read path (statusFor/claim/reset) calls this first. */
+    /**
+     * Expire only authorizations that have NOT entered the prepared phase.
+     * Prepared requests retain the frozen completion proof until reset().
+     */
     private static function expireIfNeeded(int $id): void
     {
         $stmt = Database::pdo()->prepare(
-            "UPDATE password_recovery_requests
+            "UPDATE password_recovery_requests AS pr
              SET status = 'expired'
-             WHERE id = ? AND status = 'approved'
-               AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP"
+             WHERE pr.id = ? AND pr.status = 'approved'
+               AND pr.token_expires_at IS NOT NULL AND pr.token_expires_at < CURRENT_TIMESTAMP
+               AND NOT EXISTS (
+                   SELECT 1 FROM recovery_audit_log ra
+                   WHERE ra.request_id = pr.id AND ra.event_type = 'authorization_prepared'
+               )"
         );
         $stmt->execute([$id]);
         self::logIfJustExpired($id);
@@ -360,7 +443,16 @@ final class PasswordRecovery
         if (Database::pdo()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' && random_int(1, 250) === 1) {
             $threshold = (new DateTime())->modify('-180 days')->format('Y-m-d H:i:s');
             $cleanup = Database::pdo()->prepare(
-                'DELETE FROM recovery_audit_log WHERE created_at < ? ORDER BY id LIMIT 1000'
+                "DELETE FROM recovery_audit_log
+                 WHERE created_at < ?
+                   AND NOT (
+                       event_type = 'authorization_prepared'
+                       AND EXISTS (
+                           SELECT 1 FROM password_recovery_requests pr
+                           WHERE pr.id = recovery_audit_log.request_id AND pr.status = 'approved'
+                       )
+                   )
+                 ORDER BY id LIMIT 1000"
             );
             $cleanup->execute([$threshold]);
         }
