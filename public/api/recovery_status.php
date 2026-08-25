@@ -2,10 +2,6 @@
 /**
  * POST /api/recovery_status.php
  * Body: { "request_id": 123, "license_key": "...", "hwid": "..." }
- *
- * New clients include HWID so status polling is bound to the same activated
- * device that created the request. HWID remains optional for older clients to
- * keep the currently deployed desktop builds backward compatible.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
@@ -42,12 +38,16 @@ if (!RateLimiter::check('key:' . $licenseKey, 'recovery_status_by_key', $rateLim
 }
 
 $pdo = Database::pdo();
-// Preserve the existing lazy-expiry behaviour without disclosing the token.
 $pdo->prepare(
     "UPDATE password_recovery_requests
      SET status = 'expired'
      WHERE id = ? AND license_key = ? AND status = 'approved'
-       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP"
+       AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP
+       AND NOT EXISTS (
+           SELECT 1 FROM recovery_audit_log ra
+           WHERE ra.request_id = password_recovery_requests.id
+             AND ra.event_type = 'authorization_prepared'
+       )"
 )->execute([$requestId, $licenseKey]);
 
 $sql = 'SELECT id, status, requested_username, admin_note, created_at, reviewed_at FROM password_recovery_requests WHERE id = ? AND license_key = ?';
@@ -75,10 +75,13 @@ $publicStatus = $status['status'];
 if ($status['status'] === 'rejected' && ($status['admin_note'] ?? '') === '__CLIENT_CANCELLED__') {
     $publicStatus = 'cancelled';
 }
+$prepared = $publicStatus === 'approved' && PasswordRecovery::isPrepared($requestId);
 
 json_response([
     'ok' => true,
     'status' => $publicStatus,
+    'phase' => $prepared ? 'prepared' : $publicStatus,
+    'prepared' => $prepared,
     'recovery_type' => $recoveryType,
     'created_at' => $status['created_at'],
     'reviewed_at' => $status['reviewed_at'],
