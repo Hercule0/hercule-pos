@@ -16,13 +16,9 @@ if (!Auth::check()) {
 }
 
 /**
- * Mutating legacy admin API actions are protected twice:
- *  1) explicit role/permission authorization; and
- *  2) a session CSRF token when supplied by modern clients.
- *
- * The same-origin JSON fallback keeps the older bundled admin client working
- * while still rejecting cross-site form/navigation CSRF. Browser Origin and
- * Sec-Fetch-Site are not accepted from cross-origin form submissions.
+ * Every state-changing legacy admin API action requires both the explicit
+ * role/permission check and the authenticated session CSRF token. There is no
+ * Origin/Sec-Fetch fallback: same-origin alone is not authorization to mutate.
  */
 function admin_api_require_mutation(?string $permission = null): void
 {
@@ -35,31 +31,9 @@ function admin_api_require_mutation(?string $permission = null): void
         admin_api_reply(['ok' => false, 'error' => 'Permission denied'], 403);
     }
 
-    $submitted = Csrf::submittedToken();
-    if ($submitted !== '' && Csrf::check($submitted)) {
-        return;
+    if (!Csrf::check(Csrf::submittedToken())) {
+        admin_api_reply(['ok' => false, 'error' => 'Invalid or expired CSRF token'], 403);
     }
-
-    $origin = rtrim(trim((string)($_SERVER['HTTP_ORIGIN'] ?? '')), '/');
-    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
-    $proto = strtolower(trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
-    if ($proto === '') {
-        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    }
-    $fetchSite = strtolower(trim((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
-    $contentType = strtolower(trim((string)($_SERVER['CONTENT_TYPE'] ?? '')));
-
-    $hostValid = preg_match('/^[A-Za-z0-9.-]+(?::\d+)?$/', $host) === 1;
-    $protoValid = in_array($proto, ['http', 'https'], true);
-    $sameOrigin = $hostValid && $protoValid && $origin !== '' && hash_equals($proto . '://' . $host, $origin);
-    $fetchIsSameOrigin = $fetchSite === '' || $fetchSite === 'same-origin';
-    $jsonRequest = str_starts_with($contentType, 'application/json');
-
-    if ($sameOrigin && $fetchIsSameOrigin && $jsonRequest) {
-        return;
-    }
-
-    admin_api_reply(['ok' => false, 'error' => 'Invalid or expired CSRF token'], 403);
 }
 
 $pdo = Database::pdo();
@@ -234,17 +208,14 @@ try {
 
         case 'handle_recovery':
             admin_api_require_mutation('recovery.review');
-            $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $requestId = (int)($data['request_id'] ?? 0);
-            $status = strtolower(trim((string)($data['status'] ?? '')));
-            if ($requestId <= 0 || !in_array($status, ['approved', 'rejected'], true)) {
-                throw new InvalidArgumentException('Invalid recovery decision');
-            }
-
-            $stmt = $pdo->prepare("UPDATE password_recovery_requests SET status = ?, resolved_at = NOW() WHERE id = ? AND status = 'pending'");
-            $stmt->execute([$status, $requestId]);
-            if ($stmt->rowCount() !== 1) throw new RuntimeException('Recovery request is not pending or does not exist');
-            admin_api_reply(['ok' => true]);
+            // Legacy recovery decisions used to update the table directly and
+            // bypass identity verification plus the hardened recovery state
+            // machine. Keep the action name only to fail closed for old clients.
+            admin_api_reply([
+                'ok' => false,
+                'error' => 'Recovery decisions must be completed from the hardened recovery review screen.',
+                'code' => 'RECOVERY_REVIEW_REQUIRED',
+            ], 410);
 
         case 'push_subscribe':
             admin_api_require_mutation();
