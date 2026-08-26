@@ -1,7 +1,9 @@
 (function () {
+  "use strict";
+
   var deferredPrompt = null;
   var registrationReady = false;
-  var vapidPublicKeyPromise = null;
+  var pushConfigPromise = null;
   var installButtons = Array.prototype.slice.call(document.querySelectorAll("[data-install-app]"));
   var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   var isiOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
@@ -32,20 +34,32 @@
     }
   }
 
-  function getVapidPublicKey() {
-    if (vapidPublicKeyPromise) return vapidPublicKeyPromise;
-    vapidPublicKeyPromise = fetch("/public/admin/push_config.php", {
+  function getPushConfig() {
+    if (pushConfigPromise) return pushConfigPromise;
+    pushConfigPromise = fetch("/public/admin/push_config.php", {
       credentials: "same-origin",
       cache: "no-store",
       headers: { "Accept": "application/json" }
     }).then(function (response) {
-      if (!response.ok) throw new Error("Push configuration returned " + response.status);
-      return response.json();
-    }).then(function (data) {
-      if (!data || !data.ok || !data.publicKey) throw new Error((data && data.error) || "VAPID public key is missing");
-      return data.publicKey;
+      return response.json().catch(function () {
+        throw new Error("Push configuration returned invalid JSON (HTTP " + response.status + ")");
+      }).then(function (data) {
+        if (!response.ok || !data || !data.ok || !data.publicKey || !data.csrfToken) {
+          throw new Error((data && (data.error || data.message)) || ("Push configuration returned " + response.status));
+        }
+        if (!/^[A-Za-z0-9_-]+$/.test(String(data.publicKey)) || !/^[a-f0-9]{64}$/i.test(String(data.csrfToken))) {
+          throw new Error("Push configuration response is invalid");
+        }
+        return {
+          publicKey: String(data.publicKey),
+          csrfToken: String(data.csrfToken)
+        };
+      });
+    }).catch(function (error) {
+      pushConfigPromise = null;
+      throw error;
     });
-    return vapidPublicKeyPromise;
+    return pushConfigPromise;
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -61,11 +75,19 @@
     var payload = subscription.toJSON ? subscription.toJSON() : subscription;
     payload.device_id = getPushDeviceId();
     payload.user_agent = String(window.navigator.userAgent || "").slice(0, 255);
-    return fetch("/public/admin/api.php?action=push_subscribe", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(payload)
+
+    return getPushConfig().then(function (config) {
+      return fetch("/public/admin/api.php?action=push_subscribe", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-CSRF-Token": config.csrfToken
+        },
+        body: JSON.stringify(payload)
+      });
     }).then(function (response) {
       return response.json().catch(function () {
         throw new Error("Subscription endpoint returned invalid JSON (HTTP " + response.status + ")");
@@ -82,13 +104,14 @@
     if (!("PushManager" in window) || !("Notification" in window) || Notification.permission !== "granted") {
       return Promise.resolve(null);
     }
-    return Promise.all([registration.pushManager.getSubscription(), getVapidPublicKey()]).then(function (values) {
+
+    return Promise.all([registration.pushManager.getSubscription(), getPushConfig()]).then(function (values) {
       var subscription = values[0];
-      var publicKey = values[1];
+      var config = values[1];
       if (subscription) return subscription;
       return registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
+        applicationServerKey: urlBase64ToUint8Array(config.publicKey)
       });
     }).then(function (subscription) {
       if (!subscription) return null;
@@ -132,17 +155,38 @@
   };
 
   function showPushToast(title, message, type) {
+    if (typeof window.HerculeAdminToast === "function") {
+      window.HerculeAdminToast({ title: title, message: message, type: type || "info" });
+      return;
+    }
+
     var stack = document.getElementById("app-toast-stack");
     if (!stack) {
       window.alert(title + "\n" + message);
       return;
     }
+
     var toast = document.createElement("div");
-    toast.className = "app-toast " + (type || "info");
-    toast.innerHTML = '<div class="toast-content"><strong></strong><span></span></div><button type="button" class="toast-close-btn">&times;</button>';
-    toast.querySelector("strong").textContent = title;
-    toast.querySelector("span").textContent = message;
-    toast.querySelector("button").onclick = function () { toast.remove(); };
+    toast.className = "app-toast " + (/^(success|warning|error|info)$/.test(type || "") ? type : "info");
+
+    var content = document.createElement("div");
+    content.className = "toast-content";
+    var heading = document.createElement("strong");
+    heading.textContent = String(title || "Notification");
+    var body = document.createElement("span");
+    body.textContent = String(message || "");
+    content.appendChild(heading);
+    content.appendChild(body);
+
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "toast-close-btn";
+    close.setAttribute("aria-label", "Dismiss");
+    close.textContent = "×";
+    close.addEventListener("click", function () { toast.remove(); });
+
+    toast.appendChild(content);
+    toast.appendChild(close);
     stack.appendChild(toast);
     requestAnimationFrame(function () { toast.classList.add("is-visible"); });
     setTimeout(function () { if (toast.parentNode) toast.remove(); }, 9000);
@@ -176,11 +220,18 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         button.disabled = true;
-        fetch("/public/admin/test_push.php", {
-          method: "POST",
-          credentials: "same-origin",
-          cache: "no-store",
-          headers: { "Accept": "application/json", "X-Hercule-Push-Test": "1" }
+
+        getPushConfig().then(function (config) {
+          return fetch("/public/admin/test_push.php", {
+            method: "POST",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: {
+              "Accept": "application/json",
+              "X-Hercule-Push-Test": "1",
+              "X-CSRF-Token": config.csrfToken
+            }
+          });
         }).then(function (response) {
           return response.json().catch(function () {
             throw new Error("Server returned invalid JSON (HTTP " + response.status + ")");
@@ -203,15 +254,31 @@
     });
   }
 
+  function createToolsLink(href, className, current) {
+    var link = document.createElement("a");
+    link.href = href;
+    link.className = className + (current ? " active" : "");
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M4 7h16M4 12h16M4 17h16");
+    svg.appendChild(path);
+
+    var label = document.createElement("span");
+    label.textContent = "Admin Tools";
+    link.appendChild(svg);
+    link.appendChild(label);
+    return link;
+  }
+
   function wireAdminToolsNavigation() {
     var href = "/public/admin/tools.php";
     var current = window.location.pathname === href;
     var sidebarNav = document.querySelector(".sidebar-nav");
     if (sidebarNav && !sidebarNav.querySelector('[href="' + href + '"]')) {
-      var link = document.createElement("a");
-      link.href = href;
-      link.className = "sidebar-link" + (current ? " active" : "");
-      link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="7" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="17" r="1"/></svg><span>Admin Tools</span>';
+      var link = createToolsLink(href, "sidebar-link", current);
       var labels = sidebarNav.querySelectorAll(".sidebar-section-label");
       var systemLabel = labels.length > 1 ? labels[1] : null;
       if (systemLabel && systemLabel.nextSibling) {
@@ -223,10 +290,7 @@
 
     var dropdown = document.getElementById("user-dropdown-menu");
     if (dropdown && !dropdown.querySelector('[href="' + href + '"]')) {
-      var item = document.createElement("a");
-      item.href = href;
-      item.className = "dropdown-item" + (current ? " active" : "");
-      item.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Admin Tools</span>';
+      var item = createToolsLink(href, "dropdown-item", current);
       var divider = dropdown.querySelector(".dropdown-divider");
       if (divider && divider.nextSibling) {
         dropdown.insertBefore(item, divider.nextSibling);
@@ -248,19 +312,39 @@
   }
 
   window.addEventListener("beforeinstallprompt", function (event) {
-    event.preventDefault(); deferredPrompt = event; if (!standalone) setInstallVisible(true);
+    event.preventDefault();
+    deferredPrompt = event;
+    if (!standalone) setInstallVisible(true);
   });
-  window.addEventListener("appinstalled", function () { deferredPrompt = null; setInstallVisible(false); });
+  window.addEventListener("appinstalled", function () {
+    deferredPrompt = null;
+    setInstallVisible(false);
+  });
   installButtons.forEach(function (button) {
     button.addEventListener("click", function () {
-      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.finally(function () { deferredPrompt = null; }); return; }
-      if (isiOS && !standalone) { window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen."); return; }
-      if (!standalone) window.alert(registrationReady ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu." : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.finally(function () { deferredPrompt = null; });
+        return;
+      }
+      if (isiOS && !standalone) {
+        window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen.");
+        return;
+      }
+      if (!standalone) {
+        window.alert(registrationReady
+          ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu."
+          : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
+      }
     });
   });
+
   if (!standalone) setInstallVisible(true);
   document.documentElement.classList.toggle("is-standalone", standalone);
-  window.addEventListener("online", function () { document.documentElement.classList.remove("is-offline"); if (window.HerculePush) window.HerculePush.sync().catch(function () {}); });
+  window.addEventListener("online", function () {
+    document.documentElement.classList.remove("is-offline");
+    if (window.HerculePush) window.HerculePush.sync().catch(function () {});
+  });
   window.addEventListener("offline", function () { document.documentElement.classList.add("is-offline"); });
   if (!navigator.onLine) document.documentElement.classList.add("is-offline");
 })();
@@ -268,22 +352,12 @@
 // Release Management gets a dedicated uploader because large desktop bundles are
 // not suitable for a single PHP/Azure request. Load it only on the releases page.
 (function () {
+  "use strict";
   if (!/\/public\/admin\/releases\.php$/.test(window.location.pathname)) return;
   if (document.querySelector('script[data-hercule-release-fast]')) return;
-  var script = document.createElement('script');
-  script.src = '/public/admin/assets/js/release-upload-fast.js?v=20260826-fast2';
+  var script = document.createElement("script");
+  script.src = "/public/admin/assets/js/release-upload-fast.js?v=20260826-fast3";
   script.async = false;
-  script.dataset.herculeReleaseFast = '1';
-  document.head.appendChild(script);
-})();
-
-// Replace hard-coded sidebar health labels with authenticated live checks.
-(function () {
-  if (!document.querySelector('.sidebar-health-card')) return;
-  if (document.querySelector('script[data-hercule-live-health]')) return;
-  var script = document.createElement('script');
-  script.src = '/public/admin/assets/js/admin-health-live.js?v=20260826-hardening1';
-  script.async = true;
-  script.dataset.herculeLiveHealth = '1';
+  script.dataset.herculeReleaseFast = "1";
   document.head.appendChild(script);
 })();
