@@ -16,10 +16,12 @@ if (!$workflowFiles) {
 
 $externalUses = 0;
 $checkoutUses = 0;
-$node24Pins = [
-    'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09',
-    'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
-    'actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131',
+$reviewedPins = [
+    'actions/checkout' => 'fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09',
+    'actions/upload-artifact' => 'b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+    'actions/download-artifact' => '37930b1c2abaa49bbe596cd826c3c89aef350131',
+    'azure/login' => '7ddb5af1ef8758cf1353cf3b42f940aee27ba21c',
+    'azure/webapps-deploy' => '02a81bead70021f5284939794bcec79c271ab383',
 ];
 
 foreach ($workflowFiles as $file) {
@@ -32,28 +34,22 @@ foreach ($workflowFiles as $file) {
         if (str_starts_with($uses, './') || str_starts_with($uses, 'docker://')) continue;
         $externalUses++;
 
-        if (!preg_match('/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[a-f0-9]{40}$/', $uses)) {
+        if (!preg_match('/^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([a-f0-9]{40})$/', $uses, $parts)) {
             $fail(basename($file) . ':' . ($number + 1) . ' external action is not pinned to an immutable 40-char commit: ' . $uses);
         }
 
-        if (str_starts_with($uses, 'actions/checkout@')) {
-            $checkoutUses++;
-            if ($uses !== $node24Pins[0]) {
-                $fail(basename($file) . ':' . ($number + 1) . ' checkout is not pinned to the reviewed Node 24 commit');
-            }
+        $action = strtolower($parts[1]);
+        $sha = strtolower($parts[2]);
+        if (isset($reviewedPins[$action]) && $sha !== $reviewedPins[$action]) {
+            $fail(basename($file) . ':' . ($number + 1) . ' ' . $action . ' is not pinned to the reviewed hardened runtime commit');
+        }
 
+        if ($action === 'actions/checkout') {
+            $checkoutUses++;
             $window = implode("\n", array_slice($lines, $number + 1, 6));
             if (!preg_match('/\bwith:\s*\n\s+persist-credentials:\s*false\b/', $window)) {
                 $fail(basename($file) . ':' . ($number + 1) . ' checkout must set persist-credentials: false');
             }
-        }
-
-        if (str_starts_with($uses, 'actions/upload-artifact@') && $uses !== $node24Pins[1]) {
-            $fail(basename($file) . ':' . ($number + 1) . ' upload-artifact is not pinned to the reviewed Node 24 commit');
-        }
-
-        if (str_starts_with($uses, 'actions/download-artifact@') && $uses !== $node24Pins[2]) {
-            $fail(basename($file) . ':' . ($number + 1) . ' download-artifact is not pinned to the reviewed Node 24 commit');
         }
     }
 }
@@ -65,4 +61,4 @@ if ($checkoutUses < 1) {
     $fail('no checkout actions were inspected');
 }
 
-echo "PASS GitHub Actions immutable pinning, Node 24 artifact actions, and non-persistent checkout credentials ({$externalUses} references)\n";
+echo "PASS GitHub Actions immutable pinning, reviewed Node 24/Azure runtime pins, and non-persistent checkout credentials ({$externalUses} references)\n";
