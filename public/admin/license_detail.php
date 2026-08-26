@@ -60,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_set("License {$keyForMessage} permanently deleted.");
             header('Location: /public/admin/licenses.php');
             exit;
+        default:
+            flash_set('Unknown license action.', 'error');
+            break;
     }
     header("Location: /public/admin/license_detail.php?id={$licenseId}");
     exit;
@@ -138,7 +141,7 @@ flash_render();
             <span>Renew</span>
         </button>
         <?php if ($license['status'] === 'active'): ?>
-            <form method="post" onsubmit="return confirm('Suspend this license?');">
+            <form method="post" data-confirm="Suspend this license?">
                 <?= Csrf::field() ?>
                 <button type="submit" name="action" value="suspend" class="detail-action">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M9.5 9v6M14.5 9v6"/></svg>
@@ -184,7 +187,7 @@ flash_render();
                                 <small>Last seen <?= htmlspecialchars(date('M j, H:i', strtotime($a['last_seen_at']))) ?> · <?= htmlspecialchars($a['ip_address'] ?? 'No IP') ?></small>
                             </div>
                             <?php if ($a['is_active']): ?>
-                                <form method="post" onsubmit="return confirm('Free up this device slot?');">
+                                <form method="post" data-confirm="Free up this device slot?">
                                     <?= Csrf::field() ?>
                                     <input type="hidden" name="activation_id" value="<?= $a['id'] ?>">
                                     <button type="submit" name="action" value="deactivate_device">Deactivate</button>
@@ -292,12 +295,12 @@ flash_render();
             </button>
         </div>
         <div class="danger-options">
-            <form method="post" onsubmit="return confirm('Revoke this license?');">
+            <form method="post" data-confirm="Revoke this license?">
                 <?= Csrf::field() ?>
                 <div><strong>Revoke license</strong><p>Block future verification until it is reactivated.</p></div>
                 <button type="submit" name="action" value="revoke">Revoke</button>
             </form>
-            <form method="post" onsubmit="return confirm('PERMANENTLY DELETE this license, its devices, and its event history? This is irreversible.');">
+            <form method="post" data-confirm="PERMANENTLY DELETE this license, its devices, and its event history? This is irreversible.">
                 <?= Csrf::field() ?>
                 <div><strong>Delete permanently</strong><p>Remove this license, devices, and event history forever.</p></div>
                 <button type="submit" name="action" value="delete">Delete</button>
@@ -306,51 +309,5 @@ flash_render();
     </div>
 </dialog>
 
-<script>
-(function () {
-    function bindDialog(openSelector, dialogId, closeSelector) {
-        var dialog = document.getElementById(dialogId);
-        var opener = document.querySelector(openSelector);
-        if (opener && dialog) opener.addEventListener('click', function () {
-            if (typeof dialog.showModal === 'function') dialog.showModal();
-            else dialog.setAttribute('open', '');
-        });
-        document.querySelectorAll(closeSelector).forEach(function (button) {
-            button.addEventListener('click', function () {
-                if (typeof dialog.close === 'function') dialog.close();
-                else dialog.removeAttribute('open');
-            });
-        });
-        if (dialog) dialog.addEventListener('click', function (event) {
-            if (event.target === dialog) dialog.close();
-        });
-    }
-    bindDialog('[data-open-renew-dialog]', 'renew-dialog', '[data-close-renew-dialog]');
-    bindDialog('[data-open-danger-dialog]', 'danger-dialog', '[data-close-danger-dialog]');
-
-    var plan = document.getElementById('renew-plan');
-    var custom = document.getElementById('renew-custom-days-row');
-    function syncCustom() {
-        if (!plan || !custom) return;
-        custom.hidden = plan.value !== 'custom';
-        var input = custom.querySelector('input');
-        if (input) input.required = plan.value === 'custom';
-    }
-    if (plan) {
-        plan.addEventListener('change', syncCustom);
-        syncCustom();
-    }
-
-    document.querySelectorAll('[data-copy-value]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            if (!navigator.clipboard) return;
-            navigator.clipboard.writeText(button.dataset.copyValue).then(function () {
-                button.classList.add('copied');
-                setTimeout(function () { button.classList.remove('copied'); }, 1200);
-            });
-        });
-    });
-})();
-</script>
-
+<script src="/public/admin/assets/js/license-detail.js?v=20260826-hardening1" defer></script>
 <?php render_footer(); ?>
