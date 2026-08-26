@@ -22,4 +22,5 @@ if ($publicKey === '') {
 echo json_encode([
     'ok' => true,
     'publicKey' => $publicKey,
+    'csrfToken' => Csrf::token(),
 ], JSON_UNESCAPED_SLASHES);
