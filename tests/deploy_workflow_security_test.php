@@ -47,4 +47,14 @@ if (!str_contains($workflow, "Upload validated deployment package\n        if: "
     $fail('deployment artifact can be produced from a non-main manual ref');
 }
 
-echo "PASS deployment workflow privilege gate\n";
+if (!str_contains($workflow, 'bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"')) {
+    $fail('post-deploy gate does not verify application and database readiness with the hardened health checker');
+}
+if (str_contains($workflow, 'if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL"; then')) {
+    $fail('post-deploy gate still accepts a generic HTTP 200 without validating the health payload');
+}
+if (!str_contains($workflow, 'timeout-minutes: 15')) {
+    $fail('production deployment job has no bounded timeout');
+}
+
+echo "PASS deployment workflow privilege and readiness gates\n";
