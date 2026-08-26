@@ -26,12 +26,13 @@ foreach ([
     'release_audience_all',
     'release_deleted',
 ] as $action) {
-    if (!str_contains($page, "AuditLog::adminAction('{$action}'")) {
+    $pattern = '/AuditLog::adminAction\s*\(\s*[\'\"]' . preg_quote($action, '/') . '[\'\"]/m';
+    if (preg_match($pattern, $page) !== 1) {
         $fail("release admin action is not audited: {$action}");
     }
 }
 
-if (!str_contains($fast, "AuditLog::adminAction(\n            'release_bundle_uploaded'")) {
+if (preg_match('/AuditLog::adminAction\s*\(\s*[\'\"]release_bundle_uploaded[\'\"]/m', $fast) !== 1) {
     $fail('parallel release upload completion is not audited');
 }
 if (!str_contains($fast, '; transport=parallel')) {
