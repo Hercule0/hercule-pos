@@ -2,6 +2,7 @@
     "name": "hercule/pos",
     "description": "Hercule POS License Engine",
     "type": "project",
+    "license": "proprietary",
     "authors": [
         {
             "name": "hercule0",
