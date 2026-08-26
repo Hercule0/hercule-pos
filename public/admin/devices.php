@@ -86,6 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash_set('Unable to unblock device.', 'error');
         }
+    } else {
+        flash_set('Unknown device action.', 'error');
     }
 
     header('Location: /public/admin/devices.php');
@@ -255,14 +257,14 @@ flash_render();
                     <footer>
                         <button type="button" class="table-btn" data-open-device-dialog="device-dialog-<?= (int)$d['id'] ?>" <?= !$deviceSchemaReady ? 'disabled' : '' ?>>Edit</button>
 
-                        <form method="post" onsubmit="return confirm('<?= $isBlocked ? 'Unblock this device?' : 'Block this device? Its activation and validation requests will be denied.' ?>');">
+                        <form method="post" data-confirm="<?= htmlspecialchars($isBlocked ? 'Unblock this device?' : 'Block this device? Its activation and validation requests will be denied.', ENT_QUOTES) ?>">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="activation_id" value="<?= (int)$d['id'] ?>">
                             <button type="submit" name="action" value="<?= $isBlocked ? 'unblock_device' : 'block_device' ?>" class="<?= $isBlocked ? 'device-unblock-btn' : 'device-block-btn' ?>" <?= !$deviceSchemaReady ? 'disabled' : '' ?>><?= $isBlocked ? 'Unblock' : 'Block' ?></button>
                         </form>
 
                         <?php if ($d['is_active']): ?>
-                            <form method="post" onsubmit="return confirm('Free this activation slot? The current device will no longer validate until it activates again.');">
+                            <form method="post" data-confirm="Free this activation slot? The current device will no longer validate until it activates again.">
                                 <?= Csrf::field() ?>
                                 <input type="hidden" name="activation_id" value="<?= (int)$d['id'] ?>">
                                 <button type="submit" name="action" value="reset_slot" class="device-reset-btn" <?= !$deviceSchemaReady ? 'disabled' : '' ?>>Reset slot</button>
@@ -306,29 +308,5 @@ flash_render();
     <?php endif; ?>
 </div>
 
-<script>
-(function () {
-    document.querySelectorAll('[data-open-device-dialog]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var dialog = document.getElementById(button.dataset.openDeviceDialog);
-            if (!dialog) return;
-            if (typeof dialog.showModal === 'function') dialog.showModal();
-            else dialog.setAttribute('open', '');
-        });
-    });
-    document.querySelectorAll('[data-close-device-dialog]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var dialog = button.closest('dialog');
-            if (!dialog) return;
-            if (typeof dialog.close === 'function') dialog.close();
-            else dialog.removeAttribute('open');
-        });
-    });
-    document.querySelectorAll('.device-dialog').forEach(function (dialog) {
-        dialog.addEventListener('click', function (event) {
-            if (event.target === dialog && typeof dialog.close === 'function') dialog.close();
-        });
-    });
-})();
-</script>
+<script src="/public/admin/assets/js/devices.js?v=20260826-hardening1" defer></script>
 <?php render_footer(); ?>
