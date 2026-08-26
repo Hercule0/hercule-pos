@@ -348,16 +348,3 @@
   window.addEventListener("offline", function () { document.documentElement.classList.add("is-offline"); });
   if (!navigator.onLine) document.documentElement.classList.add("is-offline");
 })();
-
-// Release Management gets a dedicated uploader because large desktop bundles are
-// not suitable for a single PHP/Azure request. Load it only on the releases page.
-(function () {
-  "use strict";
-  if (!/\/public\/admin\/releases\.php$/.test(window.location.pathname)) return;
-  if (document.querySelector('script[data-hercule-release-fast]')) return;
-  var script = document.createElement("script");
-  script.src = "/public/admin/assets/js/release-upload-fast.js?v=20260826-fast3";
-  script.async = false;
-  script.dataset.herculeReleaseFast = "1";
-  document.head.appendChild(script);
-})();
