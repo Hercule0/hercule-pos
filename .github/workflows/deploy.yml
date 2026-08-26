@@ -106,14 +106,14 @@ jobs:
           path: deploy_package
 
       - name: Azure Login
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2 / Node 24
         with:
           client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
           tenant-id: cb4f9603-299f-4515-b736-2d50c9c37494
           subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8 / Node 24
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: deploy_package
