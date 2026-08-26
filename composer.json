@@ -10,7 +10,7 @@
     ],
     "require": {
         "minishlink/web-push": "^11.0",
-        "guzzlehttp/guzzle": "^7.9"
+        "guzzlehttp/guzzle": "^8.0.2"
     },
     "config": {
         "allow-plugins": {
