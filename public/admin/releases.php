@@ -136,7 +136,7 @@ flash_render();
         <label class="release-checkbox"><input type="checkbox" name="is_mandatory" value="1"><span>Mandatory update</span></label>
         <label class="release-checkbox"><input type="checkbox" name="is_published" value="1"><span>Publish immediately after verification</span></label>
         <div class="upload-progress" id="upload-progress">
-          <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+          <progress class="progress-track progress-native" id="progress-bar" max="100" value="0" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</progress>
           <div class="progress-stage"><strong id="progress-text">Preparing upload…</strong><span id="progress-detail"></span></div>
         </div>
         <div class="upload-help" id="upload-help">Fast upload is ready.</div>
