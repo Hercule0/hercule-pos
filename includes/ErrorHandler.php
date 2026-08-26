@@ -16,6 +16,26 @@ final class ErrorHandler
         ini_set('log_errors', '1');
         header('X-Request-ID: ' . self::$requestId);
 
+        // Some legacy admin templates still declare a permissive CSP. Replace
+        // it at the final header boundary so unsafe-eval can never reach the
+        // browser while the inline-script refactor is completed incrementally.
+        if (function_exists('header_register_callback')
+            && str_contains($_SERVER['REQUEST_URI'] ?? '', '/public/admin/')) {
+            header_register_callback(static function (): void {
+                if (headers_sent()) return;
+                header_remove('Content-Security-Policy');
+                header(
+                    "Content-Security-Policy: default-src 'self' data: blob:; " .
+                    "script-src 'self' 'unsafe-inline' blob:; " .
+                    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " .
+                    "font-src 'self' https://fonts.gstatic.com data:; " .
+                    "connect-src 'self' data: blob: ws: wss:; " .
+                    "img-src 'self' data: https:; " .
+                    "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+                );
+            });
+        }
+
         set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
             if (!(error_reporting() & $severity)) return false;
             throw new ErrorException($message, 0, $severity, $file, $line);
