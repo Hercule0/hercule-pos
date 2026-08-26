@@ -9,6 +9,10 @@ $customers = file_get_contents($root . '/public/admin/customers.php');
 $customerJs = file_get_contents($root . '/public/admin/assets/js/customers.js');
 $devices = file_get_contents($root . '/public/admin/devices.php');
 $deviceJs = file_get_contents($root . '/public/admin/assets/js/devices.js');
+$licenseDetail = file_get_contents($root . '/public/admin/license_detail.php');
+$licenseDetailJs = file_get_contents($root . '/public/admin/assets/js/license-detail.js');
+$licenseLifecycle = file_get_contents($root . '/public/admin/license_lifecycle.php');
+$licenseLifecycleJs = file_get_contents($root . '/public/admin/assets/js/license-lifecycle.js');
 $sessions = file_get_contents($root . '/public/admin/sessions.php');
 $shell = file_get_contents($root . '/public/admin/assets/js/admin-shell.js');
 $style = file_get_contents($root . '/public/admin/assets/css/style.css');
@@ -18,7 +22,11 @@ $fail = static function (string $message): never {
     exit(1);
 };
 
-foreach ([$adminUsers, $adminPermissions, $customers, $customerJs, $devices, $deviceJs, $sessions, $shell, $style] as $source) {
+foreach ([
+    $adminUsers, $adminPermissions, $customers, $customerJs, $devices, $deviceJs,
+    $licenseDetail, $licenseDetailJs, $licenseLifecycle, $licenseLifecycleJs,
+    $sessions, $shell, $style,
+] as $source) {
     if (!is_string($source)) $fail('admin hardening source files could not be read');
 }
 
@@ -34,6 +42,8 @@ foreach (
         'admin_permissions.php' => $adminPermissions,
         'customers.php' => $customers,
         'devices.php' => $devices,
+        'license_detail.php' => $licenseDetail,
+        'license_lifecycle.php' => $licenseLifecycle,
         'sessions.php' => $sessions,
     ] as $name => $source
 ) {
@@ -64,7 +74,20 @@ if (!str_contains($customers, 'data-confirm="Delete this customer')) {
 if (!str_contains($devices, '/public/admin/assets/js/devices.js') || !str_contains($devices, 'data-confirm=')) {
     $fail('device page is not fully wired to external/declarative behavior');
 }
-foreach (['customers.js' => $customerJs, 'devices.js' => $deviceJs] as $name => $source) {
+if (!str_contains($licenseDetail, '/public/admin/assets/js/license-detail.js') || !str_contains($licenseDetail, 'data-confirm=')) {
+    $fail('license detail page is not fully wired to external/shared behavior');
+}
+if (!str_contains($licenseLifecycle, '/public/admin/assets/js/license-lifecycle.js') || !str_contains($licenseLifecycle, 'data-confirm=')) {
+    $fail('license lifecycle page is not fully wired to external/shared behavior');
+}
+foreach (
+    [
+        'customers.js' => $customerJs,
+        'devices.js' => $deviceJs,
+        'license-detail.js' => $licenseDetailJs,
+        'license-lifecycle.js' => $licenseLifecycleJs,
+    ] as $name => $source
+) {
     if (str_contains($source, '.innerHTML') || str_contains($source, 'insertAdjacentHTML')) {
         $fail("{$name} uses unsafe HTML insertion");
     }
@@ -78,7 +101,7 @@ if (!str_contains($shell, 'data-submit-on-change')) {
 if (str_contains($shell, 'insertAdjacentHTML') || str_contains($shell, '.innerHTML')) {
     $fail('shared admin shell uses unsafe HTML insertion');
 }
-foreach (['admin-users.css', 'admin-permissions.css', 'sessions.css'] as $asset) {
+foreach (['admin-users.css', 'admin-permissions.css', 'sessions.css', 'license-lifecycle.css'] as $asset) {
     if (!str_contains($style, $asset)) $fail("style.css does not load {$asset}");
 }
 
