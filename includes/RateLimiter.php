@@ -1,22 +1,38 @@
 <?php
 /**
  * Generic sliding-window rate limiter, keyed by IP + endpoint. Used to
- * protect the public API (activate.php / validate.php) from being
- * hammered — these have no login/session to rely on, so this is the
- * only throttle they get.
+ * protect the public API. Some callers intentionally use a synthetic device
+ * or license bucket in place of an IP; normalize oversized bucket identifiers
+ * before they reach the VARCHAR(45) storage column.
  */
 
 require_once __DIR__ . '/Database.php';
 
 final class RateLimiter
 {
+    private const STORAGE_KEY_MAX = 45;
+
+    private static function storageKey(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') return 'unknown';
+        if (strlen($key) <= self::STORAGE_KEY_MAX && !preg_match('/[\x00-\x1F\x7F]/', $key)) {
+            return $key;
+        }
+
+        // Domain-prefix the digest so it can never be confused with a literal
+        // network address while remaining deterministic for the same bucket.
+        return 'h:' . substr(hash('sha256', $key), 0, self::STORAGE_KEY_MAX - 2);
+    }
+
     /**
-     * @return bool true if this IP is still within its allowance for this
+     * @return bool true if this key is still within its allowance for this
      *              endpoint, false if it should be rejected.
      */
     public static function isAllowed(string $ip, string $endpoint, int $maxRequests, int $windowMinutes): bool
     {
         $pdo = Database::pdo();
+        $ip = self::storageKey($ip);
         $threshold = (new DateTime())
             ->modify("-{$windowMinutes} minutes")
             ->format('Y-m-d H:i:s');
@@ -32,6 +48,13 @@ final class RateLimiter
     public static function record(string $ip, string $endpoint): void
     {
         $pdo = Database::pdo();
+        $ip = self::storageKey($ip);
+        $endpoint = trim($endpoint);
+        if ($endpoint === '') $endpoint = 'unknown';
+        if (strlen($endpoint) > 30 || preg_match('/[\x00-\x1F\x7F]/', $endpoint)) {
+            $endpoint = 'h:' . substr(hash('sha256', $endpoint), 0, 28);
+        }
+
         $stmt = $pdo->prepare(
             'INSERT INTO api_requests (ip_address, endpoint) VALUES (?, ?)'
         );
@@ -62,4 +85,3 @@ final class RateLimiter
         return $allowed;
     }
 }
- 
