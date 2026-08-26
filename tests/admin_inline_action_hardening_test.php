@@ -7,6 +7,8 @@ $adminUsers = file_get_contents($root . '/public/admin/admin_users.php');
 $adminPermissions = file_get_contents($root . '/public/admin/admin_permissions.php');
 $customers = file_get_contents($root . '/public/admin/customers.php');
 $customerJs = file_get_contents($root . '/public/admin/assets/js/customers.js');
+$devices = file_get_contents($root . '/public/admin/devices.php');
+$deviceJs = file_get_contents($root . '/public/admin/assets/js/devices.js');
 $sessions = file_get_contents($root . '/public/admin/sessions.php');
 $shell = file_get_contents($root . '/public/admin/assets/js/admin-shell.js');
 $style = file_get_contents($root . '/public/admin/assets/css/style.css');
@@ -16,7 +18,7 @@ $fail = static function (string $message): never {
     exit(1);
 };
 
-foreach ([$adminUsers, $adminPermissions, $customers, $customerJs, $sessions, $shell, $style] as $source) {
+foreach ([$adminUsers, $adminPermissions, $customers, $customerJs, $devices, $deviceJs, $sessions, $shell, $style] as $source) {
     if (!is_string($source)) $fail('admin hardening source files could not be read');
 }
 
@@ -31,6 +33,7 @@ foreach (
         'admin_users.php' => $adminUsers,
         'admin_permissions.php' => $adminPermissions,
         'customers.php' => $customers,
+        'devices.php' => $devices,
         'sessions.php' => $sessions,
     ] as $name => $source
 ) {
@@ -58,8 +61,13 @@ if (!str_contains($customers, '/public/admin/assets/js/customers.js') || !str_co
 if (!str_contains($customers, 'data-confirm="Delete this customer')) {
     $fail('customer deletion is not wired through shared confirmation handling');
 }
-if (str_contains($customerJs, '.innerHTML') || str_contains($customerJs, 'insertAdjacentHTML')) {
-    $fail('customer page JavaScript uses unsafe HTML insertion');
+if (!str_contains($devices, '/public/admin/assets/js/devices.js') || !str_contains($devices, 'data-confirm=')) {
+    $fail('device page is not fully wired to external/declarative behavior');
+}
+foreach (['customers.js' => $customerJs, 'devices.js' => $deviceJs] as $name => $source) {
+    if (str_contains($source, '.innerHTML') || str_contains($source, 'insertAdjacentHTML')) {
+        $fail("{$name} uses unsafe HTML insertion");
+    }
 }
 if (!str_contains($shell, 'input.value = password') || !str_contains($shell, 'document.createElement("input")')) {
     $fail('shared password prompt does not create a safe DOM input');
