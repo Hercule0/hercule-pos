@@ -19,6 +19,11 @@ header('Referrer-Policy: no-referrer');
 header('X-Frame-Options: DENY');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 
+if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) {
+    header('Strict-Transport-Security: max-age=31536000');
+}
+
 // Desktop Electron requests do not need browser CORS. Cross-origin browser
 // access is opt-in through HERCULE_API_CORS_ORIGINS (comma-separated exact
 // origins). Never fall back to "*" for licensing/recovery/update endpoints.
@@ -42,15 +47,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     exit;
 }
 
-function json_input(): array
+function json_input(int $maxBytes = 16384): array
 {
+    // Keep the normal licensing/recovery surface small while allowing selected
+    // endpoints such as ai_agent.php to opt into a larger but still bounded
+    // JSON envelope for local read-only tool results.
+    $maxBytes = max(1024, min(262144, $maxBytes));
     $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
-    if ($contentLength > 16384) {
+    if ($contentLength > $maxBytes) {
         json_response(['ok' => false, 'error' => 'Request body is too large.'], 413);
     }
 
-    $raw = file_get_contents('php://input', false, null, 0, 16385);
-    if ($raw === false || strlen($raw) > 16384) {
+    $raw = file_get_contents('php://input', false, null, 0, $maxBytes + 1);
+    if ($raw === false || strlen($raw) > $maxBytes) {
         json_response(['ok' => false, 'error' => 'Request body is too large.'], 413);
     }
 
