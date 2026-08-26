@@ -71,10 +71,6 @@ $events = $eventsStmt->fetchAll();
 render_header('License Lifecycle');
 flash_render();
 ?>
-<style>
-.lifecycle-page{display:grid;gap:16px}.lifecycle-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.lifecycle-card{padding:18px;border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(16,24,36,.72);display:grid;gap:14px}.lifecycle-card h2{margin:0;color:#f7f9fc;font-size:15px}.lifecycle-card p{margin:0;color:#8192a8;font-size:12px;line-height:1.55}.lifecycle-card label{display:grid;gap:7px;color:#9aacbf;font-size:11px;font-weight:650}.lifecycle-card input,.lifecycle-card select,.lifecycle-card textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.14);border-radius:10px;background:#0b111b;color:#e8edf4;padding:10px 11px}.lifecycle-card button{justify-self:start}.lifecycle-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.lifecycle-summary article{padding:14px;border:1px solid rgba(148,163,184,.1);border-radius:14px;background:rgba(16,24,36,.58)}.lifecycle-summary span{display:block;color:#75879e;font-size:10px;text-transform:uppercase;letter-spacing:.07em}.lifecycle-summary strong{display:block;margin-top:6px;color:#f7f9fc;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lifecycle-history{display:grid;gap:8px}.lifecycle-event{padding:11px 12px;border-radius:11px;background:rgba(148,163,184,.055);border:1px solid rgba(148,163,184,.08)}.lifecycle-event strong{display:block;color:#dfe7f0;font-size:12px}.lifecycle-event small{color:#73859c;font-size:10px}.lifecycle-event p{margin:4px 0;color:#92a3b8;font-size:11px}@media(max-width:800px){.lifecycle-grid{grid-template-columns:1fr}.lifecycle-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:480px){.lifecycle-summary{grid-template-columns:1fr}}
-</style>
-
 <div class="lifecycle-page">
     <a href="/public/admin/license_detail.php?id=<?= $licenseId ?>" class="back-link">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
@@ -123,7 +119,7 @@ flash_render();
             <button class="primary-btn" type="submit" name="action" value="activation_limit">Save device limit</button>
         </form>
 
-        <form method="post" class="lifecycle-card" onsubmit="return confirm('Transfer this license to the selected customer?');">
+        <form method="post" class="lifecycle-card" data-confirm="Transfer this license to the selected customer?">
             <?= Csrf::field() ?>
             <div><h2>Transfer ownership</h2><p>Move this license to another existing customer. Device bindings and license history remain attached to the license.</p></div>
             <label><span>Customer</span><select name="customer_id" required>
@@ -134,7 +130,7 @@ flash_render();
             <button class="primary-btn" type="submit" name="action" value="transfer_customer">Transfer license</button>
         </form>
 
-        <form method="post" class="lifecycle-card" style="grid-column:1/-1">
+        <form method="post" class="lifecycle-card lifecycle-wide">
             <?= Csrf::field() ?>
             <div><h2>Internal notes</h2><p>Operational notes for administrators. These notes are not returned to the desktop client.</p></div>
             <label><span>Notes</span><textarea name="notes" rows="4" maxlength="2000" placeholder="Support, billing, or customer context"><?= htmlspecialchars($license['notes'] ?? '') ?></textarea></label>
@@ -158,12 +154,5 @@ flash_render();
     </section>
 </div>
 
-<script>
-(function(){
-    var plan=document.getElementById('lifecycle-plan');
-    var custom=document.getElementById('lifecycle-custom-days');
-    function sync(){if(!plan||!custom)return;custom.hidden=plan.value!=='custom';var i=custom.querySelector('input');if(i)i.required=plan.value==='custom';}
-    if(plan){plan.addEventListener('change',sync);sync();}
-})();
-</script>
+<script src="/public/admin/assets/js/license-lifecycle.js?v=20260826-hardening1" defer></script>
 <?php render_footer(); ?>
