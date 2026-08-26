@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/ReleaseManager.php';
 require_once __DIR__ . '/../../includes/ReleaseStorage.php';
+require_once __DIR__ . '/../../includes/AuditLog.php';
 
 Auth::require();
 Auth::requirePermission('releases.manage');
@@ -310,6 +311,11 @@ function fast_upload_finish(): never
         ];
 
         $result = ReleaseManager::createFromBundle($upload, $releaseData, Auth::currentUsername() ?? 'admin');
+        AuditLog::adminAction(
+            'release_bundle_uploaded',
+            (int)$result['id'],
+            'version=' . $result['version'] . '; published=' . ($result['published'] ? '1' : '0') . '; target=' . $result['target_mode'] . '; transport=parallel'
+        );
         $message = 'Update bundle v' . $result['version'] . ' uploaded successfully' . ($result['published'] ? ' and published.' : ' as a draft.');
         $meta['status'] = 'completed';
         $meta['result'] = $result;
