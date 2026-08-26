@@ -17,12 +17,28 @@ header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('X-Frame-Options: DENY');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+
+// Desktop Electron requests do not need browser CORS. Cross-origin browser
+// access is opt-in through HERCULE_API_CORS_ORIGINS (comma-separated exact
+// origins). Never fall back to "*" for licensing/recovery/update endpoints.
+$origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+$allowedRaw = $_ENV['HERCULE_API_CORS_ORIGINS'] ?? $_SERVER['HERCULE_API_CORS_ORIGINS'] ?? getenv('HERCULE_API_CORS_ORIGINS') ?: '';
+$allowedOrigins = array_values(array_filter(array_map('trim', explode(',', (string)$allowedRaw))));
+if ($origin !== '' && in_array($origin, $allowedOrigins, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Request-ID');
+    header('Access-Control-Max-Age: 600');
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-    http_response_code(200);
+    if ($origin !== '' && !in_array($origin, $allowedOrigins, true)) {
+        http_response_code(403);
+        exit;
+    }
+    http_response_code(204);
     exit;
 }
 
@@ -45,7 +61,7 @@ function json_input(): array
                 return $data;
             }
         } catch (JsonException $e) {
-            // Fall through to $_POST fallback if present
+            // Fall through to $_POST fallback if present.
         }
     }
 
@@ -59,11 +75,13 @@ function json_input(): array
 function json_response(array $data, int $statusCode = 200): void
 {
     http_response_code($statusCode);
-    echo json_encode($data);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
 function client_ip(): string
 {
+    // Azure/PHP exposes the actual connection peer here. Do not trust arbitrary
+    // X-Forwarded-For values supplied by clients for security buckets.
     return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 }
