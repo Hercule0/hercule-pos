@@ -50,7 +50,10 @@
       var form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
 
-      var confirmMessage = String(form.dataset.confirm || "").trim();
+      var submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+      var confirmMessage = String(
+        (submitter && submitter.dataset && submitter.dataset.confirm) || form.dataset.confirm || ""
+      ).trim();
       if (confirmMessage && !window.confirm(confirmMessage)) {
         event.preventDefault();
         return;
