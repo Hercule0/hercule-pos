@@ -34,13 +34,26 @@ final class Csrf
     }
 
     /**
-     * Call at the top of any state-changing admin handler (POST that
-     * mutates data). Exits with 403 on failure.
+     * Read the anti-CSRF token from either a normal HTML form or the standard
+     * X-CSRF-Token request header used by authenticated admin JavaScript.
+     */
+    public static function submittedToken(): string
+    {
+        $form = $_POST['csrf_token'] ?? null;
+        if (is_string($form) && $form !== '') {
+            return $form;
+        }
+        $header = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        return is_string($header) ? $header : '';
+    }
+
+    /**
+     * Call at the top of any state-changing admin handler (POST that mutates
+     * data). Supports both normal forms and same-origin JSON/fetch requests.
      */
     public static function guard(): void
     {
-        $submitted = $_POST['csrf_token'] ?? '';
-        if (!self::check($submitted)) {
+        if (!self::check(self::submittedToken())) {
             http_response_code(403);
             die('Invalid or expired CSRF token. Please refresh the page and try again.');
         }
