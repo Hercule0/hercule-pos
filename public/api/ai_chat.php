@@ -411,13 +411,16 @@ foreach ($order as $name) {
     }
 
     ai_provider_health($name, false, $status);
-    $error = (string) ($result['error'] ?? 'invalid_json');
-    $errors[] = $name . ':' . $status . ':' . substr($error, 0, 120);
+    $errors[] = $name . ':' . $status;
 }
 
+ErrorHandler::report(
+    new RuntimeException('AI provider routing failed.'),
+    'ai_chat_providers_unavailable',
+    ['providers' => array_slice($errors, 0, 8)]
+);
 ai_json([
     'ok' => false,
     'code' => 'AI_PROVIDERS_UNAVAILABLE',
     'error' => 'تعذر الوصول إلى مزودي الذكاء حالياً.',
-    'providers' => $errors,
 ], 503);
