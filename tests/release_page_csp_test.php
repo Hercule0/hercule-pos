@@ -21,6 +21,9 @@ foreach ([$releases, $bootstrap, $fast, $shell, $pwa, $css] as $source) {
     }
 }
 
+if (is_file($root . '/public/admin/release_upload.php')) {
+    $fail('legacy sequential release upload endpoint still exists');
+}
 if (preg_match('/<script\b/i', $releases)) {
     $fail('releases.php still contains an inline or page-local script tag');
 }
