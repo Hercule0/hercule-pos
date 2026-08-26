@@ -2,8 +2,8 @@
 /**
  * Generic sliding-window rate limiter, keyed by IP + endpoint. Used to
  * protect the public API. Some callers intentionally use a synthetic device
- * or license bucket in place of an IP; normalize oversized bucket identifiers
- * before they reach the VARCHAR(45) storage column.
+ * or license bucket in place of an IP; those identifiers are always hashed so
+ * bearer-like license keys never end up stored in the api_requests table.
  */
 
 require_once __DIR__ . '/Database.php';
@@ -16,13 +16,29 @@ final class RateLimiter
     {
         $key = trim($key);
         if ($key === '') return 'unknown';
-        if (strlen($key) <= self::STORAGE_KEY_MAX && !preg_match('/[\x00-\x1F\x7F]/', $key)) {
+
+        // Preserve only literal IP addresses for useful abuse diagnostics.
+        // Every synthetic bucket (key:<license>, trial:<hwid>, upd-..., global,
+        // etc.) is domain-separated and hashed so sensitive identifiers are
+        // never persisted in plaintext and can never overflow VARCHAR(45).
+        if (filter_var($key, FILTER_VALIDATE_IP) !== false
+            && strlen($key) <= self::STORAGE_KEY_MAX
+            && !preg_match('/[\x00-\x1F\x7F]/', $key)) {
             return $key;
         }
+        if ($key === 'unknown') return $key;
 
-        // Domain-prefix the digest so it can never be confused with a literal
-        // network address while remaining deterministic for the same bucket.
-        return 'h:' . substr(hash('sha256', $key), 0, self::STORAGE_KEY_MAX - 2);
+        return 'h:' . substr(hash('sha256', "hercule-rate-limit-v1\0" . $key), 0, self::STORAGE_KEY_MAX - 2);
+    }
+
+    private static function endpointKey(string $endpoint): string
+    {
+        $endpoint = trim($endpoint);
+        if ($endpoint === '') return 'unknown';
+        if (strlen($endpoint) <= 30 && !preg_match('/[\x00-\x1F\x7F]/', $endpoint)) {
+            return $endpoint;
+        }
+        return 'h:' . substr(hash('sha256', "hercule-rate-endpoint-v1\0" . $endpoint), 0, 28);
     }
 
     /**
@@ -33,6 +49,7 @@ final class RateLimiter
     {
         $pdo = Database::pdo();
         $ip = self::storageKey($ip);
+        $endpoint = self::endpointKey($endpoint);
         $threshold = (new DateTime())
             ->modify("-{$windowMinutes} minutes")
             ->format('Y-m-d H:i:s');
@@ -49,11 +66,7 @@ final class RateLimiter
     {
         $pdo = Database::pdo();
         $ip = self::storageKey($ip);
-        $endpoint = trim($endpoint);
-        if ($endpoint === '') $endpoint = 'unknown';
-        if (strlen($endpoint) > 30 || preg_match('/[\x00-\x1F\x7F]/', $endpoint)) {
-            $endpoint = 'h:' . substr(hash('sha256', $endpoint), 0, 28);
-        }
+        $endpoint = self::endpointKey($endpoint);
 
         $stmt = $pdo->prepare(
             'INSERT INTO api_requests (ip_address, endpoint) VALUES (?, ?)'
