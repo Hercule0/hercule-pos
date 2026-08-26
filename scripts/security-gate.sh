@@ -16,9 +16,35 @@ check_pattern() {
   fi
 }
 
-# Real private PEM blocks must never be version-controlled. Strings that merely
-# mention environment variable names are intentionally not flagged.
-check_pattern "private PEM material committed" '-----BEGIN (RSA )?PRIVATE KEY-----'
+# Detect actual PEM payloads, not source-code strings that mention PEM labels.
+if ! python3 - <<'PY'
+from pathlib import Path
+import re, sys
+skip = {'.git', 'vendor', 'deploy_package'}
+pattern = re.compile(
+    rb'-----BEGIN (?:RSA )?PRIVATE KEY-----\s+([A-Za-z0-9+/=\r\n]{128,})-----END (?:RSA )?PRIVATE KEY-----',
+    re.M,
+)
+hits = []
+for path in Path('.').rglob('*'):
+    if not path.is_file() or any(part in skip for part in path.parts):
+        continue
+    try:
+        data = path.read_bytes()
+    except OSError:
+        continue
+    if pattern.search(data):
+        hits.append(str(path))
+if hits:
+    print('SECURITY GATE FAILED: private PEM material committed')
+    for hit in hits:
+        print(hit)
+    sys.exit(1)
+PY
+then
+  fail=1
+fi
+
 check_pattern "OpenAI-style secret token committed" 'sk-(proj-)?[A-Za-z0-9_-]{20,}'
 check_pattern "GitHub personal token committed" 'gh[pousr]_[A-Za-z0-9]{20,}'
 check_pattern "AWS access key committed" 'AKIA[0-9A-Z]{16}'
