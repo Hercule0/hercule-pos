@@ -34,12 +34,15 @@ if (!RateLimiter::check(client_ip(), 'release_event_ip', 600, 5) || !RateLimiter
 
 try {
     $pdo = Database::pdo();
-    $stmt = $pdo->prepare("SELECT a.id AS activation_id, a.license_id, a.is_active, a.is_blocked, l.status AS license_status
+    $stmt = $pdo->prepare("SELECT a.id AS activation_id, a.license_id, a.is_active, a.is_blocked,
+               l.status AS license_status, l.expires_at AS license_expires_at
         FROM license_activations a JOIN licenses l ON l.id=a.license_id
         WHERE l.license_key=? AND a.hwid=? LIMIT 1");
     $stmt->execute([$licenseKey,$hwid]);
     $client = $stmt->fetch();
-    if (!$client || ($client['license_status']??'')!=='active' || empty($client['is_active']) || !empty($client['is_blocked'])) {
+    $licenseExpired = !empty($client['license_expires_at'])
+        && strtotime((string)$client['license_expires_at']) <= time();
+    if (!$client || ($client['license_status']??'')!=='active' || $licenseExpired || empty($client['is_active']) || !empty($client['is_blocked'])) {
         json_response(['ok'=>false,'code'=>'DEVICE_DENIED','error'=>'Update event is not allowed for this device'], 403);
     }
 
