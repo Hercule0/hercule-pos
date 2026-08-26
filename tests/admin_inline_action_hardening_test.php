@@ -11,6 +11,8 @@ $devices = file_get_contents($root . '/public/admin/devices.php');
 $deviceJs = file_get_contents($root . '/public/admin/assets/js/devices.js');
 $dashboard = file_get_contents($root . '/public/admin/index.php');
 $dashboardCss = file_get_contents($root . '/public/admin/assets/css/dashboard.css');
+$licenses = file_get_contents($root . '/public/admin/licenses.php');
+$licensesJs = file_get_contents($root . '/public/admin/assets/js/licenses.js');
 $licenseDetail = file_get_contents($root . '/public/admin/license_detail.php');
 $licenseDetailJs = file_get_contents($root . '/public/admin/assets/js/license-detail.js');
 $licenseLifecycle = file_get_contents($root . '/public/admin/license_lifecycle.php');
@@ -26,7 +28,7 @@ $fail = static function (string $message): never {
 
 foreach ([
     $adminUsers, $adminPermissions, $customers, $customerJs, $devices, $deviceJs,
-    $dashboard, $dashboardCss,
+    $dashboard, $dashboardCss, $licenses, $licensesJs,
     $licenseDetail, $licenseDetailJs, $licenseLifecycle, $licenseLifecycleJs,
     $sessions, $shell, $style,
 ] as $source) {
@@ -46,6 +48,7 @@ foreach (
         'customers.php' => $customers,
         'devices.php' => $devices,
         'index.php' => $dashboard,
+        'licenses.php' => $licenses,
         'license_detail.php' => $licenseDetail,
         'license_lifecycle.php' => $licenseLifecycle,
         'sessions.php' => $sessions,
@@ -84,6 +87,9 @@ if (!str_contains($style, 'dashboard.css') || trim($dashboardCss) === '') {
 if (str_contains($dashboard, '</main>')) {
     $fail('dashboard closes the shared shell main element directly');
 }
+if (!str_contains($licenses, '/public/admin/assets/js/licenses.js') || !str_contains($licenses, 'data-submit-on-change')) {
+    $fail('license listing page is not fully wired to external/declarative behavior');
+}
 if (!str_contains($licenseDetail, '/public/admin/assets/js/license-detail.js') || !str_contains($licenseDetail, 'data-confirm=')) {
     $fail('license detail page is not fully wired to external/shared behavior');
 }
@@ -94,6 +100,7 @@ foreach (
     [
         'customers.js' => $customerJs,
         'devices.js' => $deviceJs,
+        'licenses.js' => $licensesJs,
         'license-detail.js' => $licenseDetailJs,
         'license-lifecycle.js' => $licenseLifecycleJs,
     ] as $name => $source
