@@ -1,0 +1,9 @@
+.admin-permissions-note {
+  margin-top: 12px;
+}
+
+.admin-permission-form {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
