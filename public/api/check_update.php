@@ -47,5 +47,12 @@ $licenseKey = trim(
 if ($licenseKey === '') {
     json_response(['ok' => false, 'error' => 'license_key is required'], 400);
 }
+if (strlen($licenseKey) > 64 || preg_match('/[\x00-\x1F\x7F]/', $licenseKey)) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key.'], 400);
+}
+
+if (!RateLimiter::check('key:' . $licenseKey, 'check_update_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
+    json_response(['ok' => false, 'error' => 'Too many update polls for this license key. Please try again shortly.'], 429);
+}
 
 json_response(['ok' => true, 'has_update' => License::hasPendingChange($licenseKey)]);
