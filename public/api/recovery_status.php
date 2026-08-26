@@ -24,13 +24,13 @@ $requestId = (int) ($input['request_id'] ?? 0);
 $licenseKey = trim((string) ($input['license_key'] ?? ''));
 $hwid = trim((string) ($input['hwid'] ?? ''));
 
-if (!$requestId || $licenseKey === '') {
-    json_response(['ok' => false, 'error' => 'request_id and license_key are required'], 400);
+if (!$requestId || $licenseKey === '' || $hwid === '') {
+    json_response(['ok' => false, 'error' => 'request_id, license_key and hwid are required'], 400);
 }
 if (strlen($licenseKey) > 29 || !preg_match('/^[A-Z0-9-]+$/', $licenseKey)) {
     json_response(['ok' => false, 'error' => 'Invalid license_key format.'], 400);
 }
-if ($hwid !== '' && (strlen($hwid) > 128 || preg_match('/[\x00-\x1F\x7F]/', $hwid))) {
+if (strlen($hwid) > 128 || preg_match('/[\x00-\x1F\x7F]/', $hwid)) {
     json_response(['ok' => false, 'error' => 'Invalid hwid.'], 400);
 }
 if (!RateLimiter::check('key:' . $licenseKey, 'recovery_status_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
@@ -41,25 +41,26 @@ $pdo = Database::pdo();
 $pdo->prepare(
     "UPDATE password_recovery_requests
      SET status = 'expired'
-     WHERE id = ? AND license_key = ? AND status = 'approved'
+     WHERE id = ? AND license_key = ? AND hwid = ? AND status = 'approved'
        AND token_expires_at IS NOT NULL AND token_expires_at < CURRENT_TIMESTAMP
        AND NOT EXISTS (
            SELECT 1 FROM recovery_audit_log ra
            WHERE ra.request_id = password_recovery_requests.id
              AND ra.event_type = 'authorization_prepared'
        )"
-)->execute([$requestId, $licenseKey]);
+)->execute([$requestId, $licenseKey, $hwid]);
 
-$sql = 'SELECT id, status, requested_username, admin_note, created_at, reviewed_at FROM password_recovery_requests WHERE id = ? AND license_key = ?';
-$params = [$requestId, $licenseKey];
-if ($hwid !== '') {
-    $sql .= ' AND hwid = ?';
-    $params[] = $hwid;
-}
-$stmt = $pdo->prepare($sql . ' LIMIT 1');
-$stmt->execute($params);
+$stmt = $pdo->prepare(
+    'SELECT id, status, requested_username, admin_note, created_at, reviewed_at
+     FROM password_recovery_requests
+     WHERE id = ? AND license_key = ? AND hwid = ?
+     LIMIT 1'
+);
+$stmt->execute([$requestId, $licenseKey, $hwid]);
 $status = $stmt->fetch();
 if (!$status) {
+    // Keep mismatch/not-found indistinguishable so the endpoint never reveals
+    // whether a request belongs to another device.
     json_response(['ok' => false, 'error' => 'Request not found.'], 404);
 }
 
