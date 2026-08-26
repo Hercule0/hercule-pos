@@ -9,6 +9,8 @@ $customers = file_get_contents($root . '/public/admin/customers.php');
 $customerJs = file_get_contents($root . '/public/admin/assets/js/customers.js');
 $devices = file_get_contents($root . '/public/admin/devices.php');
 $deviceJs = file_get_contents($root . '/public/admin/assets/js/devices.js');
+$dashboard = file_get_contents($root . '/public/admin/index.php');
+$dashboardCss = file_get_contents($root . '/public/admin/assets/css/dashboard.css');
 $licenseDetail = file_get_contents($root . '/public/admin/license_detail.php');
 $licenseDetailJs = file_get_contents($root . '/public/admin/assets/js/license-detail.js');
 $licenseLifecycle = file_get_contents($root . '/public/admin/license_lifecycle.php');
@@ -24,6 +26,7 @@ $fail = static function (string $message): never {
 
 foreach ([
     $adminUsers, $adminPermissions, $customers, $customerJs, $devices, $deviceJs,
+    $dashboard, $dashboardCss,
     $licenseDetail, $licenseDetailJs, $licenseLifecycle, $licenseLifecycleJs,
     $sessions, $shell, $style,
 ] as $source) {
@@ -42,6 +45,7 @@ foreach (
         'admin_permissions.php' => $adminPermissions,
         'customers.php' => $customers,
         'devices.php' => $devices,
+        'index.php' => $dashboard,
         'license_detail.php' => $licenseDetail,
         'license_lifecycle.php' => $licenseLifecycle,
         'sessions.php' => $sessions,
@@ -74,6 +78,12 @@ if (!str_contains($customers, 'data-confirm="Delete this customer')) {
 if (!str_contains($devices, '/public/admin/assets/js/devices.js') || !str_contains($devices, 'data-confirm=')) {
     $fail('device page is not fully wired to external/declarative behavior');
 }
+if (!str_contains($style, 'dashboard.css') || trim($dashboardCss) === '') {
+    $fail('dashboard external stylesheet is not loaded');
+}
+if (str_contains($dashboard, '</main>')) {
+    $fail('dashboard closes the shared shell main element directly');
+}
 if (!str_contains($licenseDetail, '/public/admin/assets/js/license-detail.js') || !str_contains($licenseDetail, 'data-confirm=')) {
     $fail('license detail page is not fully wired to external/shared behavior');
 }
@@ -101,7 +111,7 @@ if (!str_contains($shell, 'data-submit-on-change')) {
 if (str_contains($shell, 'insertAdjacentHTML') || str_contains($shell, '.innerHTML')) {
     $fail('shared admin shell uses unsafe HTML insertion');
 }
-foreach (['admin-users.css', 'admin-permissions.css', 'sessions.css', 'license-lifecycle.css'] as $asset) {
+foreach (['admin-users.css', 'admin-permissions.css', 'sessions.css', 'license-lifecycle.css', 'dashboard.css'] as $asset) {
     if (!str_contains($style, $asset)) $fail("style.css does not load {$asset}");
 }
 
