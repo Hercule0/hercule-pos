@@ -18,6 +18,23 @@
     return null;
   }
 
+  function setOverall(ok, label) {
+    var pill = document.querySelector(".system-status-pill");
+    if (pill) {
+      var textNode = pill.querySelector("[data-health-summary]");
+      if (textNode) textNode.textContent = label;
+      else pill.lastChild.textContent = label;
+      pill.classList.toggle("is-degraded", !ok);
+    }
+    var dot = document.querySelector(".sidebar-health-card .health-indicator-dot");
+    if (dot) dot.classList.toggle("is-degraded", !ok);
+    var diagnostic = document.querySelector(".sidebar-pill-ok");
+    if (diagnostic) {
+      diagnostic.textContent = ok ? "200 OK" : "DEGRADED";
+      diagnostic.classList.toggle("is-degraded", !ok);
+    }
+  }
+
   function sync() {
     if (!document.querySelector(".sidebar-health-card")) return;
     fetch("/public/admin/health_status.php", {
@@ -38,27 +55,16 @@
       setText(rowValue("Database"), db.ok ? (db.latency_ms != null ? "Connected · " + db.latency_ms + " ms" : "Connected") : (db.label || "Unavailable"), !!db.ok);
       setText(rowValue("RSA Signer"), license.ok && update.ok ? "License + Update Ready" : "Signer unavailable", !!(license.ok && update.ok));
       setText(rowValue("Rate Limiter"), limiter.ok && storage.ok ? "Active · Storage OK" : "Service degraded", !!(limiter.ok && storage.ok));
-
-      var pill = document.querySelector(".system-status-pill");
-      if (pill) {
-        pill.lastChild.textContent = data.ok ? "Live · Verified" : "Service Degraded";
-        pill.classList.toggle("is-degraded", !data.ok);
-      }
-      var dot = document.querySelector(".sidebar-health-card .health-indicator-dot");
-      if (dot) dot.classList.toggle("is-degraded", !data.ok);
+      setOverall(!!data.ok, data.ok ? "Live · Verified" : "Service Degraded");
     }).catch(function () {
       setText(rowValue("Database"), "Unavailable", false);
       setText(rowValue("RSA Signer"), "Unknown", false);
       setText(rowValue("Rate Limiter"), "Unknown", false);
-      var pill = document.querySelector(".system-status-pill");
-      if (pill) {
-        pill.lastChild.textContent = "Health unavailable";
-        pill.classList.add("is-degraded");
-      }
+      setOverall(false, "Health unavailable");
     });
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync, { once: true });
   else sync();
   window.setInterval(sync, 60000);
 })();
