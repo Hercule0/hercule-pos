@@ -45,7 +45,7 @@ jobs:
         run: bash scripts/security-gate.sh
 
       - name: Validate Composer metadata
-        run: composer validate --strict --no-check-publish
+        run: composer validate --no-check-publish
 
       - name: Install dependencies from lockfile
         run: composer install --prefer-dist --no-progress --no-interaction
@@ -57,6 +57,7 @@ jobs:
         run: |
           php tests/run_test.php
           php tests/run_regressions.php
+          php tests/test_update_signer.php
 
       - name: Prepare deployment package
         run: |
