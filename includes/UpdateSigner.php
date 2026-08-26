@@ -15,8 +15,8 @@ final class UpdateSigner
 {
     public const KEY_ID = 'hercule-update-v1';
     public const ALGORITHM = 'RSA-SHA256';
-    // SHA-256 of the exact PEM public key embedded in the desktop app.
-    public const EXPECTED_PUBLIC_KEY_SHA256 = 'bf197e651c408449a7142a02baa87e857685f8c953679c583b589e1788308417';
+    // SHA-256 of the exact PEM public key embedded in the desktop hardening snapshot.
+    public const EXPECTED_PUBLIC_KEY_SHA256 = '9ba9568144ca9b7ae462cd7662a1bf76b8286d1d4e759a1360a59c0c47da932e';
 
     private static function env(string $name): string
     {
