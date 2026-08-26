@@ -54,8 +54,12 @@
   }
 
   function setProgress(percent, label, sub) {
+    var safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
     if (progress) progress.classList.add("show");
-    if (bar) bar.style.width = Math.max(0, Math.min(100, percent || 0)) + "%";
+    if (bar) {
+      bar.value = safePercent;
+      bar.setAttribute("aria-valuenow", String(Math.round(safePercent)));
+    }
     if (text) text.textContent = label || "";
     if (detail) detail.textContent = sub || "";
   }
