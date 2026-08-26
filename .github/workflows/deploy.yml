@@ -128,17 +128,16 @@ jobs:
           fi
 
           HEALTH_URL="https://$APP_HOST/public/health.php?format=json"
-          echo "Waiting for $HEALTH_URL"
+          echo "Waiting for application and database readiness at $HEALTH_URL"
 
           for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL"; then
-              echo
-              echo "Deployment health check passed."
+            if bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"; then
+              echo "Deployment health verification passed."
               exit 0
             fi
-            echo "Health check attempt $attempt/12 failed; retrying in 5 seconds..."
+            echo "Health verification attempt $attempt/12 failed; retrying in 5 seconds..."
             sleep 5
           done
 
-          echo "Deployment did not become healthy."
+          echo "Deployment did not become application+database healthy."
           exit 1
