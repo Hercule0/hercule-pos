@@ -10,11 +10,12 @@
     ],
     "require": {
         "minishlink/web-push": "^11.0",
-        "guzzlehttp/guzzle": "*"
+        "guzzlehttp/guzzle": "^7.9"
     },
     "config": {
         "allow-plugins": {
             "php-http/discovery": true
-        }
+        },
+        "sort-packages": true
     }
 }
