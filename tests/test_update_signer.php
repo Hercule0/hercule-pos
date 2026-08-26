@@ -23,8 +23,15 @@ if ($publicPem === '') {
     fwrite(STDERR, "FAIL: could not obtain public key\n");
     exit(1);
 }
-putenv('UPDATE_PRIVATE_KEY=' . str_replace("\n", '\\n', $privatePem));
-$_ENV['UPDATE_PRIVATE_KEY'] = str_replace("\n", '\\n', $privatePem);
+
+$escapedPrivate = str_replace("\n", '\\n', $privatePem);
+$fingerprint = hash('sha256', $publicPem);
+putenv('APP_ENV=test');
+putenv('UPDATE_PRIVATE_KEY=' . $escapedPrivate);
+putenv('UPDATE_TEST_PUBLIC_KEY_SHA256=' . $fingerprint);
+$_ENV['APP_ENV'] = 'test';
+$_ENV['UPDATE_PRIVATE_KEY'] = $escapedPrivate;
+$_ENV['UPDATE_TEST_PUBLIC_KEY_SHA256'] = $fingerprint;
 
 $input = [
     'release_id' => 41,
