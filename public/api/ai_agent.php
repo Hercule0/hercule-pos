@@ -235,6 +235,50 @@ function ai_sanitize_answer_payload(array $answer): array {
     return $answer;
 }
 
+const HERCULE_AI_PRIVACY_CONSENT_VERSION = 1;
+function ai_privacy_policy(array $body): array {
+    $privacy = is_array($body['privacy'] ?? null) ? $body['privacy'] : [];
+    $version = max(0, (int)($privacy['consent_version'] ?? 0));
+    $scope = strtolower(trim((string)($privacy['scope'] ?? 'minimal')));
+    if ($version < HERCULE_AI_PRIVACY_CONSENT_VERSION || !in_array($scope, ['minimal','operational'], true)) {
+        ai_json(['ok'=>false,'code'=>'AI_PRIVACY_CONSENT_REQUIRED','error'=>'يلزم تفعيل موافقة الذكاء السحابي من إعدادات Hercule.'],403);
+    }
+    return ['consent_version'=>$version,'scope'=>$scope];
+}
+function ai_privacy_redact_text(string $text, int $limit = 1200): string {
+    $text = ai_cut($text, $limit);
+    $text = preg_replace('/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/u', '[EMAIL]', $text) ?? $text;
+    $text = preg_replace('/(?:\+?964|00964|0)?7(?:[\s-]?\d){9}\b/u', '[PHONE]', $text) ?? $text;
+    $text = preg_replace('/\b(?:sk-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,})\b/u', '[SECRET]', $text) ?? $text;
+    $text = preg_replace('/\b(?:license|licence|hwid|hardware\s*id)\s*[:=#-]?\s*[A-Za-z0-9_-]{8,}\b/iu', '[REDACTED]', $text) ?? $text;
+    return $text;
+}
+function ai_privacy_block_key(string $key, string $scope): bool {
+    $key = strtolower(trim($key));
+    if (preg_match('/(?:password|pass_hash|passcode|token|secret|api[_-]?key|private[_-]?key|license[_-]?key|hwid|hardware[_-]?id|recovery|email|phone|whatsapp|address|history|conversation[_-]?history|customer[_-]?name|customer[_-]?full|cashier|username|full[_-]?name|employee[_-]?name|user[_-]?name|contact[_-]?name|supplier[_-]?phone)/i', $key)) return true;
+    if ($scope === 'minimal' && preg_match('/(?:^|_)(?:id|name|title|sku|barcode|code|serial|lot|note|customer|supplier|product|category|invoice|receipt|document|reference)(?:$|_)/i', $key)) return true;
+    if ($scope === 'minimal' && preg_match('/^(?:summary|message|description|label)$/i', $key)) return true;
+    return false;
+}
+function ai_privacy_sanitize($value, string $scope, int $depth = 0) {
+    if ($depth > 7) return null;
+    if ($value === null || is_bool($value) || is_int($value) || is_float($value)) return $value;
+    if (is_string($value)) return ai_privacy_redact_text($value, $depth <= 1 ? 1200 : 500);
+    if (!is_array($value)) return ai_privacy_redact_text((string)$value, 200);
+
+    $isList = array_is_list($value);
+    $out = [];
+    $limit = $depth <= 1 ? 80 : 50;
+    $count = 0;
+    foreach ($value as $key=>$item) {
+        if ($count++ >= $limit) break;
+        if (!$isList && ai_privacy_block_key((string)$key, $scope)) continue;
+        $clean = ai_privacy_sanitize($item, $scope, $depth + 1);
+        if ($isList) $out[] = $clean; else $out[$key] = $clean;
+    }
+    return $out;
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ai_json(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);
 $body = json_input(65536);
 $licenseKey = trim((string)($body['license_key'] ?? ''));
@@ -244,6 +288,8 @@ $mode = strtolower(trim((string)($body['mode'] ?? 'plan')));
 if ($licenseKey === '' || $hwid === '') ai_json(['ok'=>false,'code'=>'LICENSE_REQUIRED'],401);
 if ($question === '' || strlen($question) > 6000) ai_json(['ok'=>false,'code'=>'INVALID_QUESTION'],400);
 if (!in_array($mode, ['plan','synthesize'], true)) ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
+$privacy = ai_privacy_policy($body);
+$question = trim(ai_privacy_redact_text($question, 6000));
 
 $ipLimit = max(10,(int)ai_env('HERCULE_AI_IP_RPM','60'));
 if (!RateLimiter::check(client_ip(),'ai_agent_ip',$ipLimit,1)) {
@@ -261,7 +307,7 @@ if (!RateLimiter::check($bucket,'ai_agent_'.$mode,$perLicense,1) || !RateLimiter
 }
 $catalog = json_decode((string)@file_get_contents(__DIR__.'/intent_catalog.json'),true);
 if (!is_array($catalog)) ai_json(['ok'=>false,'code'=>'CATALOG_ERROR'],500);
-$context = is_array($body['context'] ?? null) ? $body['context'] : [];
+$context = ai_privacy_sanitize(is_array($body['context'] ?? null) ? $body['context'] : [], $privacy['scope']);
 
 if ($mode === 'plan') {
     $intentNames = [];
@@ -292,8 +338,8 @@ if ($mode === 'plan') {
     ai_json(['ok'=>false,'code'=>'AI_INVALID_PLAN','error'=>'AI provider returned an empty or unusable plan'],502);
 }
 
-$plan = is_array($body['plan'] ?? null) ? $body['plan'] : [];
-$tools = is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [];
+$plan = ai_privacy_sanitize(is_array($body['plan'] ?? null) ? $body['plan'] : [], $privacy['scope']);
+$tools = ai_privacy_sanitize(is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [], $privacy['scope']);
 $prompt = "You are the Hercule POS smart assistant. Use ONLY supplied local tool results for store-specific facts. Never invent numbers, causes, product names, customer names, or settings state. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. If some tools failed, clearly say what could not be read and still use the successful evidence. Answer in the user's language; use natural Iraqi Arabic when the user uses Iraqi Arabic.\n"
     ."The followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
     ."Question: ".$question."\nPlan: ".ai_prompt_json($plan,5000)."\nTool results: ".ai_prompt_json($tools,24000)."\nContext: ".ai_prompt_json($context,7000);
