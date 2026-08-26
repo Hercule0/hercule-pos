@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 $adminRoot = $root . '/public/admin';
 $assetJsRoot = $adminRoot . '/assets/js';
 $bootstrapPath = $adminRoot . '/includes/bootstrap.php';
+$errorHandlerPath = $root . '/includes/ErrorHandler.php';
 
 $fail = static function (string $message): never {
     fwrite(STDERR, "FAIL: {$message}\n");
@@ -14,6 +15,8 @@ $fail = static function (string $message): never {
 
 $bootstrap = file_get_contents($bootstrapPath);
 if (!is_string($bootstrap)) $fail('admin bootstrap could not be read');
+$errorHandler = file_get_contents($errorHandlerPath);
+if (!is_string($errorHandler)) $fail('error handler could not be read');
 
 $phpFiles = glob($adminRoot . '/*.php') ?: [];
 if (!$phpFiles) $fail('no top-level admin PHP files were found');
@@ -67,6 +70,17 @@ if (!str_contains($bootstrap, "script-src 'self';")) {
 }
 if (!str_contains($bootstrap, "style-src 'self' https://fonts.googleapis.com;")) {
     $fail('admin CSP is missing strict stylesheet policy');
+}
+
+if (str_contains($errorHandler, 'header_register_callback')) {
+    $fail('error boundary still installs a final-header CSP override');
+}
+if (str_contains($errorHandler, "header_remove('Content-Security-Policy')")
+    || str_contains($errorHandler, 'header_remove("Content-Security-Policy")')) {
+    $fail('error boundary can remove the admin Content-Security-Policy');
+}
+if (str_contains($errorHandler, "'unsafe-inline'") || str_contains($errorHandler, "'unsafe-eval'")) {
+    $fail('error boundary contains a permissive CSP directive');
 }
 
 echo "PASS full admin strict CSP gate\n";
