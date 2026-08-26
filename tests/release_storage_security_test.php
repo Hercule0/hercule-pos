@@ -32,7 +32,7 @@ foreach ([
     }
 }
 
-if (str_contains($storage, "$manifestText = $zip->getFromName('manifest.json')")) {
+if (str_contains($storage, "getFromName('manifest.json')")) {
     $fail('legacy unbounded manifest decompression remains');
 }
 if (preg_match('/extractEntry\s*\([^,]+,[^,]+,[^,]+\)\s*;/', $storage) === 1) {
