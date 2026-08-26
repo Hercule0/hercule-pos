@@ -1,0 +1,82 @@
+.admin-create-password-hint {
+  display: block;
+  margin: -4px 0 10px;
+  opacity: 0.7;
+}
+
+.admin-card-header {
+  margin-bottom: 12px;
+}
+
+.grid-card.is-disabled {
+  opacity: 0.6;
+}
+
+.grid-card-avatar.is-owner {
+  background: #3b82f6;
+}
+
+.admin-card-subtitle {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.admin-delete-form {
+  display: inline;
+}
+
+.admin-card-body {
+  margin-bottom: 12px;
+}
+
+.admin-card-footer {
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.admin-role-form {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-role-select {
+  background: var(--panel-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-role-submit {
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.admin-toggle-row {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-toggle-form {
+  flex: 1;
+}
+
+.admin-toggle-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.admin-toggle-btn.is-disable {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.admin-toggle-btn.is-enable {
+  color: var(--success);
+  border-color: var(--success);
+}
