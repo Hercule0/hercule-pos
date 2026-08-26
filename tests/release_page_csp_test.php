@@ -57,7 +57,7 @@ if (!str_contains($bootstrap, '/public/admin/assets/js/release-upload-fast.js'))
 if (str_contains($pwa, 'release-upload-fast.js')) {
     $fail('PWA shell still dynamically injects the release uploader');
 }
-foreach (['data.maxUploadBytes', 'target-search', '/public/admin/release_upload_fast.php', 'bar.value = safePercent'] as $needle) {
+foreach (['form.dataset.maxUploadBytes', 'target-search', '/public/admin/release_upload_fast.php', 'bar.value = safePercent'] as $needle) {
     if (!str_contains($fast, $needle)) {
         $fail("external release uploader is missing {$needle}");
     }
