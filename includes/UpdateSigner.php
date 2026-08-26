@@ -15,6 +15,7 @@ final class UpdateSigner
 {
     public const KEY_ID = 'hercule-update-v1';
     public const ALGORITHM = 'RSA-SHA256';
+    public const EXPECTED_PUBLIC_KEY_SHA256 = 'e8405a507378b35f6c734979097ab311b948c32c85b3131db812715e53a5af5a';
 
     private static function env(string $name): string
     {
@@ -49,8 +50,15 @@ final class UpdateSigner
             break;
         }
 
-        if (openssl_pkey_get_private($pem) === false) {
+        $privateKey = openssl_pkey_get_private($pem);
+        if ($privateKey === false) {
             throw new RuntimeException('UPDATE_PRIVATE_KEY is not a valid RSA private key.');
+        }
+
+        $details = openssl_pkey_get_details($privateKey);
+        $publicPem = is_array($details) ? (string)($details['key'] ?? '') : '';
+        if ($publicPem === '' || !hash_equals(self::EXPECTED_PUBLIC_KEY_SHA256, hash('sha256', $publicPem))) {
+            throw new RuntimeException('UPDATE_PRIVATE_KEY does not match the desktop update trust key.');
         }
 
         return $pem;
