@@ -15,7 +15,8 @@ final class UpdateSigner
 {
     public const KEY_ID = 'hercule-update-v1';
     public const ALGORITHM = 'RSA-SHA256';
-    public const EXPECTED_PUBLIC_KEY_SHA256 = 'e8405a507378b35f6c734979097ab311b948c32c85b3131db812715e53a5af5a';
+    // SHA-256 of the exact PEM public key embedded in the desktop app.
+    public const EXPECTED_PUBLIC_KEY_SHA256 = '65fbf31694fdde7b256b82060a3cef56d37632ba6d567ba252992a9a69da95c2';
 
     private static function env(string $name): string
     {
@@ -69,7 +70,7 @@ final class UpdateSigner
         }
 
         $details = openssl_pkey_get_details($privateKey);
-        $publicPem = is_array($details) ? (string)($details['key'] ?? '') : '';
+        $publicPem = is_array($details) ? (string) ($details['key'] ?? '') : '';
         if ($publicPem === '' || !hash_equals(self::expectedPublicFingerprint(), hash('sha256', $publicPem))) {
             throw new RuntimeException('UPDATE_PRIVATE_KEY does not match the desktop update trust key.');
         }
