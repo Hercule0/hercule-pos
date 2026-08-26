@@ -1,41 +1,94 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 
-// Allow session authentication or JSON API consumption
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-if (!Auth::check()) {
-    http_response_code(401);
-    echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+function admin_api_reply(array $payload, int $status = 200): never
+{
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
+if (!Auth::check()) {
+    admin_api_reply(['ok' => false, 'error' => 'Unauthorized'], 401);
+}
+
+/**
+ * Mutating legacy admin API actions are protected twice:
+ *  1) explicit role/permission authorization; and
+ *  2) a session CSRF token when supplied by modern clients.
+ *
+ * The same-origin JSON fallback keeps the older bundled admin client working
+ * while still rejecting cross-site form/navigation CSRF. Browser Origin and
+ * Sec-Fetch-Site are not accepted from cross-origin form submissions.
+ */
+function admin_api_require_mutation(?string $permission = null): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        header('Allow: POST');
+        admin_api_reply(['ok' => false, 'error' => 'POST required'], 405);
+    }
+
+    if ($permission !== null && !Auth::can($permission)) {
+        admin_api_reply(['ok' => false, 'error' => 'Permission denied'], 403);
+    }
+
+    $submitted = Csrf::submittedToken();
+    if ($submitted !== '' && Csrf::check($submitted)) {
+        return;
+    }
+
+    $origin = rtrim(trim((string)($_SERVER['HTTP_ORIGIN'] ?? '')), '/');
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $proto = strtolower(trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($proto === '') {
+        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    }
+    $fetchSite = strtolower(trim((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
+    $contentType = strtolower(trim((string)($_SERVER['CONTENT_TYPE'] ?? '')));
+
+    $hostValid = preg_match('/^[A-Za-z0-9.-]+(?::\d+)?$/', $host) === 1;
+    $protoValid = in_array($proto, ['http', 'https'], true);
+    $sameOrigin = $hostValid && $protoValid && $origin !== '' && hash_equals($proto . '://' . $host, $origin);
+    $fetchIsSameOrigin = $fetchSite === '' || $fetchSite === 'same-origin';
+    $jsonRequest = str_starts_with($contentType, 'application/json');
+
+    if ($sameOrigin && $fetchIsSameOrigin && $jsonRequest) {
+        return;
+    }
+
+    admin_api_reply(['ok' => false, 'error' => 'Invalid or expired CSRF token'], 403);
+}
+
 $pdo = Database::pdo();
-$action = $_GET['action'] ?? ($_POST['action'] ?? '');
-$method = $_SERVER['REQUEST_METHOD'];
+$action = (string)($_GET['action'] ?? ($_POST['action'] ?? ''));
+$method = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
 try {
     switch ($action) {
         case 'bootstrap':
-            // 1. Licenses & Customers
+            if ($method !== 'GET') {
+                header('Allow: GET');
+                admin_api_reply(['ok' => false, 'error' => 'GET required'], 405);
+            }
+
             $licenses = $pdo->query(
-                "SELECT l.*, c.name AS customer_name, c.company, c.contact_email 
-                 FROM licenses l 
-                 LEFT JOIN customers c ON c.id = l.customer_id 
+                "SELECT l.*, c.name AS customer_name, c.company, c.contact_email
+                 FROM licenses l
+                 LEFT JOIN customers c ON c.id = l.customer_id
                  ORDER BY l.created_at DESC"
             )->fetchAll();
 
-            // 2. Activations
             $activations = $pdo->query(
-                "SELECT a.*, l.license_key 
-                 FROM license_activations a 
-                 JOIN licenses l ON l.id = a.license_id 
+                "SELECT a.*, l.license_key
+                 FROM license_activations a
+                 JOIN licenses l ON l.id = a.license_id
                  WHERE a.is_active = 1
                  ORDER BY a.activated_at DESC"
             )->fetchAll();
 
-            // Attach activations to licenses
             $activationsByLicense = [];
             foreach ($activations as $act) {
                 $activationsByLicense[$act['license_id']][] = [
@@ -47,7 +100,7 @@ try {
                     'activated_at' => $act['activated_at'],
                     'last_seen_at' => $act['last_seen_at'] ?? $act['activated_at'],
                     'status' => $act['is_active'] ? 'active' : 'inactive',
-                    'app_version' => $act['app_version'] ?? 'v2.4.0'
+                    'app_version' => $act['app_version'] ?? 'unknown',
                 ];
             }
 
@@ -70,11 +123,10 @@ try {
                     'created_at' => $l['created_at'],
                     'last_verified_at' => $l['last_verified_at'] ?? null,
                     'features' => json_decode($l['features'] ?? '[]', true) ?? ['pos', 'offline_mode'],
-                    'notes' => $l['notes'] ?? ''
+                    'notes' => $l['notes'] ?? '',
                 ];
             }
 
-            // 3. Customers
             $customers = $pdo->query(
                 "SELECT c.*, COUNT(l.id) AS total_licenses,
                         SUM(CASE WHEN l.status = 'active' THEN 1 ELSE 0 END) AS active_licenses
@@ -84,26 +136,24 @@ try {
                  ORDER BY c.created_at DESC"
             )->fetchAll();
 
-            // 4. Verifications
             $verifications = $pdo->query(
                 "SELECT * FROM verification_log ORDER BY created_at DESC LIMIT 50"
             )->fetchAll();
 
-            // 5. Recovery Requests
             $recoveryRequests = $pdo->query(
                 "SELECT * FROM password_recovery_requests ORDER BY created_at DESC LIMIT 30"
             )->fetchAll();
 
-            // 6. Current Admin User
             $currentUser = [
                 'id' => Auth::currentUserId(),
                 'username' => Auth::currentUsername(),
                 'role' => Auth::currentRole(),
-                'mfa_enabled' => true
+                'mfa_enabled' => Auth::mfaEnabled(),
             ];
 
-            echo json_encode([
+            admin_api_reply([
                 'ok' => true,
+                'csrf_token' => Csrf::token(),
                 'user' => $currentUser,
                 'licenses' => $formattedLicenses,
                 'customers' => $customers,
@@ -111,93 +161,93 @@ try {
                 'recovery_requests' => $recoveryRequests,
                 'stats' => [
                     'total_licenses' => count($formattedLicenses),
-                    'active_licenses' => count(array_filter($formattedLicenses, fn($x) => $x['status'] === 'active')),
+                    'active_licenses' => count(array_filter($formattedLicenses, static fn($x) => $x['status'] === 'active')),
                     'total_customers' => count($customers),
-                    'pending_recoveries' => count(array_filter($recoveryRequests, fn($x) => ($x['status'] ?? '') === 'pending'))
-                ]
+                    'pending_recoveries' => count(array_filter($recoveryRequests, static fn($x) => ($x['status'] ?? '') === 'pending')),
+                ],
             ]);
-            break;
 
         case 'create_license':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation('licenses.manage');
             $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            
+
             $customerId = (int)($data['customer_id'] ?? 0);
-            $plan = $data['plan'] ?? 'pro';
-            $maxActivations = (int)($data['max_activations'] ?? 1);
-            $expiresAt = !empty($data['expires_at']) ? $data['expires_at'] : null;
-            $notes = $data['notes'] ?? '';
+            $plan = trim((string)($data['plan'] ?? 'pro'));
+            $maxActivations = max(1, min(100, (int)($data['max_activations'] ?? 1)));
+            $expiresAt = !empty($data['expires_at']) ? (string)$data['expires_at'] : null;
+            $notes = mb_substr(trim((string)($data['notes'] ?? '')), 0, 10000);
 
-            // Generate Key
+            if ($customerId <= 0) throw new InvalidArgumentException('A valid customer is required');
+            if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $plan)) throw new InvalidArgumentException('Invalid plan');
+
             $key = License::generateKey('HRC');
-
             $stmt = $pdo->prepare(
                 "INSERT INTO licenses (customer_id, license_key, plan, max_activations, expires_at, status, notes, created_at)
                  VALUES (?, ?, ?, ?, ?, 'active', ?, NOW())"
             );
             $stmt->execute([$customerId, $key, $plan, $maxActivations, $expiresAt, $notes]);
-            $newId = (int)$pdo->lastInsertId();
-
-            echo json_encode(['ok' => true, 'id' => $newId, 'key' => $key]);
-            break;
+            admin_api_reply(['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'key' => $key]);
 
         case 'update_license_status':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation('licenses.manage');
             $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
             $licenseId = (int)($data['license_id'] ?? 0);
-            $status = $data['status'] ?? 'active';
+            $status = strtolower(trim((string)($data['status'] ?? '')));
+            if ($licenseId <= 0 || !in_array($status, ['active', 'suspended', 'expired', 'revoked'], true)) {
+                throw new InvalidArgumentException('Invalid license status request');
+            }
 
-            $stmt = $pdo->prepare("UPDATE licenses SET status = ? WHERE id = ?");
+            $stmt = $pdo->prepare('UPDATE licenses SET status = ? WHERE id = ?');
             $stmt->execute([$status, $licenseId]);
-            echo json_encode(['ok' => true]);
-            break;
+            admin_api_reply(['ok' => true]);
 
         case 'reset_activation':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation('licenses.manage');
             $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
             $licenseId = (int)($data['license_id'] ?? 0);
             $activationId = (int)($data['activation_id'] ?? 0);
+            if ($licenseId <= 0 && $activationId <= 0) throw new InvalidArgumentException('A license or activation is required');
 
             if ($activationId > 0) {
-                $stmt = $pdo->prepare("DELETE FROM license_activations WHERE id = ?");
+                $stmt = $pdo->prepare('DELETE FROM license_activations WHERE id = ?');
                 $stmt->execute([$activationId]);
             } else {
-                $stmt = $pdo->prepare("DELETE FROM license_activations WHERE license_id = ?");
+                $stmt = $pdo->prepare('DELETE FROM license_activations WHERE license_id = ?');
                 $stmt->execute([$licenseId]);
             }
-            echo json_encode(['ok' => true]);
-            break;
+            admin_api_reply(['ok' => true]);
 
         case 'create_customer':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation('customers.manage');
             $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $name = trim($data['name'] ?? '');
-            $company = trim($data['company'] ?? '');
-            $email = trim($data['contact_email'] ?? $data['email'] ?? '');
-            $notes = trim($data['notes'] ?? '');
+            $name = mb_substr(trim((string)($data['name'] ?? '')), 0, 255);
+            $company = mb_substr(trim((string)($data['company'] ?? '')), 0, 255);
+            $email = mb_substr(trim((string)($data['contact_email'] ?? $data['email'] ?? '')), 0, 255);
+            $notes = mb_substr(trim((string)($data['notes'] ?? '')), 0, 10000);
 
-            if (!$name) throw new Exception('Customer name is required');
+            if ($name === '') throw new InvalidArgumentException('Customer name is required');
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new InvalidArgumentException('Invalid customer email');
 
-            $stmt = $pdo->prepare("INSERT INTO customers (name, company, contact_email, notes, created_at) VALUES (?, ?, ?, ?, NOW())");
+            $stmt = $pdo->prepare('INSERT INTO customers (name, company, contact_email, notes, created_at) VALUES (?, ?, ?, ?, NOW())');
             $stmt->execute([$name, $company, $email, $notes]);
-            $customerId = (int)$pdo->lastInsertId();
-
-            echo json_encode(['ok' => true, 'id' => $customerId]);
-            break;
+            admin_api_reply(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
 
         case 'handle_recovery':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation('recovery.review');
             $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
             $requestId = (int)($data['request_id'] ?? 0);
-            $status = $data['status'] ?? 'approved'; // approved or rejected
+            $status = strtolower(trim((string)($data['status'] ?? '')));
+            if ($requestId <= 0 || !in_array($status, ['approved', 'rejected'], true)) {
+                throw new InvalidArgumentException('Invalid recovery decision');
+            }
 
-            $stmt = $pdo->prepare("UPDATE password_recovery_requests SET status = ?, resolved_at = NOW() WHERE id = ?");
+            $stmt = $pdo->prepare("UPDATE password_recovery_requests SET status = ?, resolved_at = NOW() WHERE id = ? AND status = 'pending'");
             $stmt->execute([$status, $requestId]);
-            echo json_encode(['ok' => true]);
-            break;
+            if ($stmt->rowCount() !== 1) throw new RuntimeException('Recovery request is not pending or does not exist');
+            admin_api_reply(['ok' => true]);
 
         case 'push_subscribe':
-            if ($method !== 'POST') throw new Exception('POST required');
+            admin_api_require_mutation();
             $data = json_decode(file_get_contents('php://input'), true) ?? [];
             $endpoint = trim((string)($data['endpoint'] ?? ''));
             $p256dh = trim((string)($data['keys']['p256dh'] ?? ''));
@@ -206,21 +256,13 @@ try {
             $userAgent = mb_substr(trim((string)($data['user_agent'] ?? ($_SERVER['HTTP_USER_AGENT'] ?? ''))), 0, 255);
             $adminUsername = (string)Auth::currentUsername();
 
-            if ($endpoint === '' || $p256dh === '' || $auth === '') {
-                throw new Exception('Incomplete browser push subscription');
-            }
-            if (!filter_var($endpoint, FILTER_VALIDATE_URL) || stripos($endpoint, 'https://') !== 0) {
-                throw new Exception('Invalid push endpoint');
-            }
-            if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/', $deviceId)) {
-                throw new Exception('Invalid push device identity');
-            }
+            if ($endpoint === '' || $p256dh === '' || $auth === '') throw new InvalidArgumentException('Incomplete browser push subscription');
+            if (!filter_var($endpoint, FILTER_VALIDATE_URL) || stripos($endpoint, 'https://') !== 0) throw new InvalidArgumentException('Invalid push endpoint');
+            if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/', $deviceId)) throw new InvalidArgumentException('Invalid push device identity');
+            if (strlen($endpoint) > 2048 || strlen($p256dh) > 512 || strlen($auth) > 512) throw new InvalidArgumentException('Push subscription is too large');
 
             try {
                 $pdo->beginTransaction();
-                // One row per administrator/browser profile. If the push service
-                // rotates the endpoint, the old row is removed before the new one
-                // is saved instead of accumulating another apparent "device".
                 $delete = $pdo->prepare('DELETE FROM push_subscriptions WHERE admin_username = ? AND device_id = ? AND endpoint <> ?');
                 $delete->execute([$adminUsername, $deviceId, $endpoint]);
 
@@ -238,28 +280,23 @@ try {
                         updated_at = CURRENT_TIMESTAMP"
                 );
                 $stmt->execute([$adminUsername, $deviceId, $endpoint, $p256dh, $auth, $userAgent]);
-
-                // Remove abandoned browser profiles after 45 days without a sync.
                 $pdo->exec("DELETE FROM push_subscriptions WHERE last_seen_at < DATE_SUB(NOW(), INTERVAL 45 DAY)");
                 $pdo->commit();
             } catch (PDOException $e) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                // Keep rollout non-breaking until the additive migration is run.
-                if (stripos($e->getMessage(), 'device_id') === false && stripos($e->getMessage(), 'last_seen_at') === false) {
-                    throw $e;
-                }
-                $stmt = $pdo->prepare("REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)");
+                if (stripos($e->getMessage(), 'device_id') === false && stripos($e->getMessage(), 'last_seen_at') === false) throw $e;
+                $stmt = $pdo->prepare('REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)');
                 $stmt->execute([$adminUsername, $endpoint, $p256dh, $auth]);
             }
 
-            echo json_encode(['ok' => true, 'saved' => true, 'device_id' => $deviceId]);
-            break;
+            admin_api_reply(['ok' => true, 'saved' => true, 'device_id' => $deviceId]);
 
         default:
-            echo json_encode(['ok' => false, 'error' => 'Unknown action']);
-            break;
+            admin_api_reply(['ok' => false, 'error' => 'Unknown action'], 404);
     }
-} catch (Exception $e) {
-    http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+} catch (InvalidArgumentException $e) {
+    admin_api_reply(['ok' => false, 'error' => $e->getMessage()], 400);
+} catch (Throwable $e) {
+    ErrorHandler::report($e, 'admin_api_failure', ['action' => $action]);
+    admin_api_reply(['ok' => false, 'error' => 'The admin request could not be completed'], 500);
 }
