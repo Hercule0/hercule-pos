@@ -21,10 +21,10 @@ if (!str_contains($bootstrap, 'function json_input(int $maxBytes = 16384): array
 if (!str_contains($bootstrap, '$maxBytes = max(1024, min(262144, $maxBytes));')) {
     $fail('custom JSON body limits are not globally bounded');
 }
-if (!str_contains($bootstrap, "file_get_contents('php://input', false, null, 0, $maxBytes + 1)")) {
+if (!str_contains($bootstrap, "file_get_contents('php://input', false, null, 0, \$maxBytes + 1)")) {
     $fail('JSON parser does not stop reading after the bounded request size');
 }
-if (!str_contains($bootstrap, "Strict-Transport-Security: max-age=31536000")) {
+if (!str_contains($bootstrap, 'Strict-Transport-Security: max-age=31536000')) {
     $fail('public API HTTPS responses are missing HSTS');
 }
 if (!str_contains($agent, '$body = json_input(65536);')) {
