@@ -39,7 +39,10 @@ function render_header(string $title): void
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= htmlspecialchars($title) ?> — Hercule POS License Engine</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260826-hardening1">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260826-hardening2">
+<?php if ($currentPage === 'releases.php'): ?>
+<link rel="stylesheet" href="/public/admin/assets/css/releases.css?v=20260826-hardening2">
+<?php endif; ?>
 </head>
 <body class="role-<?= htmlspecialchars($role) ?>">
 <div class="app-layout">
@@ -201,9 +204,12 @@ function render_footer(): void
 </div>
 
 <div class="toast-stack" id="app-toast-stack" aria-live="polite"></div>
-<script src="/public/admin/assets/js/admin-shell.js?v=20260826-hardening1" defer></script>
-<script src="/public/admin/assets/js/pwa.js?v=20260826-hardening1" defer></script>
-<script src="/public/admin/assets/js/admin-health-live.js?v=20260826-hardening1" defer></script>
+<script src="/public/admin/assets/js/admin-shell.js?v=20260826-hardening2" defer></script>
+<script src="/public/admin/assets/js/pwa.js?v=20260826-hardening2" defer></script>
+<script src="/public/admin/assets/js/admin-health-live.js?v=20260826-hardening2" defer></script>
+<?php if ($currentPage === 'releases.php'): ?>
+<script src="/public/admin/assets/js/release-upload-fast.js?v=20260826-hardening2" defer></script>
+<?php endif; ?>
 </body>
 </html>
     <?php
