@@ -6,6 +6,7 @@ require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../../includes/ReleaseManager.php';
 require_once __DIR__ . '/../../includes/DeviceManager.php';
 require_once __DIR__ . '/../../includes/RateLimiter.php';
+require_once __DIR__ . '/../../includes/UpdateSigner.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_response(['ok'=>false,'error'=>'Method not allowed'], 405);
@@ -35,6 +36,7 @@ if (!RateLimiter::check(client_ip(), 'release_check_ip', 600, 5)
 try {
     $eligible = ReleaseManager::eligibleForClient($version, $licenseKey, $hwid, $channel);
 } catch (Throwable $e) {
+    ErrorHandler::report($e, 'release_check_eligibility_failed');
     json_response(['ok'=>false,'code'=>'RELEASE_SERVICE_UNAVAILABLE','error'=>'Release service unavailable'], 503);
 }
 
@@ -64,6 +66,21 @@ $releaseId = (int)$release['id'];
 $licenseId = (int)$eligible['license_id'];
 $activationId = (int)$eligible['activation_id'];
 
+// Current desktop releases must be stored by Hercule itself so the immutable
+// installer metadata can be signed. Legacy URL-only rows are never silently
+// promoted into the trusted auto-update channel.
+if (empty($release['storage_key'])
+    || empty($release['installer_filename'])
+    || (int)($release['installer_size'] ?? 0) <= 0
+    || !preg_match('/^[a-f0-9]{64}$/i', (string)($release['installer_sha256'] ?? ''))
+    || !preg_match('/^[a-f0-9]{128}$/i', (string)($release['installer_sha512'] ?? ''))) {
+    json_response([
+        'ok'=>false,
+        'code'=>'UNSIGNED_LEGACY_RELEASE',
+        'error'=>'This release is not eligible for the secured desktop updater.',
+    ], 503);
+}
+
 $base = trim((string)($_ENV['HERCULE_PUBLIC_BASE_URL'] ?? $_SERVER['HERCULE_PUBLIC_BASE_URL'] ?? getenv('HERCULE_PUBLIC_BASE_URL') ?: ''));
 if ($base === '') {
     $host = trim((string)($_SERVER['WEBSITE_HOSTNAME'] ?? $_SERVER['HTTP_HOST'] ?? ''));
@@ -75,16 +92,40 @@ if ($base === '') {
 $base = rtrim($base, '/');
 
 $artifactUrls = [];
-if (!empty($release['storage_key'])) {
-    try {
-        $token = ReleaseManager::createDownloadGrant($releaseId, $licenseId, $activationId);
-        if ($base === '') throw new RuntimeException('Public base URL is unavailable.');
-        foreach (['installer','blockmap','metadata'] as $artifact) {
-            $artifactUrls[$artifact] = $base . '/public/api/release_download.php?token=' . rawurlencode($token) . '&artifact=' . $artifact;
-        }
-    } catch (Throwable $e) {
-        json_response(['ok'=>false,'code'=>'DOWNLOAD_GRANT_FAILED','error'=>'Could not prepare secure update download'], 503);
+try {
+    $token = ReleaseManager::createDownloadGrant($releaseId, $licenseId, $activationId);
+    if ($base === '') throw new RuntimeException('Public base URL is unavailable.');
+    foreach (['installer','blockmap','metadata'] as $artifact) {
+        $artifactUrls[$artifact] = $base . '/public/api/release_download.php?token=' . rawurlencode($token) . '&artifact=' . $artifact;
     }
+} catch (Throwable $e) {
+    ErrorHandler::report($e, 'release_download_grant_failed', ['release_id'=>$releaseId]);
+    json_response(['ok'=>false,'code'=>'DOWNLOAD_GRANT_FAILED','error'=>'Could not prepare secure update download'], 503);
+}
+
+$manifestInput = [
+    'release_id' => $releaseId,
+    'version' => (string)$release['version'],
+    'channel' => (string)($release['channel'] ?? 'stable'),
+    'minimum_supported_version' => $release['minimum_supported_version'] ?: null,
+    'mandatory' => (bool)$eligible['mandatory'],
+    'below_minimum_supported' => (bool)$eligible['below_minimum_supported'],
+    'installer_file' => (string)$release['installer_filename'],
+    'installer_size' => (int)$release['installer_size'],
+    'installer_sha256' => strtolower((string)$release['installer_sha256']),
+    'installer_sha512' => strtolower((string)$release['installer_sha512']),
+    'published_at' => $release['published_at'] ?: null,
+];
+
+try {
+    $signedUpdate = UpdateSigner::sign($manifestInput);
+} catch (Throwable $e) {
+    ErrorHandler::report($e, 'update_signing_unavailable', ['release_id'=>$releaseId]);
+    json_response([
+        'ok'=>false,
+        'code'=>'UPDATE_SIGNING_UNAVAILABLE',
+        'error'=>'Secure update signing is unavailable.',
+    ], 503);
 }
 
 try {
@@ -99,6 +140,7 @@ json_response([
     'mandatory'=>(bool)$eligible['mandatory'],
     'below_minimum_supported'=>(bool)$eligible['below_minimum_supported'],
     'current_version'=>$version,
+    'signed_update'=>$signedUpdate,
     'release'=>[
         'id'=>$releaseId,
         'version'=>$release['version'],
@@ -106,26 +148,26 @@ json_response([
         'minimum_supported_version'=>$release['minimum_supported_version'],
         'release_notes'=>$release['release_notes'],
         'published_at'=>$release['published_at'],
-        'installer'=>!empty($artifactUrls['installer']) ? [
+        'installer'=>[
             'url'=>$artifactUrls['installer'],
             'file'=>$release['installer_filename'],
             'size'=>(int)$release['installer_size'],
             'sha256'=>$release['installer_sha256'],
             'sha512'=>$release['installer_sha512'],
-        ] : null,
-        'blockmap'=>!empty($artifactUrls['blockmap']) ? [
+        ],
+        'blockmap'=>!empty($release['blockmap_filename']) ? [
             'url'=>$artifactUrls['blockmap'],
             'file'=>$release['blockmap_filename'],
             'size'=>(int)$release['blockmap_size'],
             'sha256'=>$release['blockmap_sha256'],
         ] : null,
-        'metadata'=>!empty($artifactUrls['metadata']) ? [
+        'metadata'=>!empty($release['metadata_filename']) ? [
             'url'=>$artifactUrls['metadata'],
             'file'=>$release['metadata_filename'],
             'size'=>(int)$release['metadata_size'],
             'sha256'=>$release['metadata_sha256'],
         ] : null,
-        'external_url'=>empty($release['storage_key']) ? ($release['download_url'] ?? null) : null,
+        'external_url'=>null,
     ],
     'server_time'=>gmdate('Y-m-d\TH:i:s\Z'),
 ]);
