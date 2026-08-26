@@ -63,18 +63,29 @@ function json_input(int $maxBytes = 16384): array
         json_response(['ok' => false, 'error' => 'Request body is too large.'], 413);
     }
 
+    $contentType = strtolower(trim((string)($_SERVER['CONTENT_TYPE'] ?? '')));
+    $expectsJson = str_starts_with($contentType, 'application/json')
+        || str_contains($contentType, '+json');
+
     if (trim($raw) !== '') {
         try {
             $data = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
             if (is_array($data)) {
                 return $data;
             }
+            if ($expectsJson) {
+                json_response(['ok' => false, 'error' => 'JSON body must be an object.'], 400);
+            }
         } catch (JsonException $e) {
-            // Fall through to $_POST fallback if present.
+            if ($expectsJson) {
+                json_response(['ok' => false, 'error' => 'Malformed JSON request body.'], 400);
+            }
         }
     }
 
-    if (!empty($_POST) && is_array($_POST)) {
+    // Keep legacy form submissions compatible, but never reinterpret malformed
+    // application/json as form input. This prevents ambiguous parser behavior.
+    if (!$expectsJson && !empty($_POST) && is_array($_POST)) {
         return $_POST;
     }
 
