@@ -26,13 +26,6 @@
     });
   }
 
-  document.querySelectorAll(".release-actions form[data-confirm]").forEach(function (actionForm) {
-    actionForm.addEventListener("submit", function (event) {
-      var message = String(actionForm.dataset.confirm || "Confirm this release action?");
-      if (!window.confirm(message)) event.preventDefault();
-    });
-  });
-
   if (!form) return;
 
   var fileInput = document.getElementById("release-bundle-file");
