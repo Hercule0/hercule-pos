@@ -236,7 +236,7 @@ function ai_sanitize_answer_payload(array $answer): array {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ai_json(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);
-$body = json_input();
+$body = json_input(65536);
 $licenseKey = trim((string)($body['license_key'] ?? ''));
 $hwid = trim((string)($body['hwid'] ?? ''));
 $question = trim((string)($body['question'] ?? ''));
