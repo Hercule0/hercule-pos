@@ -25,6 +25,9 @@ return [
         'charset'  => 'utf8mb4',
     ],
 
+    // Legacy paths are retained for public-key compatibility only. Production
+    // private signing material is loaded from environment variables by the
+    // dedicated signer classes and must never be committed to the repository.
     'rsa' => [
         'private_key_path' => __DIR__ . '/../keys/license_signing_private.pem',
         'public_key_path'  => __DIR__ . '/../keys/license_signing_public.pem',
@@ -40,11 +43,12 @@ return [
         'key_rate_limit_window_minutes' => 5,
     ],
 
-    // Web Push only. These VAPID keys are separate from the RSA license-signing keys.
-    // Environment variables can still override them later if deployment needs change.
+    // Web Push only. VAPID private material is environment-only. The former
+    // committed fallback must be considered compromised and rotated before
+    // this branch is merged into production.
     'vapid' => [
         'subject' => env('VAPID_SUBJECT', 'mailto:admin@herculepos.com'),
-        'public_key' => env('VAPID_PUBLIC_KEY', 'BKraEuulwXx3knDp50hkOAI1QaJBnFxTngjhnfi48WkMMKcDSBCwxn4WePT0RSrEnJWEmgX-DpG9WiVgK_rNAAY'),
-        'private_key' => env('VAPID_PRIVATE_KEY', '-d2Tb1JOz-SEIDHQyvZNFqg54QP476Y8otgZmwVY9kg'),
+        'public_key' => env('VAPID_PUBLIC_KEY', ''),
+        'private_key' => env('VAPID_PRIVATE_KEY', ''),
     ],
 ];
