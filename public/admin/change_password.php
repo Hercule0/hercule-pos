@@ -21,9 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $adminId = (int) $_SESSION['admin_id'];
             $result = Auth::changePassword($adminId, $current, $new);
             if ($result['ok']) {
-                // Password changes invalidate every remembered-login token for this account.
-                // The current authenticated session remains valid and has already been rotated
-                // by Auth::changePassword().
                 $stmt = Database::pdo()->prepare('DELETE FROM user_sessions WHERE admin_id = ?');
                 $stmt->execute([$adminId]);
 
@@ -88,7 +85,7 @@ render_header('Change Password');
             </label>
 
             <div class="password-strength" aria-live="polite">
-                <div class="strength-track"><i id="strength-bar"></i></div>
+                <div class="strength-track"><i id="strength-bar" data-score="0"></i></div>
                 <span id="strength-label">Enter a new password</span>
             </div>
 
@@ -125,58 +122,5 @@ render_header('Change Password');
     </div>
 </div>
 
-<script>
-(function () {
-    document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var input = document.getElementById(button.dataset.togglePassword);
-            if (!input) return;
-            var show = input.type === 'password';
-            input.type = show ? 'text' : 'password';
-            button.classList.toggle('showing', show);
-            button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-        });
-    });
-
-    var current = document.getElementById('current-password');
-    var next = document.getElementById('new-password');
-    var confirm = document.getElementById('confirm-password');
-    var bar = document.getElementById('strength-bar');
-    var label = document.getElementById('strength-label');
-    var match = document.getElementById('match-message');
-
-    function updateStrength() {
-        var value = next.value;
-        var rules = {
-            length: value.length >= 12,
-            case: /[a-z]/.test(value) && /[A-Z]/.test(value),
-            number: /[0-9]/.test(value),
-            symbol: /[^A-Za-z0-9]/.test(value),
-            different: value.length > 0 && value !== current.value
-        };
-        Object.keys(rules).forEach(function (name) {
-            var item = document.querySelector('[data-rule="' + name + '"]');
-            if (item) item.classList.toggle('valid', rules[name]);
-        });
-        var score = Object.values(rules).filter(Boolean).length;
-        bar.style.width = (score * 20) + '%';
-        bar.dataset.score = score;
-        label.textContent = value.length === 0 ? 'Enter a new password' : ['Very weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong'][score];
-
-        if (confirm.value.length) {
-            var matches = confirm.value === value;
-            match.textContent = matches ? 'Passwords match' : 'Passwords do not match';
-            match.className = 'match-message ' + (matches ? 'valid' : 'invalid');
-        } else {
-            match.textContent = '';
-            match.className = 'match-message';
-        }
-    }
-
-    [current, next, confirm].forEach(function (input) {
-        input.addEventListener('input', updateStrength);
-    });
-})();
-</script>
-
+<script src="/public/admin/assets/js/change-password.js?v=20260826-hardening1" defer></script>
 <?php render_footer(); ?>
