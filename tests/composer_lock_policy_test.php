@@ -23,6 +23,29 @@ if (($requirements['minishlink/web-push'] ?? null) !== '^11.0') {
     $fail('minishlink/web-push must remain pinned to the reviewed v11 range');
 }
 
+// Mirror Composer\Package\Locker::getContentHash() so CI fails before
+// composer install can silently continue with a stale root dependency hash.
+$relevantKeys = [
+    'name', 'version', 'require', 'require-dev', 'conflict', 'replace', 'provide',
+    'minimum-stability', 'prefer-stable', 'repositories', 'extra',
+];
+$relevant = [];
+foreach (array_intersect($relevantKeys, array_keys($composer)) as $key) {
+    $relevant[$key] = $composer[$key];
+}
+if (isset($composer['config']['platform'])) {
+    $relevant['config']['platform'] = $composer['config']['platform'];
+}
+ksort($relevant);
+$encodedRelevant = json_encode($relevant);
+if (!is_string($encodedRelevant)) {
+    $fail('composer root dependency metadata could not be encoded');
+}
+$expectedContentHash = md5($encodedRelevant);
+if (($lock['content-hash'] ?? '') !== $expectedContentHash) {
+    $fail('composer.lock content-hash is stale; run composer update --lock before release');
+}
+
 $versions = [];
 foreach (($lock['packages'] ?? []) as $package) {
     if (isset($package['name'], $package['version'])) {
