@@ -30,6 +30,9 @@ if (preg_match('/<script\b/i', $releases)) {
 if (preg_match('/<style\b/i', $releases)) {
     $fail('releases.php still contains an inline style block');
 }
+if (preg_match('/\sstyle\s*=\s*/i', $releases)) {
+    $fail('releases.php still contains inline style attributes');
+}
 if (preg_match('/\son[a-z]+\s*=/i', $releases)) {
     $fail('releases.php still contains inline event handlers');
 }
@@ -38,6 +41,9 @@ if (str_contains($releases, '/public/admin/release_upload.php')) {
 }
 if (!str_contains($releases, 'data-max-upload-bytes=')) {
     $fail('release form does not expose its server upload limit to the external uploader');
+}
+if (!str_contains($releases, '<progress class="progress-track progress-native" id="progress-bar"')) {
+    $fail('release progress does not use the CSP-safe native progress element');
 }
 if (!str_contains($releases, 'data-confirm="Delete this release and its stored files?"')) {
     $fail('destructive release confirmation was not converted to shared external JS wiring');
@@ -51,16 +57,19 @@ if (!str_contains($bootstrap, '/public/admin/assets/js/release-upload-fast.js'))
 if (str_contains($pwa, 'release-upload-fast.js')) {
     $fail('PWA shell still dynamically injects the release uploader');
 }
-foreach (['data.maxUploadBytes', 'target-search', '/public/admin/release_upload_fast.php'] as $needle) {
+foreach (['data.maxUploadBytes', 'target-search', '/public/admin/release_upload_fast.php', 'bar.value = safePercent'] as $needle) {
     if (!str_contains($fast, $needle)) {
         $fail("external release uploader is missing {$needle}");
     }
 }
+if (str_contains($fast, '.style.') || str_contains($fast, 'setAttribute("style"')) {
+    $fail('release uploader still mutates inline styles');
+}
 if (!str_contains($shell, 'form.dataset.confirm') || !str_contains($shell, 'window.confirm(confirmMessage)')) {
     $fail('shared admin shell does not enforce data-confirm forms');
 }
-if (trim($css) === '') {
-    $fail('release stylesheet is empty');
+if (trim($css) === '' || !str_contains($css, '::-webkit-progress-value')) {
+    $fail('release stylesheet does not define native progress styling');
 }
 
 echo "PASS release page external JS/CSS hardening\n";
