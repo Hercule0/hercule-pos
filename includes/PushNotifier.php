@@ -35,6 +35,23 @@ final class PushNotifier
         return $stmt->fetchAll() ?: [];
     }
 
+    private static function activeSubscriptionsForAdmin(string $adminUsername): array
+    {
+        self::pruneStaleSubscriptions();
+        $stmt = Database::pdo()->prepare(
+            'SELECT ps.*
+             FROM push_subscriptions ps
+             INNER JOIN admin_users au
+               ON au.username = ps.admin_username
+              AND au.is_active = 1
+              AND ps.created_at >= au.created_at
+             WHERE ps.admin_username = ?
+             ORDER BY ps.created_at DESC'
+        );
+        $stmt->execute([$adminUsername]);
+        return $stmt->fetchAll() ?: [];
+    }
+
     public static function getSubscriptions(?string $eventType = null): array
     {
         if ($eventType === null) {
@@ -70,9 +87,6 @@ final class PushNotifier
             $stmt = Database::pdo()->query($sql);
             return $stmt->fetchAll() ?: [];
         } catch (PDOException $e) {
-            // During rollout the preferences table may not exist yet. Keep the
-            // existing notification behavior, but never send to disabled,
-            // deleted, or stale pre-recreation administrator subscriptions.
             error_log('Notification preference lookup unavailable: ' . $e->getMessage());
             return self::activeSubscriptions();
         }
@@ -80,7 +94,7 @@ final class PushNotifier
 
     public static function subscribe(string $endpoint, string $p256dh, string $auth, $adminUsername): bool
     {
-        $stmt = Database::pdo()->prepare("REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)");
+        $stmt = Database::pdo()->prepare('REPLACE INTO push_subscriptions (admin_username, endpoint, p256dh_key, auth_key) VALUES (?, ?, ?, ?)');
         return $stmt->execute([(string)$adminUsername, $endpoint, $p256dh, $auth]);
     }
 
@@ -112,9 +126,33 @@ final class PushNotifier
         );
     }
 
-    public static function sendPush(string $title, string $body, ?string $url = null, ?string $tag = null, ?string $eventType = null): array
-    {
-        $subscriptions = self::getSubscriptions($eventType);
+    /**
+     * Send an administrator-initiated test only to that administrator's own
+     * active browser profiles. This prevents a read-only/support user from
+     * spamming every administrator's devices through the test endpoint.
+     */
+    public static function sendPushToAdmin(
+        string $adminUsername,
+        string $title,
+        string $body,
+        ?string $url = null,
+        ?string $tag = null
+    ): array {
+        return self::sendPush($title, $body, $url, $tag, null, $adminUsername);
+    }
+
+    public static function sendPush(
+        string $title,
+        string $body,
+        ?string $url = null,
+        ?string $tag = null,
+        ?string $eventType = null,
+        ?string $adminUsername = null
+    ): array {
+        $subscriptions = $adminUsername !== null
+            ? self::activeSubscriptionsForAdmin($adminUsername)
+            : self::getSubscriptions($eventType);
+
         if (empty($subscriptions)) {
             return ['ok' => true, 'subscriptions_count' => 0, 'dispatched' => 0];
         }
