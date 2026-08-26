@@ -276,3 +276,14 @@
   script.dataset.herculeReleaseFast = '1';
   document.head.appendChild(script);
 })();
+
+// Replace hard-coded sidebar health labels with authenticated live checks.
+(function () {
+  if (!document.querySelector('.sidebar-health-card')) return;
+  if (document.querySelector('script[data-hercule-live-health]')) return;
+  var script = document.createElement('script');
+  script.src = '/public/admin/assets/js/admin-health-live.js?v=20260826-hardening1';
+  script.async = true;
+  script.dataset.herculeLiveHealth = '1';
+  document.head.appendChild(script);
+})();
