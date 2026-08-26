@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $manager = file_get_contents($root . '/includes/ReleaseManager.php');
+$eventEndpoint = file_get_contents($root . '/public/api/release_event.php');
 
 $fail = static function (string $message): never {
     fwrite(STDERR, "FAIL: {$message}\n");
     exit(1);
 };
 
-if (!is_string($manager)) {
-    $fail('release manager source could not be read');
+if (!is_string($manager) || !is_string($eventEndpoint)) {
+    $fail('release entitlement sources could not be read');
 }
 
 foreach ([
@@ -22,6 +23,16 @@ foreach ([
     "AND (expires_at IS NULL OR expires_at > NOW())" => 'targeted release selection still accepts expired licenses',
 ] as $needle => $message) {
     if (!str_contains($manager, $needle)) {
+        $fail($message);
+    }
+}
+
+foreach ([
+    'l.expires_at AS license_expires_at' => 'update event endpoint does not load license expiry',
+    '$licenseExpired = !empty($client[\'license_expires_at\'])' => 'update event endpoint does not calculate entitlement expiry',
+    '|| $licenseExpired ||' => 'expired license can still submit update telemetry',
+] as $needle => $message) {
+    if (!str_contains($eventEndpoint, $needle)) {
         $fail($message);
     }
 }
