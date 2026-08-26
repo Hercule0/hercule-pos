@@ -16,6 +16,9 @@ if (!is_string($storage)) {
 
 foreach ([
     "if (isset(\$entries[\$name]))" => 'duplicate ZIP entries are not rejected',
+    'MAX_MANIFEST_BYTES' => 'manifest decompression has no dedicated safety ceiling',
+    'statIndex($manifestIndex)' => 'manifest uncompressed size is not inspected before decompression',
+    'getFromIndex($manifestIndex, self::MAX_MANIFEST_BYTES + 1)' => 'manifest parsing can inflate an unbounded ZIP entry',
     'MAX_BLOCKMAP_BYTES' => 'blockmap decompression does not have a dedicated safety ceiling',
     'MAX_METADATA_BYTES' => 'updater metadata decompression does not have a dedicated safety ceiling',
     'self::extractEntry($zip, $name, $dest, (int)$meta[\'size\'])' => 'artifact extraction is not bounded by the verified manifest size',
@@ -29,8 +32,11 @@ foreach ([
     }
 }
 
+if (str_contains($storage, "$manifestText = $zip->getFromName('manifest.json')")) {
+    $fail('legacy unbounded manifest decompression remains');
+}
 if (preg_match('/extractEntry\s*\([^,]+,[^,]+,[^,]+\)\s*;/', $storage) === 1) {
     $fail('an unbounded three-argument extractEntry call remains');
 }
 
-echo "PASS release storage extraction hardening\n";
+echo "PASS release storage manifest and artifact extraction hardening\n";
