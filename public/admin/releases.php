@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/ReleaseManager.php';
 require_once __DIR__ . '/../../includes/ReleaseStorage.php';
+require_once __DIR__ . '/../../includes/AuditLog.php';
 
 Auth::require();
 Auth::requirePermission('releases.manage');
@@ -30,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         switch ($action) {
             case 'setup_v2':
                 ReleaseManager::ensureSchemaV2();
+                AuditLog::adminAction('release_v2_setup', null, 'Release Management V2 initialized');
                 $finish(true, 'Release Management V2 is ready.');
                 break;
             case 'upload_bundle':
@@ -38,34 +40,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @set_time_limit(0);
                 ReleaseManager::ensureSchemaV2();
                 $result = ReleaseManager::createFromBundle($_FILES['bundle'] ?? [], $_POST, Auth::currentUsername() ?? 'admin');
+                AuditLog::adminAction(
+                    'release_bundle_uploaded',
+                    (int)$result['id'],
+                    'version=' . $result['version'] . '; published=' . ($result['published'] ? '1' : '0') . '; target=' . $result['target_mode']
+                );
                 $finish(true, 'Update bundle v' . $result['version'] . ' uploaded successfully' . ($result['published'] ? ' and published.' : ' as a draft.'));
                 break;
             case 'publish':
-                ReleaseManager::setPublished((int)($_POST['release_id'] ?? 0), true);
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                ReleaseManager::setPublished($releaseId, true);
+                AuditLog::adminAction('release_published', $releaseId, 'Desktop release published');
                 $finish(true, 'Release published.');
                 break;
             case 'unpublish':
-                ReleaseManager::setPublished((int)($_POST['release_id'] ?? 0), false);
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                ReleaseManager::setPublished($releaseId, false);
+                AuditLog::adminAction('release_unpublished', $releaseId, 'Desktop release unpublished');
                 $finish(true, 'Release unpublished.');
                 break;
             case 'pause':
-                ReleaseManager::setPaused((int)($_POST['release_id'] ?? 0), true);
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                ReleaseManager::setPaused($releaseId, true);
+                AuditLog::adminAction('release_paused', $releaseId, 'Desktop release rollout paused');
                 $finish(true, 'Release rollout paused.');
                 break;
             case 'resume':
-                ReleaseManager::setPaused((int)($_POST['release_id'] ?? 0), false);
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                ReleaseManager::setPaused($releaseId, false);
+                AuditLog::adminAction('release_resumed', $releaseId, 'Desktop release rollout resumed');
                 $finish(true, 'Release rollout resumed.');
                 break;
             case 'mandatory':
-                ReleaseManager::setMandatory((int)($_POST['release_id'] ?? 0), !empty($_POST['value']));
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                $mandatory = !empty($_POST['value']);
+                ReleaseManager::setMandatory($releaseId, $mandatory);
+                AuditLog::adminAction('release_mandatory_changed', $releaseId, 'mandatory=' . ($mandatory ? '1' : '0'));
                 $finish(true, 'Mandatory update setting changed.');
                 break;
             case 'release_all':
-                ReleaseManager::setTargets((int)($_POST['release_id'] ?? 0), 'all', []);
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                ReleaseManager::setTargets($releaseId, 'all', []);
+                AuditLog::adminAction('release_audience_all', $releaseId, 'Release audience expanded to all eligible users');
                 $finish(true, 'Release is now available to all eligible users.');
                 break;
             case 'delete':
-                ReleaseManager::delete((int)($_POST['release_id'] ?? 0));
+                $releaseId = (int)($_POST['release_id'] ?? 0);
+                $releaseBeforeDelete = ReleaseManager::find($releaseId);
+                ReleaseManager::delete($releaseId);
+                AuditLog::adminAction('release_deleted', $releaseId, 'version=' . (string)($releaseBeforeDelete['version'] ?? 'unknown'));
                 $finish(true, 'Release and stored files deleted.');
                 break;
             default:
