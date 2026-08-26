@@ -1,4 +1,4 @@
-name: Deploy PHP app to Azure Web App
+name: Validate and deploy PHP app
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
+  group: hercule-server-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -22,7 +22,7 @@ env:
   PHP_VERSION: '8.3'
 
 jobs:
-  build-and-deploy:
+  validate:
     runs-on: ubuntu-latest
 
     steps:
@@ -33,15 +33,25 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
+          tools: composer:v2
 
       - name: Validate PHP syntax
-        run: find . -path './deploy_package' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: find . -path './deploy_package' -prune -o -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Validate operational scripts
         run: bash -n scripts/*.sh
 
-      - name: Install Dependencies
+      - name: Repository secret gate
+        run: bash scripts/security-gate.sh
+
+      - name: Validate Composer metadata
+        run: composer validate --strict --no-check-publish
+
+      - name: Install dependencies from lockfile
         run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Audit locked dependencies
+        run: composer audit --locked --no-interaction
 
       - name: Run test suite
         run: |
@@ -51,11 +61,7 @@ jobs:
       - name: Prepare deployment package
         run: |
           echo "Preparing PHP application..."
-          if [ -f composer.json ]; then
-            composer install --no-dev --prefer-dist --no-progress --no-interaction
-          fi
-
-          # Build a clean deployment package.
+          composer install --no-dev --prefer-dist --no-progress --no-interaction --classmap-authoritative
           rm -rf deploy_package
           mkdir deploy_package
           rsync -a \
@@ -67,8 +73,32 @@ jobs:
             --exclude='web.config' \
             ./ deploy_package/
 
+      - name: Upload validated deployment package
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hercule-server-deploy
+          path: deploy_package
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-production:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Download validated package
+        uses: actions/download-artifact@v4
+        with:
+          name: hercule-server-deploy
+          path: deploy_package
+
       - name: Azure Login
-        if: github.event_name != 'pull_request'
         uses: azure/login@v2
         with:
           client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
@@ -76,14 +106,12 @@ jobs:
           subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
 
       - name: Deploy to Azure Web App
-        if: github.event_name != 'pull_request'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: deploy_package
 
       - name: Verify deployed application health
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
@@ -92,7 +120,7 @@ jobs:
             exit 1
           fi
 
-          HEALTH_URL="https://$APP_HOST/public/health.php"
+          HEALTH_URL="https://$APP_HOST/public/health.php?format=json"
           echo "Waiting for $HEALTH_URL"
 
           for attempt in {1..12}; do
