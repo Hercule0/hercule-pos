@@ -1,4 +1,4 @@
-const CACHE_VERSION = "hercule-admin-shell-v13-scroll-sw-fix";
+const CACHE_VERSION = "hercule-admin-shell-v14-push-url-guard";
 const STATIC_ASSETS = [
   "/public/admin/offline.html",
   "/public/admin/manifest.json",
@@ -7,6 +7,18 @@ const STATIC_ASSETS = [
   "/public/admin/assets/icons/app-icon-512.png",
   "/public/admin/assets/icons/apple-touch-icon.png"
 ];
+
+function safeAdminUrl(candidate) {
+  try {
+    var parsed = new URL(String(candidate || "/public/admin/index.php"), self.location.origin);
+    if (parsed.origin !== self.location.origin || !parsed.pathname.startsWith("/public/admin/")) {
+      throw new Error("push target outside admin scope");
+    }
+    return parsed.href;
+  } catch (error) {
+    return new URL("/public/admin/index.php", self.location.origin).href;
+  }
+}
 
 self.addEventListener("install", function (event) {
   self.skipWaiting();
@@ -81,12 +93,12 @@ self.addEventListener("push", function (event) {
   if (event.data) {
     try {
       var incoming = event.data.json();
-      data.title = incoming.title || data.title;
-      data.body = incoming.body || incoming.message || data.body;
+      data.title = String(incoming.title || data.title).slice(0, 120);
+      data.body = String(incoming.body || incoming.message || data.body).slice(0, 500);
       data.url = incoming.url || incoming.actionUrl || data.url;
-      data.tag = incoming.tag;
+      data.tag = incoming.tag ? String(incoming.tag).slice(0, 120) : undefined;
     } catch (e) {
-      data.body = event.data.text() || data.body;
+      data.body = String(event.data.text() || data.body).slice(0, 500);
     }
   }
 
@@ -97,7 +109,7 @@ self.addEventListener("push", function (event) {
     vibrate: [200, 100, 200, 100, 200],
     tag: data.tag || "hercule-push-" + Date.now(),
     renotify: true,
-    data: { url: data.url }
+    data: { url: safeAdminUrl(data.url) }
   };
 
   event.waitUntil(self.registration.showNotification(data.title, options));
@@ -105,19 +117,18 @@ self.addEventListener("push", function (event) {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  var targetUrl = (event.notification.data && event.notification.data.url) || "/public/admin/index.php";
-  var absoluteTarget = new URL(targetUrl, self.location.origin).href;
+  var targetUrl = safeAdminUrl(event.notification.data && event.notification.data.url);
 
   event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
     for (var i = 0; i < clientList.length; i++) {
       var client = clientList[i];
       if (client.url.indexOf("/public/admin/") !== -1 && "focus" in client) {
         return client.focus().then(function (focusedClient) {
-          if (focusedClient && "navigate" in focusedClient) return focusedClient.navigate(absoluteTarget);
+          if (focusedClient && "navigate" in focusedClient) return focusedClient.navigate(targetUrl);
           return focusedClient;
         });
       }
     }
-    if (clients.openWindow) return clients.openWindow(absoluteTarget);
+    if (clients.openWindow) return clients.openWindow(targetUrl);
   }));
 });
