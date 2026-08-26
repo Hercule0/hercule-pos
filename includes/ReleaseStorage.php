@@ -5,6 +5,7 @@ declare(strict_types=1);
 final class ReleaseStorage
 {
     private const DEFAULT_MAX_UPLOAD_MB = 512;
+    private const MAX_MANIFEST_BYTES = 256 * 1024;
     private const MAX_BLOCKMAP_BYTES = 32 * 1024 * 1024;
     private const MAX_METADATA_BYTES = 1024 * 1024;
 
@@ -93,8 +94,18 @@ final class ReleaseStorage
                 throw new InvalidArgumentException('manifest.json is missing from the update bundle.');
             }
 
-            $manifestText = $zip->getFromName('manifest.json');
-            if (!is_string($manifestText) || strlen($manifestText) > 256 * 1024) {
+            // Inspect the ZIP directory before decompression. getFromName()
+            // would otherwise inflate the entire manifest before the length
+            // check, allowing a tiny compressed ZIP entry to consume excessive
+            // memory. statIndex + bounded getFromIndex keeps this fail-closed.
+            $manifestIndex = $zip->locateName('manifest.json');
+            $manifestStat = $manifestIndex !== false ? $zip->statIndex($manifestIndex) : false;
+            $manifestSize = is_array($manifestStat) ? (int)($manifestStat['size'] ?? -1) : -1;
+            if ($manifestIndex === false || $manifestSize < 2 || $manifestSize > self::MAX_MANIFEST_BYTES) {
+                throw new InvalidArgumentException('manifest.json is invalid or exceeds the safety limit.');
+            }
+            $manifestText = $zip->getFromIndex($manifestIndex, self::MAX_MANIFEST_BYTES + 1);
+            if (!is_string($manifestText) || strlen($manifestText) !== $manifestSize) {
                 throw new InvalidArgumentException('manifest.json is invalid.');
             }
             $manifest = json_decode($manifestText, true);
