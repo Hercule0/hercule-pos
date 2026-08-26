@@ -27,6 +27,15 @@ if (!str_contains($bootstrap, "file_get_contents('php://input', false, null, 0, 
 if (!str_contains($bootstrap, 'Strict-Transport-Security: max-age=31536000')) {
     $fail('public API HTTPS responses are missing HSTS');
 }
+if (!str_contains($bootstrap, "Malformed JSON request body.")) {
+    $fail('application/json parser does not fail closed on malformed JSON');
+}
+if (!str_contains($bootstrap, "JSON body must be an object.")) {
+    $fail('application/json parser does not reject scalar top-level payloads');
+}
+if (!str_contains($bootstrap, 'if (!$expectsJson && !empty($_POST) && is_array($_POST))')) {
+    $fail('malformed JSON can still be reinterpreted through the form fallback');
+}
 if (!str_contains($agent, '$body = json_input(65536);')) {
     $fail('AI agent does not opt into the bounded 64 KiB tool-result envelope');
 }
@@ -34,4 +43,4 @@ if (str_contains($agent, 'json_input(262144)')) {
     $fail('AI agent unnecessarily uses the maximum public API body allowance');
 }
 
-echo "PASS public API bootstrap security and payload bounds\n";
+echo "PASS public API bootstrap security, strict JSON parsing, and payload bounds\n";
