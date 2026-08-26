@@ -23,6 +23,19 @@ final class UpdateSigner
         return ($value === false || $value === null) ? '' : trim((string) $value);
     }
 
+    private static function expectedPublicFingerprint(): string
+    {
+        // CI may use an ephemeral key only when explicitly running as test.
+        // Production can never override the desktop trust root.
+        if (strtolower(self::env('APP_ENV')) === 'test') {
+            $testFingerprint = strtolower(self::env('UPDATE_TEST_PUBLIC_KEY_SHA256'));
+            if (preg_match('/^[a-f0-9]{64}$/', $testFingerprint)) {
+                return $testFingerprint;
+            }
+        }
+        return self::EXPECTED_PUBLIC_KEY_SHA256;
+    }
+
     private static function privateKeyPem(): string
     {
         $pem = self::env('UPDATE_PRIVATE_KEY');
@@ -57,7 +70,7 @@ final class UpdateSigner
 
         $details = openssl_pkey_get_details($privateKey);
         $publicPem = is_array($details) ? (string)($details['key'] ?? '') : '';
-        if ($publicPem === '' || !hash_equals(self::EXPECTED_PUBLIC_KEY_SHA256, hash('sha256', $publicPem))) {
+        if ($publicPem === '' || !hash_equals(self::expectedPublicFingerprint(), hash('sha256', $publicPem))) {
             throw new RuntimeException('UPDATE_PRIVATE_KEY does not match the desktop update trust key.');
         }
 
