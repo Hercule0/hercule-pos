@@ -138,13 +138,13 @@ flash_render();
     <section class="admin-create-card">
         <h2>Administrator</h2>
         <form method="get">
-            <label class="auth-field"><span>Select account</span><div class="auth-input"><select name="admin_id" onchange="this.form.submit()">
+            <label class="auth-field"><span>Select account</span><div class="auth-input"><select name="admin_id" data-submit-on-change>
                 <?php foreach ($admins as $admin): ?>
                     <option value="<?= (int) $admin['id'] ?>" <?= (int) $admin['id'] === $selectedId ? 'selected' : '' ?>><?= htmlspecialchars($admin['username']) ?> — <?= htmlspecialchars($admin['role']) ?></option>
                 <?php endforeach; ?>
             </select></div></label>
         </form>
-        <p style="margin-top:12px;">Owner always keeps full access. Overrides apply to Support and Read-only accounts only.</p>
+        <p class="admin-permissions-note">Owner always keeps full access. Overrides apply to Support and Read-only accounts only.</p>
     </section>
 
     <section class="grid-cards-wrapper">
@@ -168,7 +168,7 @@ flash_render();
                     </div>
                     <?php if ($selected['role'] !== 'owner'): ?>
                     <div class="grid-card-footer">
-                        <form method="post" style="width:100%; display:grid; gap:8px;">
+                        <form method="post" class="admin-permission-form">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="admin_id" value="<?= (int) $selected['id'] ?>">
                             <input type="hidden" name="permission" value="<?= htmlspecialchars($permission, ENT_QUOTES) ?>">
