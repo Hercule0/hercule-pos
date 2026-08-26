@@ -111,9 +111,16 @@ function ai_providers(string $prompt, int $maxTokens): array {
         if (!empty($res['skip'])) { $errors[] = $provider.':not_configured'; continue; }
         $json = ai_clean_json((string)($res['text'] ?? ''));
         if ($json) return ['ok'=>true,'provider'=>$provider,'json'=>$json];
-        $errors[] = $provider.':'.(int)($res['status']??0).':'.ai_cut((string)($res['error']??'invalid_json'), 120);
+        $errors[] = $provider.':'.(int)($res['status']??0);
     }
     return ['ok'=>false,'errors'=>$errors];
+}
+function ai_log_provider_failure(string $event, array $errors): void {
+    $safe = [];
+    foreach (array_slice($errors, 0, 8) as $error) {
+        $safe[] = ai_cut((string)$error, 80);
+    }
+    ErrorHandler::report(new RuntimeException('AI provider routing failed.'), $event, ['providers'=>$safe]);
 }
 function ai_decode_args($value): array {
     if (is_array($value)) return $value;
@@ -236,6 +243,13 @@ $question = trim((string)($body['question'] ?? ''));
 $mode = strtolower(trim((string)($body['mode'] ?? 'plan')));
 if ($licenseKey === '' || $hwid === '') ai_json(['ok'=>false,'code'=>'LICENSE_REQUIRED'],401);
 if ($question === '' || strlen($question) > 6000) ai_json(['ok'=>false,'code'=>'INVALID_QUESTION'],400);
+if (!in_array($mode, ['plan','synthesize'], true)) ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
+
+$ipLimit = max(10,(int)ai_env('HERCULE_AI_IP_RPM','60'));
+if (!RateLimiter::check(client_ip(),'ai_agent_ip',$ipLimit,1)) {
+    ai_json(['ok'=>false,'code'=>'AI_RATE_LIMIT','error'=>'طلبات كثيرة جداً. جرّب بعد قليل.'],429);
+}
+
 if (DeviceManager::isBlocked($licenseKey,$hwid)) ai_json(['ok'=>false,'code'=>'DEVICE_BLOCKED'],403);
 $validation = License::validate($licenseKey,$hwid,client_ip());
 if (!($validation['ok'] ?? false)) ai_json(['ok'=>false,'code'=>'LICENSE_INVALID'],403);
@@ -260,7 +274,10 @@ if ($mode === 'plan') {
         ."Context: ".ai_prompt_json($context,14000)."\nQuestion: ".$question
         ."\nThe followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only. Either {\"kind\":\"answer\",\"answer\":{\"answer\":\"useful complete answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[]},\"tool_calls\":[]} OR {\"kind\":\"tools\",\"goal\":\"...\",\"tool_calls\":[{\"tool\":\"report\",\"intent\":\"sales_summary\",...}]}. Never return an empty answer.";
     $res = ai_providers($prompt,1000);
-    if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
+    if (!$res['ok']) {
+        ai_log_provider_failure('ai_agent_plan_providers_unavailable', $res['errors'] ?? []);
+        ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','error'=>'تعذر الوصول إلى مزودي الذكاء حالياً.'],503);
+    }
     $model = $res['json'];
     $calls = ai_normalize_calls($model,$catalog,$question);
     if ($calls) {
@@ -275,14 +292,16 @@ if ($mode === 'plan') {
     ai_json(['ok'=>false,'code'=>'AI_INVALID_PLAN','error'=>'AI provider returned an empty or unusable plan'],502);
 }
 
-if ($mode !== 'synthesize') ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
 $plan = is_array($body['plan'] ?? null) ? $body['plan'] : [];
 $tools = is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [];
 $prompt = "You are the Hercule POS smart assistant. Use ONLY supplied local tool results for store-specific facts. Never invent numbers, causes, product names, customer names, or settings state. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. If some tools failed, clearly say what could not be read and still use the successful evidence. Answer in the user's language; use natural Iraqi Arabic when the user uses Iraqi Arabic.\n"
     ."The followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
     ."Question: ".$question."\nPlan: ".ai_prompt_json($plan,5000)."\nTool results: ".ai_prompt_json($tools,24000)."\nContext: ".ai_prompt_json($context,7000);
 $res = ai_providers($prompt,1400);
-if (!$res['ok']) ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','providers'=>$res['errors']],503);
+if (!$res['ok']) {
+    ai_log_provider_failure('ai_agent_synthesize_providers_unavailable', $res['errors'] ?? []);
+    ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','error'=>'تعذر الوصول إلى مزودي الذكاء حالياً.'],503);
+}
 $answer = ai_sanitize_answer_payload($res['json']);
 if (!trim((string)($answer['answer'] ?? ''))) ai_json(['ok'=>false,'code'=>'AI_INVALID_RESPONSE','error'=>'AI provider returned an empty answer'],502);
 $answer['answer'] = ai_cut((string)$answer['answer'],5000);
