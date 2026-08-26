@@ -31,6 +31,56 @@ function release_sha512_hex(?string $stored): ?string
     return null;
 }
 
+/**
+ * Resolve the public origin used in bearer download links without trusting a
+ * client-controlled Host header in production. Azure exposes WEBSITE_HOSTNAME;
+ * other production environments must configure HERCULE_PUBLIC_BASE_URL.
+ */
+function release_public_base_url(): string
+{
+    $configured = trim((string) ($_ENV['HERCULE_PUBLIC_BASE_URL'] ?? $_SERVER['HERCULE_PUBLIC_BASE_URL'] ?? getenv('HERCULE_PUBLIC_BASE_URL') ?: ''));
+    $appEnv = strtolower(trim((string) ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?: 'production')));
+
+    if ($configured !== '') {
+        $parts = parse_url($configured);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = (string) ($parts['host'] ?? '');
+        $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
+        $path = rtrim((string) ($parts['path'] ?? ''), '/');
+        $hasForbiddenParts = isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment']);
+        $hostValid = $host !== '' && preg_match('/^[A-Za-z0-9.-]+$/', $host) === 1;
+        $schemeValid = in_array($scheme, ['http', 'https'], true);
+
+        if (!$schemeValid || !$hostValid || $hasForbiddenParts) {
+            throw new RuntimeException('HERCULE_PUBLIC_BASE_URL is invalid.');
+        }
+        if (!in_array($appEnv, ['test', 'dev', 'development', 'local'], true) && $scheme !== 'https') {
+            throw new RuntimeException('HERCULE_PUBLIC_BASE_URL must use HTTPS in production.');
+        }
+
+        return $scheme . '://' . $host . $port . $path;
+    }
+
+    $azureHost = trim((string) ($_SERVER['WEBSITE_HOSTNAME'] ?? ''));
+    if ($azureHost !== '' && preg_match('/^[A-Za-z0-9.-]+$/', $azureHost) === 1) {
+        return 'https://' . $azureHost;
+    }
+
+    if (in_array($appEnv, ['test', 'dev', 'development', 'local'], true)) {
+        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        if (preg_match('/^[A-Za-z0-9.-]+(?::\d+)?$/', $host) !== 1) {
+            return '';
+        }
+        $proto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? 'http')));
+        if (!in_array($proto, ['http', 'https'], true)) {
+            $proto = 'http';
+        }
+        return $proto . '://' . $host;
+    }
+
+    return '';
+}
+
 $input = json_input();
 $licenseKey = trim((string) ($input['license_key'] ?? $input['licenseKey'] ?? ''));
 $hwid = trim((string) ($input['hwid'] ?? ''));
@@ -99,21 +149,8 @@ if (empty($release['storage_key'])
     ], 503);
 }
 
-$base = trim((string) ($_ENV['HERCULE_PUBLIC_BASE_URL'] ?? $_SERVER['HERCULE_PUBLIC_BASE_URL'] ?? getenv('HERCULE_PUBLIC_BASE_URL') ?: ''));
-if ($base === '') {
-    $host = trim((string) ($_SERVER['WEBSITE_HOSTNAME'] ?? $_SERVER['HTTP_HOST'] ?? ''));
-    if (!preg_match('/^[A-Za-z0-9.-]+(?::\d+)?$/', $host)) {
-        $host = '';
-    }
-    $proto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? 'https')));
-    if (!in_array($proto, ['http', 'https'], true)) {
-        $proto = 'https';
-    }
-    $base = $host !== '' ? $proto . '://' . $host : '';
-}
-$base = rtrim($base, '/');
-
 try {
+    $base = release_public_base_url();
     if ($base === '') {
         throw new RuntimeException('Public base URL is unavailable.');
     }
