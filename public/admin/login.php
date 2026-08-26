@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <?php endif; ?>
 
-            <button type="submit" class="auth-submit" id="login-submit">
+            <button type="submit" class="auth-submit" id="login-submit" data-loading-label="<?= htmlspecialchars($mfaPending ? 'Verifying…' : 'Signing in…', ENT_QUOTES) ?>">
                 <span data-submit-label><?= $mfaPending ? 'Verify and continue' : 'Sign in to Admin Panel' ?></span>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
             </button>
@@ -145,33 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
     </section>
 </main>
-<script>
-(function () {
-    document.querySelectorAll('[data-toggle-password]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var input = document.getElementById(button.dataset.togglePassword);
-            if (!input) return;
-            var show = input.type === 'password';
-            input.type = show ? 'text' : 'password';
-            button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-            button.classList.toggle('is-active', show);
-            input.focus({ preventScroll: true });
-        });
-    });
-
-    var form = document.getElementById('login-form');
-    var submit = document.getElementById('login-submit');
-    if (form && submit) {
-        form.addEventListener('submit', function () {
-            if (!form.checkValidity()) return;
-            submit.disabled = true;
-            submit.classList.add('is-loading');
-            var label = submit.querySelector('[data-submit-label]');
-            if (label) label.textContent = <?= json_encode($mfaPending ? 'Verifying…' : 'Signing in…') ?>;
-        });
-    }
-})();
-</script>
+<script src="/public/admin/assets/js/login.js?v=20260826-hardening1" defer></script>
 <script src="/public/admin/assets/js/login-pwa.js?v=1" defer></script>
 </body>
 </html>
