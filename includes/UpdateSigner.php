@@ -13,10 +13,10 @@ declare(strict_types=1);
  */
 final class UpdateSigner
 {
-    public const KEY_ID = 'hercule-update-v1';
+    public const KEY_ID = 'hercule-update-v2';
     public const ALGORITHM = 'RSA-SHA256';
-    // SHA-256 of the exact PEM public key embedded in the desktop hardening snapshot.
-    public const EXPECTED_PUBLIC_KEY_SHA256 = '9ba9568144ca9b7ae462cd7662a1bf76b8286d1d4e759a1360a59c0c47da932e';
+    // SHA-256 of the exact PEM public key embedded in the desktop Fix 204 trust root.
+    public const EXPECTED_PUBLIC_KEY_SHA256 = 'eaad6a494bbc7c6195556c01296451a5223e4081c40c964c3c3fc45ef50f9182';
 
     private static function env(string $name): string
     {
