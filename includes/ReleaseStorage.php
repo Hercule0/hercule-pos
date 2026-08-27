@@ -5,6 +5,9 @@ declare(strict_types=1);
 final class ReleaseStorage
 {
     private const DEFAULT_MAX_UPLOAD_MB = 512;
+    private const MAX_MANIFEST_BYTES = 256 * 1024;
+    private const MAX_BLOCKMAP_BYTES = 32 * 1024 * 1024;
+    private const MAX_METADATA_BYTES = 1024 * 1024;
 
     public static function baseDir(): string
     {
@@ -81,6 +84,9 @@ final class ReleaseStorage
                 if ($name === '' || str_ends_with($name, '/') || basename($name) !== $name || str_contains($name, '..') || str_contains($name, '\\')) {
                     throw new InvalidArgumentException('Update bundle contains an unsafe path.');
                 }
+                if (isset($entries[$name])) {
+                    throw new InvalidArgumentException('Update bundle contains duplicate file names.');
+                }
                 $entries[$name] = true;
             }
 
@@ -88,8 +94,18 @@ final class ReleaseStorage
                 throw new InvalidArgumentException('manifest.json is missing from the update bundle.');
             }
 
-            $manifestText = $zip->getFromName('manifest.json');
-            if (!is_string($manifestText) || strlen($manifestText) > 256 * 1024) {
+            // Inspect the ZIP directory before decompression. getFromName()
+            // would otherwise inflate the entire manifest before the length
+            // check, allowing a tiny compressed ZIP entry to consume excessive
+            // memory. statIndex + bounded getFromIndex keeps this fail-closed.
+            $manifestIndex = $zip->locateName('manifest.json');
+            $manifestStat = $manifestIndex !== false ? $zip->statIndex($manifestIndex) : false;
+            $manifestSize = is_array($manifestStat) ? (int)($manifestStat['size'] ?? -1) : -1;
+            if ($manifestIndex === false || $manifestSize < 2 || $manifestSize > self::MAX_MANIFEST_BYTES) {
+                throw new InvalidArgumentException('manifest.json is invalid or exceeds the safety limit.');
+            }
+            $manifestText = $zip->getFromIndex($manifestIndex, self::MAX_MANIFEST_BYTES + 1);
+            if (!is_string($manifestText) || strlen($manifestText) !== $manifestSize) {
                 throw new InvalidArgumentException('manifest.json is invalid.');
             }
             $manifest = json_decode($manifestText, true);
@@ -121,7 +137,7 @@ final class ReleaseStorage
             foreach ($files as $kind => $meta) {
                 $name = (string)$meta['file'];
                 $dest = $staging . DIRECTORY_SEPARATOR . $name;
-                self::extractEntry($zip, $name, $dest);
+                self::extractEntry($zip, $name, $dest, (int)$meta['size']);
                 self::verifyArtifact($dest, $meta, $kind === 'installer');
             }
 
@@ -135,7 +151,11 @@ final class ReleaseStorage
                 throw new RuntimeException('Could not calculate update bundle SHA-256.');
             }
 
-            file_put_contents($staging . DIRECTORY_SEPARATOR . 'manifest.json', json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n");
+            $storedManifest = json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+            if (!is_string($storedManifest)
+                || file_put_contents($staging . DIRECTORY_SEPARATOR . 'manifest.json', $storedManifest . "\n", LOCK_EX) === false) {
+                throw new RuntimeException('Could not store verified update manifest.');
+            }
 
             if (!@rename($staging, $finalDir)) {
                 throw new RuntimeException('Could not finalize release storage directory.');
@@ -211,6 +231,11 @@ final class ReleaseStorage
             throw new InvalidArgumentException('Update bundle app identity does not match Hercule POS.');
         }
 
+        $sizeLimits = [
+            'installer' => self::maxUploadBytes(),
+            'blockmap' => self::MAX_BLOCKMAP_BYTES,
+            'updater_metadata' => self::MAX_METADATA_BYTES,
+        ];
         foreach (['installer', 'blockmap', 'updater_metadata'] as $key) {
             $meta = $m[$key] ?? null;
             if (!is_array($meta)) throw new InvalidArgumentException("Manifest section {$key} is missing.");
@@ -222,8 +247,9 @@ final class ReleaseStorage
             if (!preg_match('/^[a-f0-9]{64}$/', $sha)) {
                 throw new InvalidArgumentException("Manifest SHA-256 for {$key} is invalid.");
             }
-            if ((int)($meta['size'] ?? 0) <= 0) {
-                throw new InvalidArgumentException("Manifest size for {$key} is invalid.");
+            $declaredSize = (int)($meta['size'] ?? 0);
+            if ($declaredSize <= 0 || $declaredSize > $sizeLimits[$key]) {
+                throw new InvalidArgumentException("Manifest size for {$key} is invalid or exceeds the safety limit.");
             }
         }
 
@@ -231,13 +257,15 @@ final class ReleaseStorage
             throw new InvalidArgumentException('Update bundle artifact names are not recognized.');
         }
         $sha512 = (string)($m['installer']['sha512'] ?? '');
-        if ($sha512 === '' || base64_decode($sha512, true) === false) {
+        $sha512Raw = base64_decode($sha512, true);
+        if (!is_string($sha512Raw) || strlen($sha512Raw) !== 64) {
             throw new InvalidArgumentException('Installer SHA-512 is missing or invalid.');
         }
     }
 
-    private static function extractEntry(ZipArchive $zip, string $name, string $dest): void
+    private static function extractEntry(ZipArchive $zip, string $name, string $dest, int $expectedSize): void
     {
+        if ($expectedSize <= 0) throw new InvalidArgumentException('Update artifact size is invalid.');
         $in = $zip->getStream($name);
         if (!is_resource($in)) throw new RuntimeException('Could not read update bundle artifact ' . $name . '.');
         $out = fopen($dest, 'wb');
@@ -246,11 +274,14 @@ final class ReleaseStorage
             throw new RuntimeException('Could not create stored release artifact ' . $name . '.');
         }
         try {
-            while (!feof($in)) {
-                $chunk = fread($in, 1024 * 1024);
-                if ($chunk === false) throw new RuntimeException('Failed while reading update bundle artifact.');
-                if ($chunk !== '' && fwrite($out, $chunk) === false) throw new RuntimeException('Failed while storing update bundle artifact.');
+            // Never decompress an entry without a hard byte ceiling. Reading at
+            // most expectedSize + 1 turns a malformed/compression-bomb entry
+            // into a bounded validation failure instead of filling server disk.
+            $copied = stream_copy_to_stream($in, $out, $expectedSize + 1);
+            if ($copied === false || $copied !== $expectedSize) {
+                throw new InvalidArgumentException('Update bundle artifact size does not match manifest.');
             }
+            fflush($out);
         } finally {
             fclose($in);
             fclose($out);

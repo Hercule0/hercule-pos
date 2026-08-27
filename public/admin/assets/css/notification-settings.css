@@ -1,0 +1,8 @@
+.notification-settings-card{max-width:760px}
+.notification-setting-row{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--border-color,#263040)}
+.notification-setting-row input[type="checkbox"]{margin-top:4px}
+.notification-setting-row small{display:block;opacity:.75;margin-top:4px}
+.notification-mute-block{margin-top:22px}
+.notification-mute-label{display:block;margin-bottom:8px}
+.notification-muted-until{margin-top:8px;opacity:.75}
+.notification-settings-actions{margin-top:24px}

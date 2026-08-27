@@ -16,6 +16,10 @@ final class ErrorHandler
         ini_set('log_errors', '1');
         header('X-Request-ID: ' . self::$requestId);
 
+        // Security headers, including the admin Content-Security-Policy, are
+        // owned by the relevant HTTP bootstrap. Error handling must never
+        // weaken or replace those headers at the final response boundary.
+
         set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
             if (!(error_reporting() & $severity)) return false;
             throw new ErrorException($message, 0, $severity, $file, $line);

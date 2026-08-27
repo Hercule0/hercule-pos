@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 url="${1:-${PRODUCTION_HEALTH_URL:-}}"
-if [[ -z "$url" || "$url" != https://* ]]; then
-  echo "A production HTTPS health URL is required." >&2
+if [[ -z "$url" || "$url" != https://* || ${#url} -gt 2048 || "$url" =~ [[:cntrl:]] ]]; then
+  echo "A valid production HTTPS health URL is required." >&2
   exit 2
 fi
 
@@ -11,6 +11,7 @@ response="$(mktemp "${TMPDIR:-/tmp}/hercule-health.XXXXXX")"
 trap 'rm -f "$response"' EXIT
 
 metrics="$(curl --silent --show-error --location \
+  --proto '=https' --proto-redir '=https' --max-redirs 2 \
   --connect-timeout 8 --max-time 15 \
   --retry 2 --retry-delay 2 --retry-all-errors \
   --output "$response" --write-out '%{http_code} %{time_total}' "$url")" || {

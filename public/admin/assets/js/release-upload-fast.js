@@ -4,6 +4,28 @@
   if (!/\/public\/admin\/releases\.php$/.test(window.location.pathname)) return;
 
   var form = document.getElementById("release-upload-form");
+  var mode = document.getElementById("target-mode");
+  var targetBox = document.getElementById("target-box");
+  var targetSearch = document.getElementById("target-search");
+
+  function syncTargets() {
+    if (targetBox) targetBox.hidden = !mode || mode.value !== "licenses";
+  }
+
+  if (mode) {
+    mode.addEventListener("change", syncTargets);
+    syncTargets();
+  }
+
+  if (targetSearch) {
+    targetSearch.addEventListener("input", function () {
+      var query = targetSearch.value.trim().toLowerCase();
+      document.querySelectorAll("#target-list .target-row").forEach(function (row) {
+        row.hidden = !!query && String(row.dataset.search || "").indexOf(query) === -1;
+      });
+    });
+  }
+
   if (!form) return;
 
   var fileInput = document.getElementById("release-bundle-file");
@@ -14,8 +36,8 @@
   var button = document.getElementById("upload-btn");
   var help = document.getElementById("upload-help");
   var csrf = form.querySelector('input[name="csrf_token"]');
-  var mode = document.getElementById("target-mode");
   var endpoint = "/public/admin/release_upload_fast.php";
+  var maxBytes = Math.max(0, Number(form.dataset.maxUploadBytes || 0));
   var activeXhrs = new Set();
   var running = false;
 
@@ -32,8 +54,12 @@
   }
 
   function setProgress(percent, label, sub) {
+    var safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
     if (progress) progress.classList.add("show");
-    if (bar) bar.style.width = Math.max(0, Math.min(100, percent || 0)) + "%";
+    if (bar) {
+      bar.value = safePercent;
+      bar.setAttribute("aria-valuenow", String(Math.round(safePercent)));
+    }
     if (text) text.textContent = label || "";
     if (detail) detail.textContent = sub || "";
   }
@@ -49,7 +75,9 @@
     var data = null;
     try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) {}
     if (xhr.status >= 200 && xhr.status < 300 && data && data.ok) return data;
-    var message = data && data.message ? data.message : (xhr.status === 413 ? "Server rejected this part size (HTTP 413)." : "Server returned HTTP " + xhr.status + ".");
+    var message = data && data.message
+      ? data.message
+      : (xhr.status === 413 ? "Server rejected this part size (HTTP 413)." : "Server returned HTTP " + xhr.status + ".");
     var error = new Error(message);
     error.status = xhr.status;
     error.data = data;
@@ -67,9 +95,18 @@
         activeXhrs.delete(xhr);
         try { resolve(parseResponse(xhr)); } catch (error) { reject(error); }
       };
-      xhr.onerror = function () { activeXhrs.delete(xhr); reject(new Error("Network connection was interrupted.")); };
-      xhr.ontimeout = function () { activeXhrs.delete(xhr); reject(new Error("The server did not answer in time.")); };
-      xhr.onabort = function () { activeXhrs.delete(xhr); reject(new Error("Upload request was cancelled.")); };
+      xhr.onerror = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("Network connection was interrupted."));
+      };
+      xhr.ontimeout = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("The server did not answer in time."));
+      };
+      xhr.onabort = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("Upload request was cancelled."));
+      };
       xhr.send(fd);
     });
   }
@@ -93,9 +130,18 @@
         activeXhrs.delete(xhr);
         try { resolve(parseResponse(xhr)); } catch (error) { reject(error); }
       };
-      xhr.onerror = function () { activeXhrs.delete(xhr); reject(new Error("Network connection was interrupted while sending a part.")); };
-      xhr.ontimeout = function () { activeXhrs.delete(xhr); reject(new Error("An upload part timed out.")); };
-      xhr.onabort = function () { activeXhrs.delete(xhr); reject(new Error("Upload part was cancelled.")); };
+      xhr.onerror = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("Network connection was interrupted while sending a part."));
+      };
+      xhr.ontimeout = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("An upload part timed out."));
+      };
+      xhr.onabort = function () {
+        activeXhrs.delete(xhr);
+        reject(new Error("Upload part was cancelled."));
+      };
       xhr.send(blob);
     });
   }
@@ -147,7 +193,11 @@
         lastError = error;
         if (error && error.status === 413) throw error;
         if (attempt === 4) break;
-        setProgress((progressState.completedBytes / file.size) * 100, "Connection interrupted — retrying", "Part " + (index + 1) + " · attempt " + (attempt + 1) + " / 4");
+        setProgress(
+          (progressState.completedBytes / file.size) * 100,
+          "Connection interrupted — retrying",
+          "Part " + (index + 1) + " · attempt " + (attempt + 1) + " / 4"
+        );
         await sleep(350 * attempt);
       }
     }
@@ -156,11 +206,17 @@
 
   function renderAggregateProgress(state, fileSize, totalChunks) {
     var inflightBytes = 0;
-    Object.keys(state.inflight).forEach(function (key) { inflightBytes += Number(state.inflight[key] || 0); });
+    Object.keys(state.inflight).forEach(function (key) {
+      inflightBytes += Number(state.inflight[key] || 0);
+    });
     var uploaded = Math.min(fileSize, state.completedBytes + inflightBytes);
     var pct = fileSize ? (uploaded / fileSize) * 100 : 0;
     var done = Object.keys(state.completed).length;
-    setProgress(pct, "Uploading " + Math.floor(pct) + "%", done + " / " + totalChunks + " parts · " + mb(uploaded) + " / " + mb(fileSize));
+    setProgress(
+      pct,
+      "Uploading " + Math.floor(pct) + "%",
+      done + " / " + totalChunks + " parts · " + mb(uploaded) + " / " + mb(fileSize)
+    );
   }
 
   async function uploadParallel(session, file) {
@@ -208,7 +264,11 @@
         lastError = error;
         if (error.status && error.status < 500 && error.status !== 409) throw error;
         if (attempt === 3) break;
-        setProgress(100, "Server is verifying the bundle…", "Waiting for ZIP and hash verification · retry " + (attempt + 1) + " / 3");
+        setProgress(
+          100,
+          "Server is verifying the bundle…",
+          "Waiting for ZIP and hash verification · retry " + (attempt + 1) + " / 3"
+        );
         await sleep(1200 * attempt);
       }
     }
@@ -230,19 +290,31 @@
   }
 
   async function handleSubmit(event) {
+    event.preventDefault();
     if (running) return;
     if (!form.reportValidity()) return;
+
     var file = fileInput && fileInput.files && fileInput.files[0];
-    if (!file) { alert("Choose an update bundle ZIP first."); return; }
-    if (file.size <= 0) { alert("The selected update bundle is empty."); return; }
+    if (!file) {
+      window.alert("Choose an update bundle ZIP first.");
+      return;
+    }
+    if (file.size <= 0) {
+      window.alert("The selected update bundle is empty.");
+      return;
+    }
+    if (maxBytes > 0 && file.size > maxBytes) {
+      window.alert("The selected bundle exceeds the configured " + mb(maxBytes) + " total upload limit.");
+      return;
+    }
     if (mode && mode.value === "licenses" && !form.querySelector('input[name="target_license_ids[]"]:checked')) {
-      alert("Select at least one target license.");
+      window.alert("Select at least one target license.");
       return;
     }
 
     running = true;
-    button.disabled = true;
-    fileInput.disabled = true;
+    if (button) button.disabled = true;
+    if (fileInput) fileInput.disabled = true;
     var chunkSize = 524288;
 
     try {
@@ -252,7 +324,11 @@
       } catch (error) {
         if (error && error.status === 413) {
           chunkSize = 262144;
-          setProgress(0, "Azure rejected 512 KB parts — switching automatically", "Retrying with 256 KB parts in parallel");
+          setProgress(
+            0,
+            "Azure rejected 512 KB parts — switching automatically",
+            "Retrying with 256 KB parts in parallel"
+          );
           await sleep(500);
           result = await runUpload(file, chunkSize);
         } else {
@@ -263,21 +339,14 @@
       setTimeout(function () { window.location.reload(); }, 700);
     } catch (error) {
       console.error("Hercule fast release upload failed", error);
-      button.disabled = false;
-      fileInput.disabled = false;
+      if (button) button.disabled = false;
+      if (fileInput) fileInput.disabled = false;
       setProgress(0, "Upload failed", error.message || String(error));
-      alert(error.message || "Update bundle upload failed.");
+      window.alert(error.message || "Update bundle upload failed.");
     } finally {
       running = false;
     }
   }
 
-  // Capture on window fires before the legacy form listener. This safely replaces
-  // the old sequential uploader without depending on script registration order.
-  window.addEventListener("submit", function (event) {
-    if (event.target !== form) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    handleSubmit(event);
-  }, true);
+  form.addEventListener("submit", handleSubmit);
 })();

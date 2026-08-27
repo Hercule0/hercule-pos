@@ -18,9 +18,62 @@ for name in VERIFY_DB_HOST VERIFY_DB_PORT VERIFY_DB_NAME VERIFY_DB_USER VERIFY_D
     exit 1
   fi
 done
+if ! [[ "$VERIFY_DB_NAME" =~ ^[A-Za-z0-9_]{1,64}$ ]]; then
+  echo "VERIFY_DB_NAME must contain only letters, numbers, and underscores." >&2
+  exit 1
+fi
+if ! [[ "$VERIFY_DB_PORT" =~ ^[0-9]{1,5}$ ]] || (( VERIFY_DB_PORT < 1 || VERIFY_DB_PORT > 65535 )); then
+  echo "VERIFY_DB_PORT must be a valid TCP port." >&2
+  exit 1
+fi
+if ! command -v php >/dev/null 2>&1; then
+  echo "PHP CLI is required to verify authenticated backup metadata." >&2
+  exit 1
+fi
 
-if [[ -f "$encrypted.sha256" ]]; then
-  (cd "$(dirname "$encrypted")" && sha256sum -c "$(basename "$encrypted").sha256")
+checksum_file="$encrypted.sha256"
+if [[ ! -f "$checksum_file" ]]; then
+  echo "Backup SHA-256 metadata is missing." >&2
+  exit 1
+fi
+expected_sha256="$(awk 'NR==1 {print $1}' "$checksum_file")"
+if ! [[ "$expected_sha256" =~ ^[A-Fa-f0-9]{64}$ ]]; then
+  echo "Backup SHA-256 metadata is invalid." >&2
+  exit 1
+fi
+actual_sha256="$(sha256sum "$encrypted" | awk '{print $1}')"
+if [[ "${expected_sha256,,}" != "${actual_sha256,,}" ]]; then
+  echo "Backup SHA-256 verification failed." >&2
+  exit 1
+fi
+
+# New v2 archives require a keyed HMAC so an attacker who can modify stored
+# files cannot simply replace both the archive and its ordinary checksum.
+if [[ "$(basename "$encrypted")" == *.v2.sql.enc ]]; then
+  hmac_file="$encrypted.hmac"
+  if [[ ! -f "$hmac_file" ]]; then
+    echo "Authenticated v2 backup is missing its HMAC metadata." >&2
+    exit 1
+  fi
+  expected_hmac="$(tr -d '[:space:]' < "$hmac_file")"
+  if ! [[ "$expected_hmac" =~ ^[A-Fa-f0-9]{64}$ ]]; then
+    echo "Backup HMAC metadata is invalid." >&2
+    exit 1
+  fi
+  actual_hmac="$(php -r '
+$key = getenv("BACKUP_ENCRYPTION_KEY");
+if (!is_string($key) || strlen($key) < 32) exit(2);
+$macKey = hash("sha256", "hercule-backup-hmac-v2\0" . $key, true);
+$ctx = hash_init("sha256", HASH_HMAC, $macKey);
+if (!hash_update_file($ctx, $argv[1])) exit(3);
+echo hash_final($ctx), PHP_EOL;
+' "$encrypted")"
+  if ! [[ "$actual_hmac" =~ ^[a-f0-9]{64}$ ]] || [[ "${expected_hmac,,}" != "${actual_hmac,,}" ]]; then
+    echo "Backup authentication failed. The archive may be corrupted or tampered with." >&2
+    exit 1
+  fi
+else
+  echo "Warning: verifying legacy backup without keyed HMAC metadata." >&2
 fi
 
 plain="$(mktemp "${TMPDIR:-/tmp}/hercule-restore.XXXXXX.sql")"

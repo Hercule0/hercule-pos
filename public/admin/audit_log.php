@@ -81,7 +81,7 @@ flash_render();
         </form>
         <form method="get" class="audit-action-filter">
             <?php if ($search !== ''): ?><input type="hidden" name="q" value="<?= htmlspecialchars($search, ENT_QUOTES) ?>"><?php endif; ?>
-            <select name="action" onchange="this.form.submit()">
+            <select name="action" data-submit-on-change>
                 <option value="">All actions</option>
                 <?php foreach ($actions as $item): ?>
                     <option value="<?= htmlspecialchars($item['action'], ENT_QUOTES) ?>" <?= $action === $item['action'] ? 'selected' : '' ?>><?= htmlspecialchars(str_replace('_', ' ', $item['action'])) ?> (<?= (int)$item['count'] ?>)</option>

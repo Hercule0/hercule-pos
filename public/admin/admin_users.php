@@ -152,7 +152,7 @@ render_header('Administrators');
             <?= Csrf::field() ?><input type="hidden" name="action" value="create">
             <label class="auth-field"><span>Username</span><div class="auth-input"><input name="username" required minlength="3" maxlength="64" autocomplete="off"></div></label>
             <label class="auth-field"><span>Temporary password</span><div class="auth-input"><input type="password" name="temporary_password" required minlength="12" autocomplete="new-password"></div></label>
-            <small style="display:block;margin:-4px 0 10px;opacity:.7">12+ characters with uppercase, lowercase, number, and symbol.</small>
+            <small class="admin-create-password-hint">12+ characters with uppercase, lowercase, number, and symbol.</small>
             <label class="auth-field"><span>Role</span><div class="auth-input"><select name="role"><?php foreach ($roles as $role): ?><option value="<?= $role ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select></div></label>
             <label class="auth-field"><span>Your current password</span><div class="auth-input"><input type="password" name="current_password" required autocomplete="current-password"></div></label>
             <button class="auth-submit" type="submit">Create administrator</button>
@@ -161,29 +161,29 @@ render_header('Administrators');
 
     <section class="grid-cards-wrapper">
         <?php foreach ($admins as $admin): ?>
-            <article class="grid-card <?= $admin['is_active'] ? '' : 'is-disabled' ?>" style="<?= !$admin['is_active'] ? 'opacity: 0.6;' : '' ?>">
-                <div class="grid-card-header" style="margin-bottom: 12px;">
-                    <div class="grid-card-avatar" style="<?= $admin['role'] === 'owner' ? 'background: #3b82f6;' : '' ?>"><?= strtoupper(htmlspecialchars(substr($admin['username'], 0, 1))) ?></div>
+            <article class="grid-card <?= $admin['is_active'] ? '' : 'is-disabled' ?>">
+                <div class="grid-card-header admin-card-header">
+                    <div class="grid-card-avatar <?= $admin['role'] === 'owner' ? 'is-owner' : '' ?>"><?= strtoupper(htmlspecialchars(substr($admin['username'], 0, 1))) ?></div>
                     <div class="grid-card-title-group">
                         <h2 class="grid-card-title"><?= htmlspecialchars($admin['username']) ?><?= (int) $admin['id'] === $currentAdminId ? ' (You)' : '' ?></h2>
-                        <div class="grid-card-subtitle" style="display:flex; gap:6px; margin-top:6px;">
+                        <div class="grid-card-subtitle admin-card-subtitle">
                             <span class="badge badge-<?= $admin['role'] === 'owner' ? 'active' : ($admin['role'] === 'support' ? 'pending' : 'expired') ?>"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $admin['role']))) ?></span>
-                            <?= $admin['is_active'] ? '' : '<span class="badge badge-revoked">DISABLED</span>' ?>
+                            <?php if (!$admin['is_active']): ?><span class="badge badge-revoked">DISABLED</span><?php endif; ?>
                         </div>
                     </div>
                     <?php if ((int) $admin['id'] !== $currentAdminId): ?>
                     <div class="grid-card-actions">
-                        <form method="post" onsubmit="return confirm('Permanently delete this administrator?');" style="display:inline;">
+                        <form method="post" class="admin-delete-form" data-confirm="Permanently delete this administrator?" data-password-prompt="Enter your password to delete this administrator:">
                             <?= Csrf::field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                            <button type="button" class="grid-card-action-btn" title="Delete Admin" onclick="const p = prompt('Enter your password to delete:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }">
+                            <button type="submit" class="grid-card-action-btn" title="Delete Admin">
                                 <svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
                         </form>
                     </div>
                     <?php endif; ?>
                 </div>
-                
-                <div class="grid-card-body" style="margin-bottom: 12px;">
+
+                <div class="grid-card-body admin-card-body">
                     <div class="grid-card-info-row">
                         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         <span dir="auto">Added <?= date('Y-m-d', strtotime($admin['created_at'])) ?></span>
@@ -198,16 +198,16 @@ render_header('Administrators');
                 </div>
 
                 <?php if ((int) $admin['id'] !== $currentAdminId): ?>
-                <div class="grid-card-footer" style="flex-direction: column; gap: 8px; align-items: stretch;">
-                    <form method="post" style="display:flex; gap:6px;">
+                <div class="grid-card-footer admin-card-footer">
+                    <form method="post" class="admin-role-form" data-password-prompt="Enter your password to update this administrator role:">
                         <?= Csrf::field() ?><input type="hidden" name="action" value="change_role"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                        <select name="role" style="background:var(--panel-alt); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px; font-size:11px; flex:1;"><?php foreach ($roles as $role): ?><option value="<?= $role ?>" <?= $role === $admin['role'] ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select>
-                        <button type="button" class="grid-card-btn" style="padding:4px 8px; flex-shrink:0;" onclick="const p = prompt('Enter your password to update role:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }">Update</button>
+                        <select name="role" class="admin-role-select"><?php foreach ($roles as $role): ?><option value="<?= $role ?>" <?= $role === $admin['role'] ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $role))) ?></option><?php endforeach; ?></select>
+                        <button type="submit" class="grid-card-btn admin-role-submit">Update</button>
                     </form>
-                    <div style="display:flex; gap:6px;">
-                        <form method="post" style="flex:1;">
+                    <div class="admin-toggle-row">
+                        <form method="post" class="admin-toggle-form" data-password-prompt="Enter your password to change this administrator access:">
                             <?= Csrf::field() ?><input type="hidden" name="action" value="toggle_active"><input type="hidden" name="admin_id" value="<?= (int) $admin['id'] ?>">
-                            <button type="button" class="grid-card-btn" style="width:100%; justify-content:center; <?= $admin['is_active'] ? 'color:var(--warning); border-color:var(--warning);' : 'color:var(--success); border-color:var(--success);' ?>" onclick="const p = prompt('Enter your password to toggle access:'); if(p) { this.form.insertAdjacentHTML('beforeend', '<input type=\'hidden\' name=\'current_password\' value=\''+p+'\'>'); this.form.submit(); }"><?= $admin['is_active'] ? 'Disable Access' : 'Enable Access' ?></button>
+                            <button type="submit" class="grid-card-btn admin-toggle-btn <?= $admin['is_active'] ? 'is-disable' : 'is-enable' ?>"><?= $admin['is_active'] ? 'Disable Access' : 'Enable Access' ?></button>
                         </form>
                     </div>
                 </div>

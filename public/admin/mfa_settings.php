@@ -64,11 +64,11 @@ render_header('Two-factor authentication');
                 <a href="/public/admin/index.php" class="auth-submit">I saved these codes</a>
             <?php elseif ($enabled): ?>
                 <div class="auth-heading"><h2>MFA is active</h2><p>Your password must now be followed by an authenticator code on every new sign-in.</p></div>
-                <form method="post">
+                <form method="post" data-confirm="Disable two-factor authentication?">
                     <?= Csrf::field() ?><input type="hidden" name="action" value="disable">
                     <label class="auth-field"><span>Current password</span><div class="auth-input"><input type="password" name="current_password" required autocomplete="current-password"></div></label>
                     <label class="auth-field"><span>Current authenticator code</span><div class="auth-input"><input type="text" name="code" required inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div></label>
-                    <button type="submit" class="secondary-btn" onclick="return confirm('Disable two-factor authentication?');">Disable MFA</button>
+                    <button type="submit" class="secondary-btn">Disable MFA</button>
                 </form>
             <?php elseif ($setup): ?>
                 <div class="auth-heading"><p class="eyebrow">Step 1</p><h2>Add Hercule to your authenticator</h2><p>In Google Authenticator, Microsoft Authenticator, or Authy choose “Enter setup key”.</p></div>

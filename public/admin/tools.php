@@ -81,11 +81,11 @@ render_header('Admin Tools');
 
 <section class="grid-cards-wrapper" aria-label="Admin tools">
     <?php foreach ($visibleTools as $tool): ?>
-        <a class="grid-card" href="<?= htmlspecialchars($tool['href'], ENT_QUOTES) ?>" style="text-decoration:none; color:inherit;">
+        <a class="grid-card admin-tool-card" href="<?= htmlspecialchars($tool['href'], ENT_QUOTES) ?>">
             <div class="grid-card-header">
                 <div class="grid-card-title-group">
                     <span class="badge badge-active"><?= htmlspecialchars($tool['badge']) ?></span>
-                    <h2 class="grid-card-title" style="margin-top:10px;"><?= htmlspecialchars($tool['title']) ?></h2>
+                    <h2 class="grid-card-title admin-tool-title"><?= htmlspecialchars($tool['title']) ?></h2>
                 </div>
             </div>
             <div class="grid-card-body">

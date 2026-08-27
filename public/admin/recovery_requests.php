@@ -139,10 +139,6 @@ render_header('طلبات استرداد الحساب');
 flash_render();
 ?>
 
-<style>
-.recovery-meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.recovery-meta-card{background:var(--panel-alt);border:1px solid var(--border);border-radius:12px;padding:12px}.recovery-meta-card span{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}.recovery-meta-card strong,.recovery-meta-card code{font-size:14px;overflow-wrap:anywhere}.recovery-type-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;background:var(--panel-alt);border:1px solid var(--border);font-size:12px;font-weight:700}.identity-check-box{margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--panel-alt)}.identity-check-box>strong{display:block;margin-bottom:8px}.identity-check-box label{display:flex;gap:8px;align-items:flex-start;margin:8px 0}.identity-check-box select{width:100%;margin-top:7px}.verified-proof{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--panel-alt);border:1px solid var(--border);font-size:13px}.recovery-contact-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.recovery-contact-row a{font-weight:700}.recovery-status-cancelled{opacity:.75}@media(max-width:760px){.recovery-meta-grid{grid-template-columns:1fr}}
-</style>
-
 <div class="recovery-page" dir="rtl">
     <section class="page-hero recovery-hero">
         <div>
@@ -173,7 +169,7 @@ flash_render();
                 'completed' => 'مكتمل', 'rejected' => 'مرفوض', 'expired' => 'منتهي', 'cancelled' => 'ملغي'
             ];
             foreach ($filterLabels as $value => $label): ?>
-                <button type="button" data-recovery-filter="<?= $value ?>" class="pill-filter <?= $value === 'all' ? 'active' : '' ?>" style="background:var(--panel-alt);cursor:pointer;">
+                <button type="button" data-recovery-filter="<?= $value ?>" class="pill-filter recovery-filter-button <?= $value === 'all' ? 'active' : '' ?>">
                     <?= $label ?><span class="count"><?= (int) ($recoveryCounts[$value] ?? 0) ?></span>
                 </button>
             <?php endforeach; ?>
@@ -189,7 +185,7 @@ flash_render();
     <?php else: ?>
         <div class="modern-table-wrapper">
             <table class="modern-table">
-                <thead><tr><th>الطلب</th><th>الحساب والعميل</th><th>نوع الاسترداد</th><th>الحالة</th><th style="text-align:left;">الإجراء</th></tr></thead>
+                <thead><tr><th>الطلب</th><th>الحساب والعميل</th><th>نوع الاسترداد</th><th>الحالة</th><th class="recovery-action-heading">الإجراء</th></tr></thead>
                 <tbody id="recovery-list" aria-live="polite">
                 <?php foreach ($requests as $r):
                     $li = $r['_license_info'];
@@ -258,7 +254,7 @@ flash_render();
                                         <strong>التحقق من هوية العميل</strong>
                                         <p>تواصل مع صاحب الترخيص باستخدام بيانات الاتصال المسجلة أعلاه قبل الموافقة.</p>
                                         <label><input type="checkbox" name="identity_verified" value="1"> <span>أؤكد أنني تحققت من هوية صاحب الترخيص.</span></label>
-                                        <label style="display:block;"><span>طريقة التحقق</span>
+                                        <label class="identity-method-label"><span>طريقة التحقق</span>
                                             <select name="verification_method">
                                                 <option value="">اختر الطريقة</option>
                                                 <option value="phone">مكالمة هاتفية</option>
@@ -271,8 +267,8 @@ flash_render();
 
                                     <label><span>ملاحظة داخلية</span><textarea name="note" rows="2" placeholder="مثال: تم التحقق من اسم العميل وآخر 4 أرقام من الهاتف"></textarea></label>
                                     <div class="recovery-review-actions">
-                                        <button type="submit" name="action" value="reject" class="reject-action" onclick="return confirm('هل تريد رفض طلب الاسترداد؟');"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>رفض</button>
-                                        <button type="submit" name="action" value="approve" class="approve-action" onclick="return confirm('هل تحققت من هوية العميل وتريد الموافقة على الاسترداد لهذا الجهاز؟');"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>موافقة بعد التحقق</button>
+                                        <button type="submit" name="action" value="reject" class="reject-action" data-confirm="هل تريد رفض طلب الاسترداد؟"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>رفض</button>
+                                        <button type="submit" name="action" value="approve" class="approve-action" data-confirm="هل تحققت من هوية العميل وتريد الموافقة على الاسترداد لهذا الجهاز؟"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>موافقة بعد التحقق</button>
                                     </div>
                                 </form>
                             <?php elseif ($publicStatus === 'cancelled'): ?>
@@ -291,72 +287,5 @@ flash_render();
     <?php endif; ?>
 </div>
 
-<script>
-(function () {
-    document.querySelectorAll('[data-open-recovery-dialog]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var dialog = document.getElementById(button.dataset.openRecoveryDialog);
-            if (!dialog) return;
-            if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
-        });
-    });
-    document.querySelectorAll('[data-close-recovery-dialog]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var dialog = button.closest('dialog');
-            if (!dialog) return;
-            if (typeof dialog.close === 'function') dialog.close(); else dialog.removeAttribute('open');
-        });
-    });
-    document.querySelectorAll('.recovery-dialog').forEach(function (dialog) {
-        dialog.addEventListener('click', function (event) { if (event.target === dialog) dialog.close(); });
-    });
-
-    var requestedId = new URLSearchParams(window.location.search).get('request_id');
-    if (requestedId && /^\d+$/.test(requestedId)) {
-        var requestedDialog = document.getElementById('recovery-dialog-' + requestedId);
-        if (requestedDialog) { if (typeof requestedDialog.showModal === 'function') requestedDialog.showModal(); else requestedDialog.setAttribute('open', ''); }
-    }
-
-    var cards = Array.from(document.querySelectorAll('[data-recovery-card]'));
-    var search = document.getElementById('recovery-search');
-    var filters = Array.from(document.querySelectorAll('[data-recovery-filter]'));
-    var resultCount = document.getElementById('recovery-result-count');
-    var empty = document.getElementById('recovery-search-empty');
-    var activeFilter = 'all';
-
-    function applyFilters() {
-        var query = search ? search.value.trim().toLocaleLowerCase() : '';
-        var visible = 0;
-        cards.forEach(function (card) {
-            var matchesSearch = card.dataset.search.toLocaleLowerCase().includes(query);
-            var matchesStatus = activeFilter === 'all' || card.dataset.status === activeFilter;
-            var show = matchesSearch && matchesStatus;
-            card.hidden = !show;
-            if (show) visible++;
-        });
-        if (resultCount) resultCount.textContent = visible;
-        if (empty) empty.hidden = visible !== 0;
-    }
-
-    if (search) search.addEventListener('input', applyFilters);
-    filters.forEach(function (button) {
-        button.addEventListener('click', function () {
-            activeFilter = button.dataset.recoveryFilter;
-            filters.forEach(function (item) { item.classList.toggle('active', item === button); });
-            applyFilters();
-        });
-    });
-
-    document.querySelectorAll('[data-copy-value]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            if (!navigator.clipboard) return;
-            navigator.clipboard.writeText(button.dataset.copyValue).then(function () {
-                button.classList.add('copied');
-                setTimeout(function () { button.classList.remove('copied'); }, 1200);
-            });
-        });
-    });
-})();
-</script>
-
+<script src="/public/admin/assets/js/recovery-requests.js?v=20260826-hardening1" defer></script>
 <?php render_footer(); ?>

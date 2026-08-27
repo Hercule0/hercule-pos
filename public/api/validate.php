@@ -52,6 +52,15 @@ $appVersion = trim((string) (
 if ($licenseKey === '' || $hwid === '') {
     json_response(['ok' => false, 'error' => 'license_key and hwid are required'], 400);
 }
+if (strlen($licenseKey) > 64 || preg_match('/[\x00-\x1F\x7F]/', $licenseKey)) {
+    json_response(['ok' => false, 'error' => 'Invalid license_key.'], 400);
+}
+if (strlen($hwid) > 160 || preg_match('/[\x00-\x1F\x7F]/', $hwid)) {
+    json_response(['ok' => false, 'error' => 'Invalid hwid.'], 400);
+}
+if (strlen($appVersion) > 50 || preg_match('/[\x00-\x1F\x7F]/', $appVersion)) {
+    json_response(['ok' => false, 'error' => 'Invalid app_version.'], 400);
+}
 
 if (!RateLimiter::check('key:' . $licenseKey, 'validate_by_key', $rateLimitCfg['key_rate_limit_max_requests'], $rateLimitCfg['key_rate_limit_window_minutes'])) {
     json_response(['ok' => false, 'error' => 'Too many validation attempts for this license key. Please try again in a few minutes.'], 429);

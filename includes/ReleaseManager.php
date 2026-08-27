@@ -319,13 +319,17 @@ final class ReleaseManager
         $clientVersion = self::normalizeComparableVersion($clientVersion);
         $channel = in_array($channel, ['stable','beta'], true) ? $channel : 'stable';
         $pdo = Database::pdo();
-        $stmt = $pdo->prepare("SELECT a.id AS activation_id, a.license_id, a.is_active, a.is_blocked, l.status AS license_status
+        $stmt = $pdo->prepare("SELECT a.id AS activation_id, a.license_id, a.is_active, a.is_blocked,
+                    l.status AS license_status, l.expires_at AS license_expires_at
              FROM license_activations a JOIN licenses l ON l.id=a.license_id
              WHERE l.license_key=? AND a.hwid=? LIMIT 1");
         $stmt->execute([$licenseKey,$hwid]);
         $client = $stmt->fetch();
         if (!$client) return ['ok'=>false,'code'=>'DEVICE_NOT_FOUND'];
         if (($client['license_status'] ?? '') !== 'active') return ['ok'=>false,'code'=>'LICENSE_INACTIVE'];
+        if (!empty($client['license_expires_at']) && strtotime((string)$client['license_expires_at']) <= time()) {
+            return ['ok'=>false,'code'=>'LICENSE_EXPIRED'];
+        }
         if (empty($client['is_active']) || !empty($client['is_blocked'])) return ['ok'=>false,'code'=>'DEVICE_BLOCKED'];
 
         $licenseId = (int)$client['license_id'];
@@ -369,9 +373,10 @@ final class ReleaseManager
              FROM release_download_grants g
              JOIN app_releases r ON r.id=g.release_id
              JOIN licenses l ON l.id=g.license_id
-             JOIN license_activations a ON a.id=g.activation_id
+             JOIN license_activations a ON a.id=g.activation_id AND a.license_id=g.license_id
              WHERE g.token_hash=? AND g.expires_at>NOW() AND r.is_published=1 AND r.is_paused=0
-               AND l.status='active' AND a.is_active=1 AND a.is_blocked=0 LIMIT 1");
+               AND l.status='active' AND (l.expires_at IS NULL OR l.expires_at > NOW())
+               AND a.is_active=1 AND a.is_blocked=0 LIMIT 1");
         $stmt->execute([$hash]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -413,11 +418,13 @@ final class ReleaseManager
     {
         if (!$ids) return;
         $marks = implode(',', array_fill(0,count($ids),'?'));
-        $stmt = $pdo->prepare("SELECT id FROM licenses WHERE id IN ({$marks}) AND status='active'");
+        $stmt = $pdo->prepare("SELECT id FROM licenses
+             WHERE id IN ({$marks}) AND status='active'
+               AND (expires_at IS NULL OR expires_at > NOW())");
         $stmt->execute($ids);
         $found = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
         sort($found); $expected = $ids; sort($expected);
-        if ($found !== $expected) throw new InvalidArgumentException('One or more selected target licenses are missing or inactive.');
+        if ($found !== $expected) throw new InvalidArgumentException('One or more selected target licenses are missing, inactive, or expired.');
     }
 
     private static function normalizeIds($values): array

@@ -98,6 +98,10 @@ final class Auth
         }
 
         [$selector, $validator] = explode(':', $cookie, 2);
+        if (!preg_match('/^[a-f0-9]{24}$/i', $selector) || !preg_match('/^[a-f0-9]{64}$/i', $validator)) {
+            self::clearRememberCookie();
+            return false;
+        }
 
         $stmt = Database::pdo()->prepare(
             'SELECT us.id, us.admin_id, us.validator_hash, us.user_agent, us.ip_address, us.expires_at,
@@ -114,12 +118,15 @@ final class Auth
             return false;
         }
 
-        if (!hash_equals($session['validator_hash'], hash('sha256', $validator))) {
+        $presentedHash = hash('sha256', strtolower($validator));
+        if (!hash_equals((string)$session['validator_hash'], $presentedHash)) {
+            // A selector with the wrong validator is treated as token theft:
+            // invalidate the server-side row as well as the browser cookie.
             self::clearRememberCookie();
             return false;
         }
 
-        if (strtotime($session['expires_at']) < time()) {
+        if (strtotime((string)$session['expires_at']) < time()) {
             self::clearRememberCookie();
             return false;
         }
@@ -129,7 +136,34 @@ final class Auth
             return false;
         }
 
-        self::finishLogin((int) $session['admin_id'], $session['username'], $session['role'], !empty($session['must_change_password']), false);
+        $storedUserAgent = (string)($session['user_agent'] ?? '');
+        $currentUserAgent = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+        if ($storedUserAgent !== '' && !hash_equals($storedUserAgent, $currentUserAgent)) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Consume the remembered token atomically. If another concurrent
+        // request already used it, this request must fail instead of issuing a
+        // second valid replacement token.
+        $consume = Database::pdo()->prepare(
+            'DELETE FROM user_sessions WHERE id = ? AND selector = ? AND validator_hash = ?'
+        );
+        $consume->execute([(int)$session['id'], $selector, $presentedHash]);
+        if ($consume->rowCount() !== 1) {
+            self::clearRememberCookie();
+            return false;
+        }
+
+        // Rotate selector + validator on every remember-me login. The old token
+        // is now unusable even if it was copied from the browser beforehand.
+        self::finishLogin(
+            (int) $session['admin_id'],
+            (string)$session['username'],
+            (string)$session['role'],
+            !empty($session['must_change_password']),
+            true
+        );
         return true;
     }
 

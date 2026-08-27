@@ -39,7 +39,7 @@ flash_render();
         <div><p class="eyebrow">Preferences</p><h1>Notification settings</h1><p>Choose which operational alerts should reach this administrator account.</p></div>
     </div>
 
-    <form method="post" class="detail-section" style="max-width:760px">
+    <form method="post" class="detail-section notification-settings-card">
         <?= Csrf::field() ?>
         <div class="section-heading"><div><p class="eyebrow">Push categories</p><h2>Alert types</h2></div></div>
 
@@ -50,14 +50,14 @@ flash_render();
             'security' => ['Security alerts', 'Notify for authentication or suspicious-access events.'],
             'system' => ['System alerts', 'Notify for server, database, backup or runtime issues.'],
         ] as $key => [$title, $desc]): ?>
-            <label style="display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--border-color,#263040)">
-                <input type="checkbox" name="<?= $key ?>" value="1" <?= !empty($prefs[$key]) ? 'checked' : '' ?> style="margin-top:4px">
-                <span><strong><?= htmlspecialchars($title) ?></strong><small style="display:block;opacity:.75;margin-top:4px"><?= htmlspecialchars($desc) ?></small></span>
+            <label class="notification-setting-row">
+                <input type="checkbox" name="<?= $key ?>" value="1" <?= !empty($prefs[$key]) ? 'checked' : '' ?>>
+                <span><strong><?= htmlspecialchars($title) ?></strong><small><?= htmlspecialchars($desc) ?></small></span>
             </label>
         <?php endforeach; ?>
 
-        <div style="margin-top:22px">
-            <label><span style="display:block;margin-bottom:8px">Mute all notifications temporarily</span>
+        <div class="notification-mute-block">
+            <label><span class="notification-mute-label">Mute all notifications temporarily</span>
                 <select name="mute">
                     <option value="off" <?= !$muted ? 'selected' : '' ?>>Not muted</option>
                     <option value="1h">Mute for 1 hour</option>
@@ -65,10 +65,10 @@ flash_render();
                     <option value="24h">Mute for 24 hours</option>
                 </select>
             </label>
-            <?php if ($muted): ?><p style="margin-top:8px;opacity:.75">Muted until <?= htmlspecialchars(date('M j, Y H:i', strtotime($prefs['muted_until']))) ?></p><?php endif; ?>
+            <?php if ($muted): ?><p class="notification-muted-until">Muted until <?= htmlspecialchars(date('M j, Y H:i', strtotime($prefs['muted_until']))) ?></p><?php endif; ?>
         </div>
 
-        <div class="dialog-actions" style="margin-top:24px">
+        <div class="dialog-actions notification-settings-actions">
             <button type="submit" class="primary-btn">Save settings</button>
         </div>
     </form>

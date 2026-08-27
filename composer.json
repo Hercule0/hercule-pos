@@ -2,6 +2,7 @@
     "name": "hercule/pos",
     "description": "Hercule POS License Engine",
     "type": "project",
+    "license": "proprietary",
     "authors": [
         {
             "name": "hercule0",
@@ -10,11 +11,12 @@
     ],
     "require": {
         "minishlink/web-push": "^11.0",
-        "guzzlehttp/guzzle": "*"
+        "guzzlehttp/guzzle": "^8.0.2"
     },
     "config": {
         "allow-plugins": {
             "php-http/discovery": true
-        }
+        },
+        "sort-packages": true
     }
 }
