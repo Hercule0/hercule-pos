@@ -48,7 +48,7 @@ $input = [
 ];
 
 $envelope = UpdateSigner::sign($input);
-if (($envelope['alg'] ?? '') !== 'RSA-SHA256' || ($envelope['key_id'] ?? '') !== 'hercule-update-v1') {
+if (($envelope['alg'] ?? '') !== 'RSA-SHA256' || ($envelope['key_id'] ?? '') !== 'hercule-update-v2') {
     fwrite(STDERR, "FAIL: signer metadata mismatch\n");
     exit(1);
 }
