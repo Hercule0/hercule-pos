@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 migrations=(
   "db/migrate_device_management.php"
   "db/migrate_release_management.php"
+  "db/migrate_support_feedback.php"
   "db/migrate_performance_indexes.php"
   "db/migrate_expiry_alerts.php"
   "db/migrate_notification_preferences.php"
