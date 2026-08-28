@@ -142,6 +142,9 @@ function render_header(string $title): void
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Emergency Recovery</span>
                     <span class="sidebar-counter" id="sidebar-recovery-badge" hidden>0</span>
                 </a>
+                <a href="/public/admin/support.php" class="sidebar-link <?= $currentPage === 'support.php' ? 'active' : '' ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 3V5z"/><path d="M8 9h8M8 12h5"/></svg><span>Support & Feedback</span>
+                </a>
 
                 <div class="sidebar-section-label">SYSTEM & SECURITY</div>
                 <?php if (Auth::can('admins.manage')): ?>
