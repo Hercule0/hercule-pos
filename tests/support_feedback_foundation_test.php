@@ -50,7 +50,7 @@ assert_support(str_contains($admin, 'Csrf::guard();'), 'Admin support mutations 
 assert_support(str_contains($admin, 'SupportAccess::requireManage();'), 'Admin support mutations are missing the dedicated support.manage gate.');
 assert_support(str_contains($admin, 'SupportAccess::canManage()'), 'Admin support action controls are not gated by support.manage.');
 assert_support(str_contains($access, "MANAGE_PERMISSION = 'support.manage'"), 'Dedicated support.manage permission is missing.');
-assert_support(str_contains($access, "$role === 'owner' || $role === 'support'"), 'Support role must inherit support.manage by default.');
+assert_support(str_contains($access, "\$role === 'owner' || \$role === 'support'"), 'Support role must inherit support.manage by default.');
 assert_support(str_contains($adminPermissions, "'support.manage' => 'Manage support & feedback'"), 'support.manage is missing from granular permission administration.');
 assert_support(str_contains($adminPermissions, "'support.manage' => true"), 'Support role default does not grant support.manage in permission administration.');
 assert_support(str_contains($admin, 'SupportTicket::adminReply'), 'Admin reply flow is missing.');
