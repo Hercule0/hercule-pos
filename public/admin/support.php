@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/bootstrap.php';
 Auth::require();
 require_once __DIR__ . '/../../includes/SupportTicket.php';
+require_once __DIR__ . '/../../includes/SupportAccess.php';
 
 function support_type_label(string $type): string
 {
@@ -52,7 +53,7 @@ function support_category_label(string $category): string
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::guard();
-    Auth::requirePermission('recovery.review');
+    SupportAccess::requireManage();
 
     $ticketNumber = strtoupper(trim((string)($_POST['ticket_number'] ?? '')));
     $action = (string)($_POST['action'] ?? '');
@@ -219,7 +220,7 @@ flash_render();
             </table>
         </div>
 
-        <?php if (Auth::can('recovery.review')): ?>
+        <?php if (SupportAccess::canManage()): ?>
             <form method="post" class="recovery-review-form">
                 <?= Csrf::field() ?>
                 <input type="hidden" name="ticket_number" value="<?= htmlspecialchars($selected['ticket_number']) ?>">
