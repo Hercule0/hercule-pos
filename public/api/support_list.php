@@ -1,13 +1,13 @@
 <?php
-/** GET /api/support_list.php?license_key=...&hwid=... */
+/** POST /api/support_list.php */
 
 require_once __DIR__ . '/_support_common.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'error' => 'Method not allowed.'], 405);
 }
 
-$input = $_GET;
+$input = json_input(8192);
 [$licenseKey, $hwid] = support_credentials($input);
 support_rate_guard($licenseKey, 'support_list');
 
