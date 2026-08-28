@@ -41,6 +41,10 @@ foreach ($statements as $statement) {
     }
 }
 
+// Keep support/feedback tables available both in the release migration batch
+// and when a fresh environment runs only the canonical db/migrate.php entry.
+require __DIR__ . '/migrate_support_feedback.php';
+
 $roleColumn = $pdo->prepare(
     'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
@@ -197,6 +201,10 @@ $tables = [
     'recovery_audit_log',
     'push_subscriptions',
     'user_sessions',
+    'support_tickets',
+    'support_messages',
+    'support_status_history',
+    'support_attachments',
 ];
 
 foreach ($tables as $tableName) {
