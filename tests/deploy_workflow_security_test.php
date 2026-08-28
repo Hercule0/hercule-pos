@@ -30,21 +30,21 @@ if ($globalIdToken !== false) {
     $fail('OIDC permission is still available to validation or pull-request jobs');
 }
 
-$mainGate = "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'";
+$mainGate = "github.event_name == 'push' && github.ref == 'refs/heads/main'";
 if (substr_count($workflow, $mainGate) < 2) {
-    $fail('production artifact/deploy paths are not both restricted to manual main-branch runs');
-}
-
-if (!str_contains($workflow, "environment: production")) {
-    $fail('production deployment is not protected by the production environment');
+    $fail('production artifact/deploy paths are not both restricted to pushes on main');
 }
 
 if (!str_contains($workflow, "deploy-production:\n    if: " . $mainGate)) {
-    $fail('production deploy job can run from a non-main ref');
+    $fail('production deploy job can run outside an automatic main-branch push');
 }
 
 if (!str_contains($workflow, "Upload validated deployment package\n        if: " . $mainGate)) {
-    $fail('deployment artifact can be produced from a non-main manual ref');
+    $fail('deployment artifact can be produced outside an automatic main-branch push');
+}
+
+if (str_contains($workflow, "environment: production")) {
+    $fail('production environment binding changes the OIDC subject away from the main branch ref');
 }
 
 if (!str_contains($workflow, 'bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"')) {
@@ -57,4 +57,4 @@ if (!str_contains($workflow, 'timeout-minutes: 15')) {
     $fail('production deployment job has no bounded timeout');
 }
 
-echo "PASS deployment workflow privilege and readiness gates\n";
+echo "PASS deployment workflow privilege and automatic-main readiness gates\n";
