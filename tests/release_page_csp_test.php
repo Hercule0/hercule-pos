@@ -65,8 +65,14 @@ foreach (['form.dataset.maxUploadBytes', 'target-search', '/public/admin/release
 if (str_contains($fast, '.style.') || str_contains($fast, 'setAttribute("style"')) {
     $fail('release uploader still mutates inline styles');
 }
-if (!str_contains($shell, 'form.dataset.confirm') || !str_contains($shell, 'window.confirm(confirmMessage)')) {
-    $fail('shared admin shell does not enforce data-confirm forms');
+if (!str_contains($shell, 'form.dataset.confirm') || !str_contains($shell, 'requestDecision({')) {
+    $fail('shared admin shell does not enforce data-confirm forms with the app-owned dialog');
+}
+if (str_contains($shell, 'window.confirm(') || str_contains($shell, 'window.prompt(')) {
+    $fail('shared admin shell falls back to browser confirm/prompt dialogs');
+}
+if (str_contains($shell, '.innerHTML') || str_contains($shell, 'insertAdjacentHTML')) {
+    $fail('shared admin shell uses raw HTML insertion');
 }
 if (trim($css) === '' || !str_contains($css, '::-webkit-progress-value')) {
     $fail('release stylesheet does not define native progress styling');
