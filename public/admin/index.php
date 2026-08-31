@@ -216,7 +216,7 @@ render_header('Dashboard');
                     <li class="expiry-item">
                         <div class="expiry-key"><?= htmlspecialchars($r['license_key']) ?></div>
                         <div class="expiry-customer">User: <?= htmlspecialchars($r['username'] ?? '—') ?></div>
-                        <div class="expiry-date"><?= date('M j H:i', strtotime($r['created_at'])) ?></div>
+                        <div class="expiry-date"><?= date('M j g:i A', strtotime($r['created_at'])) ?></div>
                     </li>
                     <?php endforeach; ?>
                 </ul>
@@ -238,7 +238,7 @@ render_header('Dashboard');
                             <span class="verif-key"><?= htmlspecialchars(substr($v['license_key'], 0, 14)) ?>…</span>
                             <span class="verif-result"><?= htmlspecialchars($v['result']) ?></span>
                         </div>
-                        <span class="verif-time"><?= date('H:i', strtotime($v['created_at'])) ?></span>
+                        <span class="verif-time"><?= date('g:i A', strtotime($v['created_at'])) ?></span>
                     </li>
                     <?php endforeach; ?>
                 </ul>
