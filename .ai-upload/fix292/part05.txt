@@ -1,0 +1,111 @@
+        'analyze_suppliers'=>'تحليل الموردين','analyze_baskets'=>'تحليل سلة المشتريات','daily_executive_brief'=>'الملخص التنفيذي اليومي',
+        'analyze_proactive_notifications'=>'التنبيهات الذكية الاستباقية','help_search'=>'مساعدة Hercule'
+    ];
+    foreach ($map as $key=>$label) $text = preg_replace('/\b'.preg_quote($key,'/').'\b/iu', $label, $text) ?? $text;
+    $text = preg_replace('/\bEvidence\s*ID\b/iu','دليل',$text) ?? $text;
+    $text = preg_replace('/\bClaim\b/iu','استنتاج',$text) ?? $text;
+    $text = preg_replace('/\btool[_ -]?calls?\b/iu','خطوات التحليل',$text) ?? $text;
+    $text = preg_replace('/\bintent\b/iu','نوع التحليل',$text) ?? $text;
+    return trim(preg_replace('/\s{2,}/u',' ',$text) ?? $text);
+}
+function ai_apply_user_facing_policy(array $answer): array {
+    foreach (['answer','caveat'] as $key) if (isset($answer[$key]) && is_string($answer[$key])) $answer[$key] = ai_user_facing_text($answer[$key]);
+    foreach (['key_points','recommendations','followups'] as $key) {
+        if (!is_array($answer[$key] ?? null)) continue;
+        foreach ($answer[$key] as $i=>$item) if (is_string($item)) $answer[$key][$i] = ai_user_facing_text($item);
+    }
+    return $answer;
+}
+function ai_answer_language_ok(array $answer, string $question): bool {
+    if (!ai_user_prefers_arabic($question)) return true;
+    $parts = [trim((string)($answer['answer'] ?? ''))];
+    foreach (['key_points','recommendations','followups'] as $key) if (is_array($answer[$key] ?? null)) foreach ($answer[$key] as $v) if (is_string($v)) $parts[] = trim($v);
+    if (is_string($answer['caveat'] ?? null)) $parts[] = trim((string)$answer['caveat']);
+    if ($parts[0] === '') return false;
+    foreach ($parts as $text) {
+        if ($text === '') continue;
+        preg_match_all('/[\x{0621}-\x{064A}]/u',$text,$ar); preg_match_all('/[A-Za-z]/',$text,$la);
+        $a=count($ar[0]??[]);$l=count($la[0]??[]);$letters=$a+$l;
+        if ($letters < 8) continue;
+        if ($a < 6 || ($a / max(1,$letters)) < 0.28) return false;
+    }
+    return true;
+}
+
+
+const HERCULE_AI_PRIVACY_CONSENT_VERSION = 1;
+function ai_privacy_policy(array $body): array {
+    $privacy = is_array($body['privacy'] ?? null) ? $body['privacy'] : [];
+    $version = max(0, (int)($privacy['consent_version'] ?? 0));
+    $scope = strtolower(trim((string)($privacy['scope'] ?? 'minimal')));
+    if ($version < HERCULE_AI_PRIVACY_CONSENT_VERSION || !in_array($scope, ['minimal','operational'], true)) {
+        ai_json(['ok'=>false,'code'=>'AI_PRIVACY_CONSENT_REQUIRED','error'=>'يلزم تفعيل موافقة الذكاء السحابي من إعدادات Hercule.'],403);
+    }
+    return ['consent_version'=>$version,'scope'=>$scope];
+}
+function ai_privacy_redact_text(string $text, int $limit = 1200): string {
+    $text = ai_cut($text, $limit);
+    $text = preg_replace('/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/u', '[EMAIL]', $text) ?? $text;
+    $text = preg_replace('/(?:\+?964|00964|0)?7(?:[\s-]?\d){9}\b/u', '[PHONE]', $text) ?? $text;
+    $text = preg_replace('/\b(?:sk-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,})\b/u', '[SECRET]', $text) ?? $text;
+    $text = preg_replace('/\b(?:license|licence|hwid|hardware\s*id)\s*[:=#-]?\s*[A-Za-z0-9_-]{8,}\b/iu', '[REDACTED]', $text) ?? $text;
+    return $text;
+}
+function ai_privacy_block_key(string $key, string $scope): bool {
+    $key = strtolower(trim($key));
+    if (preg_match('/(?:password|pass_hash|passcode|token|secret|api[_-]?key|private[_-]?key|license[_-]?key|hwid|hardware[_-]?id|recovery|email|phone|whatsapp|address|history|conversation[_-]?history|customer[_-]?name|customer[_-]?full|cashier|username|full[_-]?name|employee[_-]?name|user[_-]?name|contact[_-]?name|supplier[_-]?phone)/i', $key)) return true;
+    if ($scope === 'minimal' && preg_match('/(?:^|_)(?:id|name|title|sku|barcode|code|serial|lot|note|customer|supplier|product|category|invoice|receipt|document|reference|fingerprint)(?:$|_)/i', $key)) return true;
+    if ($scope === 'minimal' && preg_match('/^(?:summary|message|description|label|statement|findings|key_findings|recommendations?|recommended_action|recommended_actions|positive_signals|interpretation_guard|decision_guard|conclusion|detail|action)$/i', $key)) return true;
+    return false;
+}
+function ai_privacy_sanitize($value, string $scope, int $depth = 0) {
+    if ($depth > 7) return null;
+    if ($value === null || is_bool($value) || is_int($value) || is_float($value)) return $value;
+    if (is_string($value)) return ai_privacy_redact_text($value, $depth <= 1 ? 1200 : 500);
+    if (!is_array($value)) return ai_privacy_redact_text((string)$value, 200);
+
+    $isList = array_is_list($value);
+    $out = [];
+    $limit = $depth <= 1 ? 80 : 50;
+    $count = 0;
+    foreach ($value as $key=>$item) {
+        if ($count++ >= $limit) break;
+        if (!$isList && ai_privacy_block_key((string)$key, $scope)) continue;
+        // Fix 262 defense-in-depth: raw row/list containers never reach provider prompts.
+        if (!$isList && is_array($item) && array_is_list($item) && preg_match('/^(?:rows?|records?|invoices?|receipts?|transactions?|customers?|orders?|purchase_orders?|purchases?|sales_lines?|invoice_items?|line_items?|items?|batches?|movements?|stock_movements?|events?|snapshots?|documents?|attachments?)$/i', (string)$key)) continue;
+        $clean = ai_privacy_sanitize($item, $scope, $depth + 1);
+        if ($isList) $out[] = $clean; else $out[$key] = $clean;
+    }
+    return $out;
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') ai_json(['ok'=>false,'code'=>'METHOD_NOT_ALLOWED'],405);
+$body = json_input(65536);
+$licenseKey = trim((string)($body['license_key'] ?? ''));
+$hwid = trim((string)($body['hwid'] ?? ''));
+$question = trim((string)($body['question'] ?? ''));
+$mode = strtolower(trim((string)($body['mode'] ?? 'plan')));
+if ($licenseKey === '' || $hwid === '') ai_json(['ok'=>false,'code'=>'LICENSE_REQUIRED'],401);
+if ($question === '' || strlen($question) > 6000) ai_json(['ok'=>false,'code'=>'INVALID_QUESTION'],400);
+if (!in_array($mode, ['understand','plan','synthesize'], true)) ai_json(['ok'=>false,'code'=>'INVALID_MODE'],400);
+$privacy = ai_privacy_policy($body);
+$privacyManifest = is_array($body['privacy_manifest'] ?? null) ? $body['privacy_manifest'] : [];
+if ($privacyManifest) {
+    $policyVersion = max(0, (int)($privacyManifest['policy_version'] ?? 0));
+    $rawRows = max(0, (int)($privacyManifest['raw_rows_forwarded'] ?? 0));
+    $transform = trim((string)($privacyManifest['transformation'] ?? ''));
+    if ($policyVersion < 2 || $rawRows !== 0 || $transform !== 'feature_extraction_aggregation_anonymization') {
+        ai_json(['ok'=>false,'code'=>'AI_PRIVACY_MANIFEST_INVALID','error'=>'تعذر قبول حزمة الذكاء بسبب سياسة الخصوصية.'],400);
+    }
+}
+$question = trim(ai_privacy_redact_text($question, 6000));
+
+$ipLimit = max(10,(int)ai_env('HERCULE_AI_IP_RPM','60'));
+if (!RateLimiter::check(client_ip(),'ai_agent_ip',$ipLimit,1)) {
+    ai_json(['ok'=>false,'code'=>'AI_RATE_LIMIT','error'=>'طلبات كثيرة جداً. جرّب بعد قليل.'],429);
+}
+
+if (DeviceManager::isBlocked($licenseKey,$hwid)) ai_json(['ok'=>false,'code'=>'DEVICE_BLOCKED'],403);
+$validation = License::validate($licenseKey,$hwid,client_ip());
+if (!($validation['ok'] ?? false)) ai_json(['ok'=>false,'code'=>'LICENSE_INVALID'],403);
+$licenseHash = ai_quota_license_hash($licenseKey);

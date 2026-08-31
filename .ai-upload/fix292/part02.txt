@@ -1,0 +1,116 @@
+            'service_mode'=>ai_quota_public_mode($reservation),
+            'errors'=>['fair_use_gate'],
+        ];
+    }
+
+    $effectiveTier = ai_model_router_tier((string)($reservation['effective_tier'] ?? $requestedTier));
+    $attempted = [];
+    $successful = false;
+    $successfulTokens = 0;
+    try {
+        foreach (ai_model_router_tier_sequence($effectiveTier) as $tier) {
+            $budget = ai_model_router_token_budget($mode, $tier, $maxTokens);
+            $configuredOrder = ai_model_router_provider_order($tier);
+            $providerOrder = ai_quota_rank_providers($configuredOrder, $tier);
+            if (!$providerOrder) { $errors[] = 'provider_budget_exhausted:'.$tier; continue; }
+            foreach ($providerOrder as $provider) {
+                $model = ai_model_router_model($provider, $tier);
+                $attemptKey = $provider.'|'.$model;
+                if (isset($attempted[$attemptKey])) continue;
+                $attempted[$attemptKey] = true;
+                $estimatedTokens = max(1, (int)ceil(strlen($prompt) / 4) + $budget);
+                $providerAttempt = ai_quota_provider_reserve_attempt($provider, $tier, $estimatedTokens);
+                if (empty($providerAttempt['ok'])) { $errors[] = $provider.':budget_or_cooldown'; continue; }
+
+                $res = ai_call_provider($provider, $prompt, $budget, $tier);
+                if (!empty($res['skip'])) {
+                    ai_quota_provider_refund_attempt($providerAttempt);
+                    $errors[] = $provider.':not_configured';
+                    continue;
+                }
+                $status = (int)($res['status'] ?? 0);
+                if ($status === 0) ai_quota_provider_refund_attempt($providerAttempt);
+                ai_quota_provider_record_status($provider, $status);
+                $json = ai_clean_json((string)($res['text'] ?? ''));
+                if ($json) {
+                    $successful = true;
+                    $successfulTokens = $estimatedTokens;
+                    $out = [
+                        'ok'=>true,
+                        'provider'=>$provider, // internal only; never returned to the desktop client
+                        'model'=>$model,
+                        'tier'=>$tier,
+                        'requested_tier'=>$requestedTier,
+                        'effective_tier'=>$effectiveTier,
+                        'fallback_used'=>$tier !== $requestedTier || $effectiveTier !== $requestedTier,
+                        'cache_hit'=>false,
+                        'service_mode'=>ai_quota_public_mode($reservation),
+                        'json'=>$json,
+                    ];
+                    if ($licenseHash !== '') ai_quota_cache_put($licenseHash, $mode, $prompt, $out);
+                    return $out;
+                }
+                $errors[] = $provider.':'.$status.':'.$tier;
+            }
+        }
+        return ['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','requested_tier'=>$requestedTier,'effective_tier'=>$effectiveTier,'service_mode'=>ai_quota_public_mode($reservation),'errors'=>$errors];
+    } finally {
+        if ($licenseHash !== '') ai_quota_release_request($reservation, $successful, $successfulTokens);
+    }
+}
+function ai_log_provider_failure(string $event, array $errors): void {
+    $safe = [];
+    foreach (array_slice($errors, 0, 8) as $error) {
+        $safe[] = ai_cut((string)$error, 80);
+    }
+    ErrorHandler::report(new RuntimeException('AI provider routing failed.'), $event, ['providers'=>$safe]);
+}
+function ai_decode_args($value): array {
+    if (is_array($value)) return $value;
+    if (is_string($value) && trim($value) !== '') {
+        $decoded = json_decode($value, true);
+        if (is_array($decoded)) return $decoded;
+    }
+    return [];
+}
+function ai_flatten_call(array $call): array {
+    $fn = is_array($call['function'] ?? null) ? $call['function'] : [];
+    $args = ai_decode_args($call['arguments'] ?? $call['args'] ?? $call['parameters'] ?? $fn['arguments'] ?? []);
+    return array_merge($args, $call, [
+        'tool' => (string)($call['tool'] ?? $call['name'] ?? $fn['name'] ?? $args['tool'] ?? $args['name'] ?? ''),
+    ]);
+}
+function ai_normalize_calls(array $model, array $catalog, string $question): array {
+    $rawCalls = $model['tool_calls'] ?? $model['tools'] ?? $model['calls'] ?? $model['actions'] ?? [];
+    if (!is_array($rawCalls)) $rawCalls = [];
+    $calls = [];
+    $toolAliases = [
+        'sales_forecast'=>'forecast_sales','forecast_sales_data'=>'forecast_sales',
+        'inventory_forecast'=>'forecast_inventory','stock_forecast'=>'forecast_inventory',
+        'product_forecast'=>'forecast_product','product_demand_forecast'=>'forecast_product',
+        'what_if'=>'simulate_what_if','simulate'=>'simulate_what_if','counterfactual'=>'simulate_what_if',
+        'supplier_analysis'=>'analyze_suppliers','supplier_intelligence'=>'analyze_suppliers','compare_suppliers'=>'analyze_suppliers',
+        'basket_analysis'=>'analyze_baskets','market_basket'=>'analyze_baskets','cross_sell'=>'analyze_baskets','bundle_analysis'=>'analyze_baskets',
+        'app_help'=>'help_search','help'=>'help_search','settings_help'=>'help_search',
+        'get_report'=>'report','query_report'=>'report','run_report'=>'report',
+        'store_query'=>'store_read','read_store'=>'store_read','store_read'=>'store_read',
+        'analytical_query'=>'analyze_query','universal_query'=>'analyze_query','analyze_query'=>'analyze_query',
+    ];
+    foreach (array_slice($rawCalls, 0, 12) as $raw) {
+        if (!is_array($raw)) continue;
+        $c = ai_flatten_call($raw);
+        $tool = strtolower(trim((string)($c['tool'] ?? '')));
+        if (isset($toolAliases[$tool])) $tool = $toolAliases[$tool];
+        if (isset($catalog[$tool]) && $tool !== 'none') { $c['intent'] = $tool; $tool = 'report'; }
+        if ($tool === 'store_read') {
+            $allowedViews = ['products','product_prices','inventory','inventory_batches','inventory_locations','location_inventory','inventory_transfers','inventory_counts','product_movements','invoices','invoice_detail','customers','customer_debts','suppliers','purchase_orders','supplier_payables','supplier_documents','expenses','promotions','cash_drawer','cash_shifts','users','price_audit','activity_log','held_sales','feature_settings','categories'];
+            $view = strtolower(trim((string)($c['view'] ?? $c['domain'] ?? '')));
+            if (!in_array($view,$allowedViews,true)) continue;
+            $allowedSorts = ['newest','name_asc','name_desc','stock_desc','stock_asc','price_desc','price_asc','cost_desc','cost_asc','balance_desc'];
+            $sort = strtolower(trim((string)($c['sort'] ?? ''))); if (!in_array($sort,$allowedSorts,true)) $sort='';
+            $calls[] = ['tool'=>'store_read','view'=>$view,
+                'query'=>ai_cut(trim((string)($c['query'] ?? '')),120),'sort'=>$sort,'status'=>ai_cut(trim((string)($c['status'] ?? '')),40),
+                'category'=>ai_cut(trim((string)($c['category'] ?? '')),100),'limit'=>max(1,min(50,(int)($c['limit']??10))),
+                'min_price'=>isset($c['min_price'])?(float)$c['min_price']:null,'max_price'=>isset($c['max_price'])?(float)$c['max_price']:null,
+                'min_cost'=>isset($c['min_cost'])?(float)$c['min_cost']:null,'max_cost'=>isset($c['max_cost'])?(float)$c['max_cost']:null,
+                'product_id'=>isset($c['product_id'])?(int)$c['product_id']:null,'customer_id'=>isset($c['customer_id'])?(int)$c['customer_id']:null,

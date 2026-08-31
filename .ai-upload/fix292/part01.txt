@@ -1,0 +1,141 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../../includes/RateLimiter.php';
+require_once __DIR__ . '/../../includes/DeviceManager.php';
+require_once __DIR__ . '/model_router.php';
+require_once __DIR__ . '/quota_manager.php';
+
+function ai_env(string $key, string $default = ''): string {
+    $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+    return ($value === false || $value === null || $value === '') ? $default : trim((string)$value);
+}
+function ai_json(array $payload, int $status = 200): never {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+function ai_cut(string $text, int $limit): string {
+    return function_exists('mb_substr') ? (string)mb_substr($text, 0, $limit, 'UTF-8') : substr($text, 0, $limit);
+}
+function ai_prompt_json($value, int $maxChars): string {
+    $shrink = function ($v, int $depth = 0) use (&$shrink) {
+        if ($depth > 6) return null;
+        if ($v === null || is_bool($v) || is_int($v) || is_float($v)) return $v;
+        if (is_string($v)) return ai_cut($v, $depth <= 1 ? 1200 : 500);
+        if (!is_array($v)) return ai_cut((string)$v, 200);
+        $out = [];
+        $n = 0;
+        foreach ($v as $k => $item) {
+            if ($n++ >= ($depth <= 1 ? 30 : 18)) break;
+            $out[$k] = $shrink($item, $depth + 1);
+        }
+        return $out;
+    };
+    $candidate = $shrink($value);
+    $text = json_encode($candidate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($text)) return '{}';
+    if (strlen($text) <= $maxChars) return $text;
+    return json_encode(['truncated' => true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+}
+function ai_post_json(string $url, array $headers, array $payload, int $timeout = 15): array {
+    $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $headers = array_merge(['Content-Type: application/json', 'Accept: application/json', 'User-Agent: HerculePOS-Agent/1.1'], $headers);
+    if (!function_exists('curl_init')) return ['status'=>0,'json'=>null,'error'=>'cURL extension unavailable'];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_FOLLOWLOCATION => false,
+    ]);
+    $raw = curl_exec($ch);
+    $error = curl_error($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    $json = is_string($raw) ? json_decode($raw, true) : null;
+    return ['status'=>$status,'json'=>is_array($json)?$json:null,'error'=>$error];
+}
+function ai_clean_json(string $text): ?array {
+    $text = trim($text);
+    $text = preg_replace('/^```(?:json)?\s*/i', '', $text) ?? $text;
+    $text = preg_replace('/\s*```$/', '', $text) ?? $text;
+    $first = strpos($text, '{');
+    $last = strrpos($text, '}');
+    if ($first !== false && $last !== false && $last >= $first) $text = substr($text, $first, $last - $first + 1);
+    $json = json_decode($text, true);
+    return is_array($json) ? $json : null;
+}
+function ai_call_provider(string $provider, string $prompt, int $maxTokens, string $tier = 'standard'): array {
+    $tier = ai_model_router_tier($tier);
+    $timeout = ai_model_router_timeout($tier);
+    if ($provider === 'gemini') {
+        $key = ai_env('GEMINI_API_KEY'); if ($key === '') return ['skip'=>true];
+        $model = ai_model_router_model('gemini', $tier);
+        $base = rtrim(ai_env('GEMINI_API_BASE', 'https://generativelanguage.googleapis.com/v1beta'), '/');
+        $res = ai_post_json($base.'/models/'.rawurlencode($model).':generateContent', ['x-goog-api-key: '.$key], [
+            'contents'=>[['role'=>'user','parts'=>[['text'=>$prompt]]]],
+            'generationConfig'=>['temperature'=>0.12,'maxOutputTokens'=>$maxTokens,'responseMimeType'=>'application/json'],
+        ], $timeout);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['candidates'][0]['content']['parts'][0]['text']??''),'error'=>$res['error'] ?: (string)($res['json']['error']['message']??''),'model'=>$model,'tier'=>$tier];
+    }
+    if ($provider === 'groq') {
+        $key = ai_env('GROQ_API_KEY'); if ($key === '') return ['skip'=>true];
+        $model = ai_model_router_model('groq', $tier);
+        $base = rtrim(ai_env('GROQ_API_BASE', 'https://api.groq.com/openai/v1'), '/');
+        $res = ai_post_json($base.'/chat/completions', ['Authorization: Bearer '.$key], [
+            'model'=>$model,
+            'messages'=>[['role'=>'system','content'=>'Return one strict JSON object only.'],['role'=>'user','content'=>$prompt]],
+            'temperature'=>0.12,
+            'max_completion_tokens'=>$maxTokens,
+            'response_format'=>['type'=>'json_object'],
+        ], $timeout);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['choices'][0]['message']['content']??''),'error'=>$res['error'] ?: (string)($res['json']['error']['message']??''),'model'=>$model,'tier'=>$tier];
+    }
+    if ($provider === 'cloudflare') {
+        $token = ai_env('CLOUDFLARE_AI_TOKEN'); $account = ai_env('CLOUDFLARE_ACCOUNT_ID');
+        if ($token === '' || $account === '') return ['skip'=>true];
+        $model = ai_model_router_model('cloudflare', $tier);
+        $base = rtrim(ai_env('CLOUDFLARE_API_BASE', 'https://api.cloudflare.com/client/v4'), '/');
+        $url = $base.'/accounts/'.rawurlencode($account).'/ai/run/'.str_replace('%2F','/',rawurlencode($model));
+        $res = ai_post_json($url, ['Authorization: Bearer '.$token], ['prompt'=>$prompt,'max_tokens'=>$maxTokens,'temperature'=>0.12], $timeout);
+        return ['status'=>$res['status'],'text'=>(string)($res['json']['result']['response']??''),'error'=>$res['error'] ?: (string)($res['json']['errors'][0]['message']??''),'model'=>$model,'tier'=>$tier];
+    }
+    return ['skip'=>true];
+}
+function ai_providers(string $prompt, int $maxTokens, array $route = []): array {
+    $errors = [];
+    $requestedTier = ai_model_router_tier((string)($route['tier'] ?? 'standard'));
+    $mode = strtolower(trim((string)($route['mode'] ?? 'synthesize')));
+    $licenseHash = trim((string)($route['license_hash'] ?? ''));
+
+    // Fix 277: a privacy-safe per-license response cache is checked before any quota reservation/provider call.
+    if ($licenseHash !== '') {
+        $cached = ai_quota_cache_get($licenseHash, $mode, $prompt);
+        if (is_array($cached) && is_array($cached['json'] ?? null)) {
+            return [
+                'ok'=>true,
+                'provider'=>'cache', // internal only
+                'model'=>'cache',
+                'tier'=>ai_model_router_tier((string)($cached['tier'] ?? $requestedTier)),
+                'requested_tier'=>$requestedTier,
+                'fallback_used'=>false,
+                'cache_hit'=>true,
+                'service_mode'=>'cached',
+                'json'=>$cached['json'],
+            ];
+        }
+    }
+
+    $reservation = $licenseHash !== ''
+        ? ai_quota_reserve_request($licenseHash, $mode, $requestedTier)
+        : ['ok'=>true,'effective_tier'=>$requestedTier,'requested_tier'=>$requestedTier,'mode'=>'normal','units'=>0];
+    if (empty($reservation['ok'])) {
+        return [
+            'ok'=>false,
+            'code'=>(string)($reservation['code'] ?? 'AI_FAIR_USE_LIMIT'),
+            'requested_tier'=>$requestedTier,

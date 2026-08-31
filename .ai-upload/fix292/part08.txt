@@ -1,0 +1,38 @@
+        }
+        ai_log_provider_failure('ai_agent_plan_providers_unavailable', $res['errors'] ?? []);
+        ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','error'=>'تعذر الوصول إلى مزودي الذكاء حالياً.'],503);
+    }
+    $model = $res['json'];
+    $calls = ai_normalize_calls($model,$catalog,$question);
+    if ($calls) {
+        ai_json(['ok'=>true,'provider'=>'hercule-cloud','model_tier'=>ai_model_router_public_label((string)$res['tier']),'route_fallback_used'=>!empty($res['fallback_used']),'service_mode'=>(string)($res['service_mode'] ?? 'normal'),'quota_cache_hit'=>!empty($res['cache_hit']),'plan'=>['kind'=>'tools','goal'=>ai_cut((string)($model['goal']??''),300),'tool_calls'=>$calls]]);
+    }
+    $answer = ai_sanitize_answer_payload(ai_answer_object($model['answer'] ?? $model['response'] ?? $model['message'] ?? $model['text'] ?? null));
+    $answer = ai_repair_answer_language($answer, $question, $licenseHash);
+    if (trim((string)($answer['answer'] ?? '')) !== '') {
+        ai_json(['ok'=>true,'provider'=>'hercule-cloud','model_tier'=>ai_model_router_public_label((string)$res['tier']),'route_fallback_used'=>!empty($res['fallback_used']),'service_mode'=>(string)($res['service_mode'] ?? 'normal'),'quota_cache_hit'=>!empty($res['cache_hit']),'plan'=>['kind'=>'answer','answer'=>$answer,'tool_calls'=>[]]]);
+    }
+    $fallback = ai_fallback_plan($question);
+    if ($fallback) ai_json(['ok'=>true,'provider'=>'hercule-cloud','model_tier'=>ai_model_router_public_label((string)$res['tier']),'route_fallback_used'=>!empty($res['fallback_used']),'service_mode'=>(string)($res['service_mode'] ?? 'normal'),'quota_cache_hit'=>!empty($res['cache_hit']),'plan'=>$fallback,'repaired'=>true]);
+    ai_json(['ok'=>false,'code'=>'AI_INVALID_PLAN','error'=>'AI provider returned an empty or unusable plan'],502);
+}
+
+$plan = ai_privacy_sanitize(is_array($body['plan'] ?? null) ? $body['plan'] : [], $privacy['scope']);
+$tools = ai_privacy_sanitize(is_array($body['tool_results'] ?? null) ? array_slice($body['tool_results'],0,8) : [], $privacy['scope']);
+$modelRoute = ai_model_router_classify('synthesize', $question, $context, $tools);
+$prompt = "You are the Hercule POS smart assistant. Use ONLY supplied privacy-preserving aggregate evidence for store-specific facts. The client forwards no raw invoice/customer rows; do not ask for or infer missing identities. Never invent numbers, causes, product names, customer names, or settings state. Forecasts are probabilistic: mention confidence/range and never guarantee. App-help must follow supplied help steps/settings. If some tools failed, clearly say what could not be read and still use the successful evidence. Answer in the user's language; use natural Iraqi Arabic when the user uses Iraqi Arabic. Product facts: the software maker name is Hercule, maker phone is 07802699479, maker email is 11mosta22@gmail.com. All monetary values in Hercule POS are Iraqi dinar only (IQD / د.ع / الدينار العراقي). Never label Hercule amounts as riyal, Saudi riyal, or SAR.\n"
+    ."The followups field is OPTIONAL. If used, it must contain only 1-4 short next QUESTIONS/REQUESTS the user could send, never advice, conclusions, instructions, or parts of the answer.\nReturn JSON only: {\"answer\":\"complete useful answer\",\"key_points\":[],\"recommendations\":[],\"confidence\":\"high|medium|low\",\"followups\":[],\"navigation\":[{\"view\":\"dashboard|sell|shifts|inventory|customers|expenses|reports|ask|settings|invoices|promotions|purchasing\",\"label\":\"...\"}],\"caveat\":\"\"}. Never return an empty answer.\n"
+    ."Question: ".$question."\nPlan: ".ai_prompt_json($plan,5000)."\nTool results: ".ai_prompt_json($tools,24000)."\nContext: ".ai_prompt_json($context,7000);
+$res = ai_providers($prompt,1400,['tier'=>$modelRoute['tier'],'mode'=>'synthesize','license_hash'=>$licenseHash]);
+if (!$res['ok']) {
+    if (str_starts_with((string)($res['code'] ?? ''), 'AI_FAIR_USE_')) {
+        ai_json(['ok'=>false,'code'=>(string)$res['code'],'service_mode'=>(string)($res['service_mode'] ?? 'local_only'),'error'=>'تم الحفاظ على الحصة اليومية للذكاء. سيكمل Hercule بالتحليل المحلي حالياً.'],429);
+    }
+    ai_log_provider_failure('ai_agent_synthesize_providers_unavailable', $res['errors'] ?? []);
+    ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','error'=>'تعذر الوصول إلى مزودي الذكاء حالياً.'],503);
+}
+$answer = ai_sanitize_answer_payload($res['json']);
+$answer = ai_repair_answer_language($answer, $question, $licenseHash);
+if (!trim((string)($answer['answer'] ?? ''))) ai_json(['ok'=>false,'code'=>'AI_INVALID_RESPONSE','error'=>'AI provider returned an empty answer'],502);
+$answer['answer'] = ai_cut((string)$answer['answer'],5000);
+ai_json(['ok'=>true,'provider'=>'hercule-cloud','model_tier'=>ai_model_router_public_label((string)$res['tier']),'route_fallback_used'=>!empty($res['fallback_used']),'service_mode'=>(string)($res['service_mode'] ?? 'normal'),'quota_cache_hit'=>!empty($res['cache_hit']),'answer'=>$answer]);

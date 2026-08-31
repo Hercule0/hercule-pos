@@ -1,0 +1,63 @@
+                'supplier_id'=>isset($c['supplier_id'])?(int)$c['supplier_id']:null,'invoice_id'=>isset($c['invoice_id'])?(int)$c['invoice_id']:null,
+                'location_id'=>isset($c['location_id'])?(int)$c['location_id']:null,'entity_id'=>isset($c['entity_id'])?(int)$c['entity_id']:null,
+                'entity_type'=>ai_cut(trim((string)($c['entity_type'] ?? '')),40),'entity_query'=>ai_cut(trim((string)($c['entity_query'] ?? '')),120),
+                'supplier_query'=>ai_cut(trim((string)($c['supplier_query'] ?? '')),120),'product_query'=>ai_cut(trim((string)($c['product_query'] ?? '')),120),'location_query'=>ai_cut(trim((string)($c['location_query'] ?? '')),120),
+                'start_date'=>ai_cut(trim((string)($c['start_date'] ?? '')),20),'end_date'=>ai_cut(trim((string)($c['end_date'] ?? '')),20),
+                'payment_method'=>ai_cut(trim((string)($c['payment_method'] ?? '')),20),'action'=>ai_cut(trim((string)($c['action'] ?? '')),80),
+                'username'=>ai_cut(trim((string)($c['username'] ?? '')),80)];
+        } elseif ($tool === 'analyze_query') {
+            $metrics=['sales','revenue','profit','margin','transactions','avg_basket','expenses','returns','discounts','cogs','quantity','debts','purchases'];
+            $dimensions=['none','category','product','customer','supplier','cashier','payment_method','day','hour'];
+            $comparisons=['none','previous_equal_period','previous_month','previous_year'];
+            $rankings=['none','desc','asc','growth','decline'];
+            $primary=strtolower(trim((string)($c['primary_metric']??$c['metric']??'sales')));if(!in_array($primary,$metrics,true))$primary='sales';
+            $dimension=strtolower(trim((string)($c['dimension']??'none')));if(!in_array($dimension,$dimensions,true))$dimension='none';
+            $comparison=strtolower(trim((string)($c['comparison_mode']??'none')));if(!in_array($comparison,$comparisons,true))$comparison='none';
+            $ranking=strtolower(trim((string)($c['ranking']??'desc')));if(!in_array($ranking,$rankings,true))$ranking='desc';
+            $secondary=[];foreach((array)($c['secondary_metrics']??[]) as $m){$m=strtolower(trim((string)$m));if(in_array($m,$metrics,true)&&$m!==$primary&&!in_array($m,$secondary,true))$secondary[]=$m;if(count($secondary)>=3)break;}
+            $conditions=[];foreach(array_slice((array)($c['conditions']??[]),0,4) as $cond){if(!is_array($cond))continue;$m=strtolower(trim((string)($cond['metric']??$primary)));$op=strtolower(trim((string)($cond['operator']??'')));if(!in_array($m,$metrics,true)||!in_array($op,['lt_previous','gt_previous','lt','gt','lte','gte'],true))continue;$row=['metric'=>$m,'operator'=>$op];if(in_array($op,['lt','gt','lte','gte'],true))$row['value']=(float)($cond['value']??0);$conditions[]=$row;}
+            $dateRange=$c['date_range']??$c['time_scope']??'this_month';if(is_array($dateRange))$dateRange=['start'=>ai_cut((string)($dateRange['start']??''),20),'end'=>ai_cut((string)($dateRange['end']??''),20)];else $dateRange=ai_cut((string)$dateRange,30);
+            $filters=is_array($c['filters']??null)?$c['filters']:[];
+            $calls[]=['tool'=>'analyze_query','primary_metric'=>$primary,'secondary_metrics'=>$secondary,'dimension'=>$dimension,'date_range'=>$dateRange,'comparison_mode'=>$comparison,'ranking'=>$ranking,'ranking_metric'=>in_array(strtolower(trim((string)($c['ranking_metric']??$primary))),$metrics,true)?strtolower(trim((string)($c['ranking_metric']??$primary))):$primary,'limit'=>max(1,min(30,(int)($c['limit']??10))),'conditions'=>$conditions,'filters'=>['category'=>ai_cut((string)($filters['category']??''),120),'product'=>ai_cut((string)($filters['product']??''),120),'customer'=>ai_cut((string)($filters['customer']??''),120),'cashier'=>ai_cut((string)($filters['cashier']??''),120),'payment_method'=>ai_cut((string)($filters['payment_method']??''),40)]];
+        } elseif ($tool === 'report') {
+            $intent = trim((string)($c['intent'] ?? $c['report'] ?? $c['report_intent'] ?? ''));
+            if (!isset($catalog[$intent]) || $intent === 'none') continue;
+            $required = (string)($catalog[$intent]['entity'] ?? '');
+            $entityType = trim((string)($c['entity_type'] ?? $c['entity']['type'] ?? ($required ?: 'none')));
+            $entityQuery = ai_cut(trim((string)($c['entity_query'] ?? $c['entity']['query'] ?? $c['query'] ?? '')), 120);
+            if ($required !== '' && ($entityType !== $required || $entityQuery === '')) continue;
+            $calls[] = ['tool'=>'report','intent'=>$intent,'entity_type'=>$entityType ?: 'none','entity_query'=>$entityQuery,
+                'limit'=>max(1,min(50,(int)($c['limit']??10))),'window_days'=>max(1,min(3650,(int)($c['window_days']??$c['days']??30)))];
+        } elseif ($tool === 'forecast_product') {
+            $entityQuery = ai_cut(trim((string)($c['entity_query'] ?? $c['product'] ?? $c['query'] ?? '')), 120);
+            if ($entityQuery === '') continue;
+            $calls[] = ['tool'=>$tool,'entity_query'=>$entityQuery,'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??$c['days']??14))),
+                'lookback_days'=>max(7,min(120,(int)($c['lookback_days']??30)))];
+        } elseif ($tool === 'simulate_what_if') {
+            $entityQuery = ai_cut(trim((string)($c['entity_query'] ?? $c['product'] ?? $c['query'] ?? '')), 120);
+            if ($entityQuery === '') continue;
+            $scenario = strtolower(trim((string)($c['scenario_type'] ?? $c['type'] ?? 'price')));
+            if (!in_array($scenario,['price','discount','order','reorder','supplier'],true)) $scenario='price';
+            $calls[] = ['tool'=>$tool,'scenario_type'=>$scenario,'entity_query'=>$entityQuery,
+                'supplier_query'=>ai_cut(trim((string)($c['supplier_query'] ?? $c['supplier'] ?? '')),120),
+                'target_price'=>isset($c['target_price'])?(float)$c['target_price']:null,
+                'price_change_percent'=>isset($c['price_change_percent'])?(float)$c['price_change_percent']:null,
+                'target_discount_percent'=>isset($c['target_discount_percent'])?(float)$c['target_discount_percent']:null,
+                'order_quantity'=>isset($c['order_quantity'])?(float)$c['order_quantity']:null,
+                'horizon_days'=>max(1,min(90,(int)($c['horizon_days']??$c['days']??14))),
+                'lookback_days'=>max(60,min(365,(int)($c['lookback_days']??180)))];
+        } elseif ($tool === 'analyze_baskets') {
+            $calls[] = ['tool'=>$tool,
+                'entity_query'=>ai_cut(trim((string)($c['entity_query'] ?? $c['product'] ?? '')),120),
+                'lookback_days'=>max(30,min(365,(int)($c['lookback_days']??90))),
+                'min_pair_count'=>max(2,min(100,(int)($c['min_pair_count']??3))),
+                'min_support_percent'=>max(.1,min(50,(float)($c['min_support_percent']??1))),
+                'min_confidence_percent'=>max(1,min(95,(float)($c['min_confidence_percent']??15))),
+                'min_lift'=>max(.5,min(10,(float)($c['min_lift']??1.05))),
+                'limit'=>max(5,min(40,(int)($c['limit']??20)))];
+        } elseif ($tool === 'analyze_suppliers') {
+            $calls[] = ['tool'=>$tool,
+                'supplier_query'=>ai_cut(trim((string)($c['supplier_query'] ?? $c['supplier'] ?? '')),120),
+                'compare_supplier_query'=>ai_cut(trim((string)($c['compare_supplier_query'] ?? $c['compare_supplier'] ?? '')),120),
+                'lookback_days'=>max(30,min(365,(int)($c['lookback_days']??180))),
+                'limit'=>max(2,min(30,(int)($c['limit']??12)))];

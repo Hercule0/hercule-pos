@@ -1,0 +1,59 @@
+$perLicense = max(1,(int)ai_env('HERCULE_AI_PER_LICENSE_RPM','12'));
+$global = max($perLicense,(int)ai_env('HERCULE_AI_GLOBAL_RPM','30'));
+$bucket = 'lic:'.substr(hash('sha256',$licenseKey),0,40);
+if (!RateLimiter::check($bucket,'ai_agent_'.$mode,$perLicense,1) || !RateLimiter::check('global','ai_agent_global_'.$mode,$global,1)) {
+    ai_json(['ok'=>false,'code'=>'AI_RATE_LIMIT','error'=>'التحليل الذكي مشغول حالياً.'],429);
+}
+$catalog = json_decode((string)@file_get_contents(__DIR__.'/intent_catalog.json'),true);
+if (!is_array($catalog)) ai_json(['ok'=>false,'code'=>'CATALOG_ERROR'],500);
+$context = ai_privacy_sanitize(is_array($body['context'] ?? null) ? $body['context'] : [], $privacy['scope']);
+
+function ai_repair_answer_language(array $answer, string $question, string $licenseHash): array {
+    $answer = ai_apply_user_facing_policy($answer);
+    if (ai_answer_language_ok($answer,$question)) return $answer;
+    $safe = json_encode($answer, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($safe) || $safe === '') return $answer;
+    $prompt = "Rewrite the following Hercule response into natural Iraqi Arabic only. Preserve every number and fact exactly; add no new facts. Do not mention provider/model/tool/intent/report identifiers or Evidence IDs. Recommendations must be genuine business recommendations only. followups must be 1-4 short questions/requests written as things the USER can ask next. Return the same JSON object shape only.\nResponse: ".ai_cut($safe,9000);
+    $res = ai_providers($prompt,700,['tier'=>'fast','mode'=>'language_repair','license_hash'=>$licenseHash]);
+    if (!($res['ok'] ?? false) || !is_array($res['json'] ?? null)) return $answer;
+    $repaired = ai_sanitize_answer_payload(ai_answer_object($res['json']));
+    $repaired = ai_apply_user_facing_policy($repaired);
+    return ai_answer_language_ok($repaired,$question) ? $repaired : $answer;
+}
+
+
+
+if ($mode === 'understand') {
+    // Fix 284: semantic rescue receives only the privacy-redacted user sentence and tiny non-store context.
+    // It classifies meaning; it MUST NOT answer the business question or invent any store fact.
+    $prompt = "You are Hercule POS semantic understanding only. Understand Iraqi Arabic, Arabic typos, colloquial wording, and English. Do NOT answer the question. Do NOT invent store facts. Return one strict JSON frame only.\n"
+        ."Allowed operation: read, aggregate, compare, explain, forecast, simulate, recommend, help, automate, unknown.\n"
+        ."Allowed metric: sales, revenue, profit, margin, transactions, avg_basket, discounts, cogs, quantity, inventory, stockout, expenses, purchases, returns, debts, customers, suppliers, cash, store, unknown.\n"
+        ."Allowed time_scope: current, today, yesterday, tomorrow, next_week, next_month, this_week, last_week, this_month, last_month, custom, unknown.\n"
+        ."If the user asks about tomorrow/bajer/غدا or asks what you expect will happen, operation MUST be forecast. Examples: 'تكدر تنبئني بمبيعات باجر؟', 'شتتوقع نبيع باجر؟', 'باجر شكد تتوقع دخلنا؟' => operation=forecast, metric=sales (or revenue when explicitly revenue), time_scope=tomorrow, horizon_days=1.\n"
+        ."A typo in a prediction verb must never turn a future question into a current sales summary. If ambiguous, set confidence below 0.65 and explain ambiguity without guessing.\n"
+        ."For compound analytical questions, also return analytical_query. It is a SAFE semantic frame only; NEVER SQL. Allowed analytical dimensions: none, category, product, customer, supplier, cashier, payment_method, day, hour. Allowed comparison_mode: none, previous_equal_period, previous_month, previous_year. Allowed ranking: none, desc, asc, growth, decline. Conditions operators: lt_previous, gt_previous, lt, gt, lte, gte. Example 'شنو أكثر فئة باعت هذا الشهر بس ربحها أقل من الشهر الماضي؟' => primary_metric=sales, secondary_metrics=[profit], dimension=category, date_range=this_month, comparison_mode=previous_month, ranking=desc, ranking_metric=sales, condition profit lt_previous.\n"
+        ."Return exactly: {\"operation\":\"...\",\"metric\":\"...\",\"time_scope\":\"...\",\"horizon_days\":null,\"entity_type\":\"none|product|customer|supplier|category|cashier\",\"entity_query\":\"\",\"dimension\":\"none|category|product|customer|supplier|cashier|payment_method|day|hour\",\"comparison_mode\":\"none|previous_equal_period|previous_month|previous_year\",\"analytical_query\":{\"primary_metric\":\"sales\",\"secondary_metrics\":[],\"dimension\":\"none\",\"date_range\":\"this_month\",\"comparison_mode\":\"none\",\"ranking\":\"none\",\"ranking_metric\":\"sales\",\"limit\":10,\"conditions\":[],\"filters\":{},\"confidence\":0.0},\"needs_store_data\":true,\"confidence\":0.0,\"ambiguity\":\"\"}.\n"
+        ."Question: ".$question;
+    $res = ai_providers($prompt,420,['tier'=>'fast','mode'=>'understand','license_hash'=>$licenseHash]);
+    if (!$res['ok']) {
+        if (str_starts_with((string)($res['code'] ?? ''), 'AI_FAIR_USE_')) ai_json(['ok'=>false,'code'=>(string)$res['code'],'service_mode'=>(string)($res['service_mode'] ?? 'local_only'),'error'=>'تم الحفاظ على الحصة اليومية للذكاء. سيكمل Hercule بالفهم المحلي حالياً.'],429);
+        ai_log_provider_failure('ai_agent_understand_providers_unavailable', $res['errors'] ?? []);
+        ai_json(['ok'=>false,'code'=>'AI_PROVIDERS_UNAVAILABLE','error'=>'تعذر تشغيل الفهم الدلالي السحابي حالياً.'],503);
+    }
+    $frame = is_array($res['json'] ?? null) ? $res['json'] : [];
+    $ops=['read','aggregate','compare','explain','forecast','simulate','recommend','help','automate','unknown'];
+    $metrics=['sales','revenue','profit','margin','transactions','avg_basket','discounts','cogs','quantity','inventory','stockout','expenses','purchases','returns','debts','customers','suppliers','cash','store','unknown'];
+    $times=['current','today','yesterday','tomorrow','next_week','next_month','this_week','last_week','this_month','last_month','custom','unknown'];
+    $entities=['none','product','customer','supplier','category','cashier'];
+    $dimensions=['none','category','product','customer','supplier','cashier','payment_method','day','hour'];
+    $comparisons=['none','previous_equal_period','previous_month','previous_year'];
+    $op=in_array((string)($frame['operation']??''),$ops,true)?(string)$frame['operation']:'unknown';
+    $metric=in_array((string)($frame['metric']??''),$metrics,true)?(string)$frame['metric']:'unknown';
+    $time=in_array((string)($frame['time_scope']??''),$times,true)?(string)$frame['time_scope']:'unknown';
+    $entityType=in_array((string)($frame['entity_type']??''),$entities,true)?(string)$frame['entity_type']:'none';
+    $dimension=in_array((string)($frame['dimension']??''),$dimensions,true)?(string)$frame['dimension']:'none';
+    $comparisonMode=in_array((string)($frame['comparison_mode']??''),$comparisons,true)?(string)$frame['comparison_mode']:'none';
+    $horizon=(int)($frame['horizon_days']??0); if($horizon<1||$horizon>365)$horizon=$time==='tomorrow'?1:($time==='next_week'?7:($time==='next_month'?30:0));
+    $confidence=max(0.0,min(1.0,(float)($frame['confidence']??0.0)));
+    $aq=is_array($frame['analytical_query']??null)?$frame['analytical_query']:[];
