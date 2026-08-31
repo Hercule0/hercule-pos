@@ -19,3 +19,14 @@
 @import url('./notification-settings.css?v=20260826-hardening1');
 @import url('./tools.css?v=20260826-hardening1');
 @import url('./recovery-requests.css?v=20260826-hardening1');
+@import url('./premium-admin-refresh.css?v=20260831-premium1');
+@import url('./dashboard-premium-v2.css?v=20260831-dashboard-premium2');
+@import url('./licenses-premium-v2.css?v=20260831-licenses-premium2');
+@import url('./license-detail-premium-v2.css?v=20260831-license-detail-premium2');
+@import url('./customers-premium-v2.css?v=20260831-customers-premium2');
+@import url('./devices-premium-v2.css?v=20260831-devices-premium2');
+@import url('./releases-premium-v2.css?v=20260831-releases-premium2');
+@import url('./recovery-premium-v2.css?v=20260831-recovery-premium2');
+@import url('./admin-security-premium-v2.css?v=20260831-admin-security-premium2');
+@import url('./account-ops-premium-v2.css?v=20260831-account-ops-premium2');
+@import url('./support-premium-v2.css?v=20260831-support-premium2');

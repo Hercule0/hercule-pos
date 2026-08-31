@@ -6,11 +6,20 @@
   function toggleSidebar(force) {
     var sidebar = byId("app-sidebar");
     var backdrop = byId("sidebar-backdrop");
+    var menuToggle = byId("mobile-menu-toggle");
+    var moreTrigger = byId("mobile-drawer-trigger");
     if (!sidebar) return;
     var open = typeof force === "boolean" ? force : !sidebar.classList.contains("is-open");
     sidebar.classList.toggle("is-open", open);
     document.body.classList.toggle("sidebar-open", open);
     if (backdrop) backdrop.classList.toggle("is-open", open);
+    if (menuToggle) menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (moreTrigger) moreTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function closeUserMenu(userBtn, userMenu) {
+    if (userMenu) userMenu.classList.remove("is-open");
+    if (userBtn) userBtn.setAttribute("aria-expanded", "false");
   }
 
   function wireNavigation() {
@@ -23,25 +32,166 @@
         userBtn.setAttribute("aria-expanded", open ? "true" : "false");
       });
       document.addEventListener("click", function (event) {
-        if (!event.target.closest(".user-menu-area")) {
-          userMenu.classList.remove("is-open");
-          userBtn.setAttribute("aria-expanded", "false");
-        }
+        if (!event.target.closest(".user-menu-area")) closeUserMenu(userBtn, userMenu);
       });
     }
 
     var menuToggle = byId("mobile-menu-toggle");
     var moreTrigger = byId("mobile-drawer-trigger");
     var backdrop = byId("sidebar-backdrop");
-    if (menuToggle) menuToggle.addEventListener("click", function () { toggleSidebar(); });
-    if (moreTrigger) moreTrigger.addEventListener("click", function () { toggleSidebar(); });
+    if (menuToggle) {
+      menuToggle.setAttribute("aria-expanded", "false");
+      menuToggle.setAttribute("aria-controls", "app-sidebar");
+      menuToggle.addEventListener("click", function () { toggleSidebar(); });
+    }
+    if (moreTrigger) {
+      moreTrigger.setAttribute("aria-expanded", "false");
+      moreTrigger.setAttribute("aria-controls", "app-sidebar");
+      moreTrigger.addEventListener("click", function () { toggleSidebar(); });
+    }
     if (backdrop) backdrop.addEventListener("click", function () { toggleSidebar(false); });
+
+    var sidebar = byId("app-sidebar");
+    if (sidebar) {
+      sidebar.addEventListener("click", function (event) {
+        if (window.matchMedia("(max-width: 900px)").matches && event.target.closest("a.sidebar-link")) {
+          toggleSidebar(false);
+        }
+      });
+    }
+
     window.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
         toggleSidebar(false);
-        if (userMenu) userMenu.classList.remove("is-open");
-        if (userBtn) userBtn.setAttribute("aria-expanded", "false");
+        closeUserMenu(userBtn, userMenu);
       }
+    });
+  }
+
+  function createDecisionDialog() {
+    var dialog = document.createElement("dialog");
+    dialog.className = "app-dialog";
+    dialog.setAttribute("aria-labelledby", "app-dialog-title");
+    dialog.setAttribute("aria-describedby", "app-dialog-message");
+
+    var form = document.createElement("form");
+    form.method = "dialog";
+    form.className = "app-dialog-shell";
+    form.noValidate = true;
+
+    var kicker = document.createElement("p");
+    kicker.className = "app-dialog-kicker";
+    kicker.textContent = "Confirm action";
+
+    var title = document.createElement("h2");
+    title.className = "app-dialog-title";
+    title.id = "app-dialog-title";
+    title.textContent = "Continue?";
+
+    var message = document.createElement("p");
+    message.className = "app-dialog-message";
+    message.id = "app-dialog-message";
+
+    var field = document.createElement("div");
+    field.className = "app-dialog-field";
+    field.dataset.passwordField = "1";
+    field.hidden = true;
+
+    var passwordLabel = document.createElement("label");
+    passwordLabel.htmlFor = "app-dialog-password";
+    passwordLabel.textContent = "Current password";
+
+    var passwordInput = document.createElement("input");
+    passwordInput.id = "app-dialog-password";
+    passwordInput.type = "password";
+    passwordInput.autocomplete = "current-password";
+    passwordInput.spellcheck = false;
+
+    field.appendChild(passwordLabel);
+    field.appendChild(passwordInput);
+
+    var actions = document.createElement("div");
+    actions.className = "app-dialog-actions";
+
+    var cancel = document.createElement("button");
+    cancel.className = "app-dialog-btn app-dialog-cancel";
+    cancel.value = "cancel";
+    cancel.type = "submit";
+    cancel.textContent = "Cancel";
+
+    var confirm = document.createElement("button");
+    confirm.className = "app-dialog-btn app-dialog-confirm";
+    confirm.value = "confirm";
+    confirm.type = "submit";
+    confirm.textContent = "Continue";
+
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    form.appendChild(kicker);
+    form.appendChild(title);
+    form.appendChild(message);
+    form.appendChild(field);
+    form.appendChild(actions);
+    dialog.appendChild(form);
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  var sharedDecisionDialog = null;
+
+  function requestDecision(options) {
+    options = options || {};
+    if (!sharedDecisionDialog || !sharedDecisionDialog.isConnected) {
+      sharedDecisionDialog = createDecisionDialog();
+    }
+
+    var dialog = sharedDecisionDialog;
+    var title = dialog.querySelector(".app-dialog-title");
+    var message = dialog.querySelector(".app-dialog-message");
+    var field = dialog.querySelector("[data-password-field]");
+    var passwordInput = dialog.querySelector("#app-dialog-password");
+    var confirmBtn = dialog.querySelector(".app-dialog-confirm");
+    var cancelBtn = dialog.querySelector(".app-dialog-cancel");
+    var previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    var needsPassword = Boolean(options.requirePassword);
+
+    dialog.dataset.tone = options.tone === "danger" ? "danger" : "default";
+    title.textContent = String(options.title || "Confirm action");
+    message.textContent = String(options.message || "Please confirm that you want to continue.");
+    field.hidden = !needsPassword;
+    passwordInput.value = "";
+    confirmBtn.textContent = String(options.confirmLabel || "Continue");
+    cancelBtn.textContent = String(options.cancelLabel || "Cancel");
+
+    return new Promise(function (resolve) {
+      function finish(result) {
+        dialog.removeEventListener("close", handleClose);
+        if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+        resolve(result);
+      }
+
+      function handleClose() {
+        var confirmed = dialog.returnValue === "confirm";
+        if (!confirmed) {
+          finish({ confirmed: false, password: "" });
+          return;
+        }
+        var password = needsPassword ? passwordInput.value : "";
+        if (needsPassword && !password) {
+          dialog.returnValue = "";
+          dialog.showModal();
+          passwordInput.focus();
+          return;
+        }
+        finish({ confirmed: true, password: password });
+      }
+
+      dialog.addEventListener("close", handleClose);
+      dialog.showModal();
+      window.requestAnimationFrame(function () {
+        if (needsPassword) passwordInput.focus();
+        else cancelBtn.focus();
+      });
     });
   }
 
@@ -50,29 +200,52 @@
       var form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
 
+      if (form.dataset.dialogApproved === "1") {
+        delete form.dataset.dialogApproved;
+        return;
+      }
+
       var submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
       var confirmMessage = String(
         (submitter && submitter.dataset && submitter.dataset.confirm) || form.dataset.confirm || ""
       ).trim();
-      if (confirmMessage && !window.confirm(confirmMessage)) {
-        event.preventDefault();
-        return;
-      }
-
       var passwordPrompt = String(form.dataset.passwordPrompt || "").trim();
-      if (!passwordPrompt || form.querySelector('input[name="current_password"]')) return;
+      var alreadyHasPassword = Boolean(form.querySelector('input[name="current_password"]'));
+      var needsPassword = Boolean(passwordPrompt && !alreadyHasPassword);
 
-      var password = window.prompt(passwordPrompt);
-      if (password === null || password === "") {
-        event.preventDefault();
-        return;
-      }
+      if (!confirmMessage && !needsPassword) return;
+      event.preventDefault();
 
-      var input = document.createElement("input");
-      input.type = "hidden";
-      input.name = "current_password";
-      input.value = password;
-      form.appendChild(input);
+      var destructive = Boolean(
+        (submitter && submitter.dataset && submitter.dataset.tone === "danger") ||
+        (submitter && /delete|revoke|disable|remove|reject/i.test(String(submitter.textContent || "")))
+      );
+
+      requestDecision({
+        title: destructive ? "Confirm sensitive action" : "Confirm action",
+        message: confirmMessage || passwordPrompt || "Please confirm that you want to continue.",
+        requirePassword: needsPassword,
+        tone: destructive ? "danger" : "default",
+        confirmLabel: destructive ? "Confirm" : "Continue"
+      }).then(function (result) {
+        if (!result.confirmed) return;
+
+        if (needsPassword) {
+          var password = result.password;
+          var input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "current_password";
+          input.value = password;
+          form.appendChild(input);
+        }
+
+        form.dataset.dialogApproved = "1";
+        if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
+          form.requestSubmit(submitter);
+        } else {
+          form.requestSubmit();
+        }
+      });
     });
 
     document.addEventListener("change", function (event) {
@@ -102,6 +275,7 @@
 
     var toast = document.createElement("div");
     toast.className = "app-toast " + (/^(success|warning|error|info)$/.test(options.type || "") ? options.type : "info");
+    toast.setAttribute("role", options.type === "error" ? "alert" : "status");
 
     var icon = document.createElement("div");
     icon.className = "toast-icon-wrap";
@@ -128,7 +302,7 @@
     var close = document.createElement("button");
     close.type = "button";
     close.className = "toast-close-btn";
-    close.setAttribute("aria-label", "Dismiss");
+    close.setAttribute("aria-label", "Dismiss notification");
     close.textContent = "×";
     close.addEventListener("click", function () { toast.remove(); });
 

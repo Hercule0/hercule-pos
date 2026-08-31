@@ -1,0 +1,414 @@
+/* Hercule POS Admin — Support Center Premium V2
+   Final visual layer for support.php. Keeps support backend and workflows intact. */
+
+/* Support center shares several recovery primitives; these rules make the support
+   workflow read as an operational inbox without changing the server-rendered markup. */
+.recovery-page > .page-hero + .recovery-tools:has(form.app-search) {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border, rgba(148, 163, 184, .14));
+  border-radius: 16px;
+  background: rgba(10, 16, 26, .82);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+}
+
+.recovery-tools form.app-search {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 12px;
+  background: rgba(4, 9, 16, .68);
+}
+
+.recovery-tools form.app-search svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #6f839c;
+  stroke-width: 1.8;
+}
+
+.recovery-tools form.app-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  color: var(--text, #e8edf4);
+  box-shadow: none !important;
+}
+
+.recovery-tools form.app-search .table-btn {
+  min-height: 34px;
+  padding-inline: 13px;
+}
+
+.recovery-tools form.pill-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.recovery-tools form.pill-filters select {
+  min-height: 38px;
+  max-width: 180px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 10px;
+  background: rgba(4, 9, 16, .72);
+  color: var(--text, #e8edf4);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Ticket list */
+.recovery-page > .modern-table-wrapper {
+  border: 1px solid rgba(148, 163, 184, .12);
+  border-radius: 16px;
+  background: rgba(10, 16, 26, .72);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .14);
+}
+
+.recovery-page > .modern-table-wrapper .modern-table th {
+  white-space: nowrap;
+}
+
+.recovery-page > .modern-table-wrapper .modern-table td {
+  vertical-align: middle;
+}
+
+.recovery-page > .modern-table-wrapper .modern-table tbody tr {
+  transition: background .16s ease, border-color .16s ease;
+}
+
+.recovery-page > .modern-table-wrapper .modern-table tbody tr:hover {
+  background: rgba(64, 194, 255, .035);
+}
+
+.recovery-page > .modern-table-wrapper .modern-table td[data-label="البلاغ"] strong {
+  color: #75d5ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .01em;
+}
+
+.recovery-page > .modern-table-wrapper .modern-table td[data-label="العنوان"] strong {
+  display: block;
+  max-width: 34ch;
+  color: #e9eff7;
+  line-height: 1.45;
+}
+
+.recovery-page > .modern-table-wrapper .modern-table .table-btn {
+  min-width: 68px;
+  justify-content: center;
+}
+
+/* Selected ticket becomes a distinct workspace. */
+.recovery-page > .modern-table-wrapper + .page-hero {
+  margin-top: 6px;
+  padding: 18px;
+  border: 1px solid rgba(72, 198, 255, .17);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(16, 27, 41, .9), rgba(10, 16, 26, .94));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .18);
+}
+
+.recovery-page > .modern-table-wrapper + .page-hero h2 {
+  margin: 4px 0 7px;
+  color: #f4f8fc;
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  line-height: 1.25;
+}
+
+.recovery-page > .modern-table-wrapper + .page-hero .page-subtitle {
+  max-width: 74ch;
+  line-height: 1.75;
+  color: #93a4b8;
+}
+
+/* Ticket facts */
+.recovery-page > .recovery-meta-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.recovery-page > .recovery-meta-grid .recovery-meta-card {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 13px 14px;
+  border: 1px solid rgba(148, 163, 184, .11);
+  border-radius: 13px;
+  background: rgba(12, 19, 30, .76);
+}
+
+.recovery-page > .recovery-meta-grid .recovery-meta-card span {
+  margin: 0;
+  color: #70849d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.recovery-page > .recovery-meta-grid .recovery-meta-card strong {
+  color: #dfe8f2;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Error context is deliberately high-signal but not alarming. */
+.recovery-page > .recovery-meta-grid + .recovery-notice {
+  border-color: rgba(251, 191, 36, .18);
+  background: rgba(251, 191, 36, .055);
+}
+
+.recovery-page > .recovery-meta-grid + .recovery-notice svg {
+  color: #f6c85f;
+}
+
+/* Message history */
+.recovery-page > .recovery-notice + .modern-table-wrapper,
+.recovery-page > .recovery-meta-grid + .modern-table-wrapper {
+  border: 1px solid rgba(148, 163, 184, .11);
+  border-radius: 16px;
+  background: rgba(10, 16, 26, .72);
+}
+
+.recovery-page > .modern-table-wrapper .modern-table td:nth-child(2) {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+/* Reply and status forms become two operational panels. */
+.recovery-page > .recovery-review-form {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, .12);
+  border-radius: 16px;
+  background: rgba(10, 16, 26, .78);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .12);
+}
+
+.recovery-page > .recovery-review-form + .recovery-review-form {
+  margin-top: 0;
+  border-color: rgba(72, 198, 255, .13);
+}
+
+.recovery-page > .recovery-review-form label {
+  display: grid;
+  gap: 7px;
+  color: #8fa1b8;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.recovery-page > .recovery-review-form label:has(input[type="checkbox"]) {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  justify-content: start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid rgba(148, 163, 184, .09);
+  border-radius: 11px;
+  background: rgba(148, 163, 184, .035);
+}
+
+.recovery-page > .recovery-review-form textarea,
+.recovery-page > .recovery-review-form input[type="text"],
+.recovery-page > .recovery-review-form input:not([type]),
+.recovery-page > .recovery-review-form select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 11px;
+  background: #080e17;
+  color: #e5edf6;
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.recovery-page > .recovery-review-form textarea {
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.recovery-page > .recovery-review-form :is(textarea, input, select):focus-visible,
+.recovery-tools :is(input, select, button, a):focus-visible {
+  outline: 2px solid rgba(76, 194, 255, .75);
+  outline-offset: 2px;
+}
+
+.recovery-page > .recovery-review-form .approve-action {
+  justify-self: start;
+  min-height: 40px;
+  border: 1px solid rgba(71, 205, 156, .23);
+  border-radius: 10px;
+  background: rgba(71, 205, 156, .095);
+  color: #76e4ba;
+  padding: 0 15px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.recovery-page > .recovery-review-form .approve-action:hover {
+  background: rgba(71, 205, 156, .14);
+  border-color: rgba(71, 205, 156, .34);
+}
+
+/* Keep ticket workspace compact and readable on intermediate widths. */
+@media (max-width: 1180px) {
+  .recovery-page > .recovery-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recovery-page > .page-hero + .recovery-tools:has(form.app-search) {
+    grid-template-columns: 1fr;
+  }
+
+  .recovery-tools form.pill-filters {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .recovery-page > .page-hero + .recovery-tools:has(form.app-search) {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .recovery-tools form.app-search {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .recovery-tools form.app-search .table-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .recovery-tools form.pill-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .recovery-tools form.pill-filters select {
+    max-width: none;
+    width: 100%;
+  }
+
+  .recovery-tools form.pill-filters .table-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .recovery-page > .recovery-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Support ticket list becomes semantic cards on phones. */
+  .recovery-page > .modern-table-wrapper:first-of-type {
+    overflow: visible !important;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type .modern-table,
+  .recovery-page > .modern-table-wrapper:first-of-type tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type thead {
+    display: none;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type tr {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 5px 13px;
+    border: 1px solid rgba(148, 163, 184, .11);
+    border-radius: 14px;
+    background: rgba(11, 18, 29, .82);
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type td {
+    display: grid;
+    grid-template-columns: minmax(92px, .38fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 9px 0 !important;
+    border-bottom: 1px solid rgba(148, 163, 184, .07) !important;
+    text-align: start !important;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type td:last-child {
+    border-bottom: 0 !important;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type td::before {
+    content: attr(data-label);
+    color: #70839a;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .04em;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type td .table-btn {
+    width: 100%;
+  }
+
+  .recovery-page > .recovery-review-form {
+    padding: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .recovery-tools form.pill-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .recovery-page > .modern-table-wrapper:first-of-type td {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recovery-page > .modern-table-wrapper .modern-table tbody tr {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .recovery-page > .page-hero + .recovery-tools:has(form.app-search),
+  .recovery-page > .recovery-review-form,
+  .recovery-page > .modern-table-wrapper + .page-hero {
+    border: 1px solid CanvasText;
+  }
+}

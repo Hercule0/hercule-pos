@@ -1,0 +1,457 @@
+/* Hercule Admin — Licenses Premium V2 */
+
+.licenses-page {
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.licenses-hero {
+  margin-bottom:0;
+  padding:2px 0 10px;
+}
+
+.licenses-hero .page-subtitle {
+  max-width:680px;
+}
+
+.license-tools {
+  position:sticky;
+  top:76px;
+  z-index:20;
+  margin:0;
+  padding:10px;
+  border:1px solid rgba(148,163,184,.1);
+  border-radius:14px;
+  background:rgba(7,11,18,.88);
+  backdrop-filter:blur(14px);
+  box-shadow:0 12px 32px rgba(0,0,0,.12);
+}
+
+.license-tools form {
+  min-width:0;
+}
+
+.license-tools .app-search {
+  width:min(100%,620px);
+}
+
+.license-tools .pill-filters {
+  justify-content:flex-end;
+}
+
+.license-tools .pill-filter {
+  min-height:38px;
+  padding:7px 11px;
+}
+
+.license-tools .pill-filter.active {
+  box-shadow:inset 0 0 0 1px rgba(76,194,255,.05),0 8px 18px rgba(0,0,0,.08);
+}
+
+.list-range-summary {
+  margin:0;
+  padding-inline:2px;
+}
+
+.licenses-page .modern-table-wrapper {
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+  scrollbar-gutter:stable;
+  border-color:rgba(148,163,184,.11) !important;
+  background:rgba(8,13,21,.72) !important;
+}
+
+.licenses-page .modern-table {
+  min-width:860px;
+}
+
+.licenses-page .modern-table th,
+.licenses-page .modern-table td {
+  padding:12px 14px !important;
+  vertical-align:middle;
+}
+
+.licenses-page .modern-table tbody tr {
+  transition:background .14s ease,border-color .14s ease;
+}
+
+.licenses-page .modern-table tbody tr:hover {
+  background:rgba(76,194,255,.03) !important;
+}
+
+.licenses-page .modern-table td:first-child {
+  min-width:210px;
+}
+
+.licenses-page .modern-table td:nth-child(2) {
+  min-width:160px;
+}
+
+.licenses-page .modern-table td:last-child {
+  width:1%;
+  white-space:nowrap;
+}
+
+.licenses-page .cell-main {
+  gap:7px;
+}
+
+.licenses-page .cell-main code {
+  display:inline-block;
+  max-width:190px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e8f2fb;
+  font-size:12px;
+  line-height:1.5;
+}
+
+.licenses-page .copy-key {
+  width:max-content;
+  min-height:28px;
+  padding:4px 8px;
+  border:1px solid rgba(76,194,255,.13);
+  background:rgba(76,194,255,.045);
+}
+
+.licenses-page .copy-key.copied {
+  color:#66e0ad;
+  border-color:rgba(52,211,153,.2);
+  background:rgba(52,211,153,.07);
+}
+
+.licenses-page .copy-key.copied::after {
+  content:" · Copied";
+}
+
+.licenses-page .badge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:26px;
+  padding:4px 9px;
+  text-transform:capitalize;
+}
+
+.licenses-page .table-btn {
+  min-height:34px;
+  padding:7px 11px;
+}
+
+.licenses-empty {
+  min-height:280px;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:10px;
+  padding:36px 22px;
+  border:1px dashed rgba(148,163,184,.16);
+  border-radius:16px;
+  background:linear-gradient(180deg,rgba(18,26,39,.58),rgba(9,14,22,.72));
+  text-align:center;
+}
+
+.licenses-empty h2 {
+  margin:0;
+  color:#f2f7fb;
+  font-size:1.1rem;
+}
+
+.licenses-empty p {
+  margin:0 0 4px;
+  color:#7f91aa;
+  font-size:.86rem;
+}
+
+.license-fab {
+  display:none;
+}
+
+.license-dialog {
+  width:min(92vw,620px);
+  max-height:min(86dvh,760px);
+  padding:0;
+  overflow:hidden;
+  border:1px solid rgba(125,211,252,.16);
+  border-radius:20px;
+  background:#0b121d;
+  color:#edf5fc;
+  box-shadow:0 34px 90px rgba(0,0,0,.52);
+}
+
+.license-dialog::backdrop {
+  background:rgba(2,6,12,.72);
+  backdrop-filter:blur(4px);
+}
+
+.license-issue-form {
+  display:flex;
+  flex-direction:column;
+  max-height:inherit;
+}
+
+.license-dialog .dialog-header {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:20px 22px 16px;
+  border-bottom:1px solid rgba(148,163,184,.1);
+}
+
+.license-dialog .dialog-header h2 {
+  margin:0;
+  font-size:1.25rem;
+  letter-spacing:-.03em;
+}
+
+.license-dialog .dialog-close {
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  border:1px solid rgba(148,163,184,.13);
+  border-radius:10px;
+  background:rgba(148,163,184,.05);
+  color:#91a4bb;
+  cursor:pointer;
+}
+
+.license-dialog .dialog-close:hover {
+  color:#eef5fb;
+  border-color:rgba(76,194,255,.24);
+  background:rgba(76,194,255,.07);
+}
+
+.license-dialog .dialog-fields {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+  padding:20px 22px;
+  overflow:auto;
+}
+
+.license-dialog .dialog-fields label {
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  min-width:0;
+}
+
+.license-dialog .dialog-fields label > span {
+  color:#9eb0c4;
+  font-size:11px;
+  font-weight:700;
+}
+
+.license-dialog .dialog-fields label:last-child {
+  grid-column:1 / -1;
+}
+
+.license-dialog .dialog-fields select,
+.license-dialog .dialog-fields input,
+.license-dialog .dialog-fields textarea {
+  width:100%;
+  min-height:44px;
+  border:1px solid rgba(148,163,184,.15);
+  border-radius:11px;
+  background:#0b1624;
+  color:#edf4fb;
+  padding:10px 11px;
+  font:inherit;
+}
+
+.license-dialog .dialog-fields textarea {
+  min-height:96px;
+  resize:none;
+}
+
+.license-dialog .dialog-fields select:focus-visible,
+.license-dialog .dialog-fields input:focus-visible,
+.license-dialog .dialog-fields textarea:focus-visible {
+  border-color:rgba(76,194,255,.5);
+  box-shadow:0 0 0 3px rgba(76,194,255,.08);
+  outline:none !important;
+}
+
+.license-dialog .dialog-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:9px;
+  padding:14px 22px 18px;
+  border-top:1px solid rgba(148,163,184,.1);
+  background:rgba(7,11,18,.52);
+}
+
+@media (max-width:1000px) {
+  .license-tools {
+    top:68px;
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .license-tools .app-search {
+    width:100%;
+  }
+
+  .license-tools .pill-filters {
+    justify-content:flex-start;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    padding-bottom:2px;
+  }
+
+  .license-tools .pill-filter {
+    flex:0 0 auto;
+  }
+}
+
+@media (max-width:760px) {
+  .licenses-hero {
+    align-items:stretch;
+  }
+
+  .licenses-hero .hero-actions {
+    width:100%;
+  }
+
+  .licenses-hero .hero-actions > * {
+    flex:1 1 0;
+  }
+
+  .license-tools {
+    position:static;
+    padding:8px;
+  }
+
+  .licenses-page .modern-table-wrapper {
+    overflow:visible !important;
+    border:0 !important;
+    background:transparent !important;
+    box-shadow:none !important;
+  }
+
+  .licenses-page .modern-table {
+    min-width:0;
+    width:100%;
+  }
+
+  .licenses-page .modern-table thead {
+    position:absolute;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+    clip:rect(0 0 0 0);
+    white-space:nowrap;
+  }
+
+  .licenses-page .modern-table,
+  .licenses-page .modern-table tbody,
+  .licenses-page .modern-table tr,
+  .licenses-page .modern-table td {
+    display:block;
+    width:100%;
+  }
+
+  .licenses-page .modern-table tbody {
+    display:grid;
+    gap:10px;
+  }
+
+  .licenses-page .modern-table tr {
+    overflow:hidden;
+    border:1px solid rgba(148,163,184,.11);
+    border-radius:14px;
+    background:linear-gradient(180deg,rgba(18,26,39,.92),rgba(11,17,27,.96));
+    box-shadow:0 10px 26px rgba(0,0,0,.12);
+  }
+
+  .licenses-page .modern-table td {
+    display:grid;
+    grid-template-columns:minmax(90px,.8fr) minmax(0,1.4fr);
+    align-items:center;
+    gap:12px;
+    min-width:0 !important;
+    padding:10px 13px !important;
+    border-bottom:1px solid rgba(148,163,184,.075) !important;
+    text-align:left !important;
+    white-space:normal !important;
+  }
+
+  .licenses-page .modern-table td::before {
+    content:attr(data-label);
+    color:#71849c;
+    font-size:10px;
+    font-weight:750;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+  }
+
+  .licenses-page .modern-table td:last-child {
+    border-bottom:0 !important;
+  }
+
+  .licenses-page .cell-main code {
+    max-width:100%;
+  }
+
+  .licenses-page .table-btn {
+    width:100%;
+    justify-content:center;
+  }
+
+  .license-dialog .dialog-fields {
+    grid-template-columns:1fr;
+  }
+
+  .license-dialog .dialog-fields label:last-child {
+    grid-column:auto;
+  }
+}
+
+@media (max-width:520px) {
+  .licenses-page {
+    gap:11px;
+  }
+
+  .licenses-hero .hero-actions {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+
+  .license-tools .app-search kbd {
+    display:none;
+  }
+
+  .licenses-page .modern-table td {
+    grid-template-columns:86px minmax(0,1fr);
+    gap:9px;
+  }
+
+  .license-dialog {
+    width:calc(100vw - 18px);
+    max-height:calc(100dvh - 18px);
+    border-radius:16px;
+  }
+
+  .license-dialog .dialog-header,
+  .license-dialog .dialog-fields,
+  .license-dialog .dialog-actions {
+    padding-left:15px;
+    padding-right:15px;
+  }
+
+  .license-dialog .dialog-actions {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .licenses-page *,
+  .licenses-page *::before,
+  .licenses-page *::after {
+    scroll-behavior:auto !important;
+  }
+}
