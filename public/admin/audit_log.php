@@ -99,7 +99,7 @@ flash_render();
                 <tbody>
                 <?php foreach ($rows as $row): ?>
                     <tr>
-                        <td data-label="Time"><strong><?= htmlspecialchars(date('M j, Y H:i', strtotime($row['created_at']))) ?></strong></td>
+                        <td data-label="Time"><strong><?= htmlspecialchars(date('M j, Y g:i A', strtotime($row['created_at']))) ?></strong></td>
                         <td data-label="Actor"><?= htmlspecialchars($row['actor_username'] ?: 'System / unknown') ?></td>
                         <td data-label="Action"><span class="audit-action-pill"><?= htmlspecialchars(str_replace('_', ' ', $row['action'])) ?></span></td>
                         <td data-label="Target"><?= $row['target_id'] !== null ? '#' . (int)$row['target_id'] : '—' ?></td>
