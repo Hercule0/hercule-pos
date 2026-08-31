@@ -47,20 +47,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#050914">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/public/admin/manifest.json">
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= $mfaPending ? 'Verify identity' : 'Sign in' ?> — Hercule License Admin</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260820-login-polish">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260831-premium-admin-refresh">
 <link rel="stylesheet" href="/public/admin/assets/css/mobile-no-overflow.css?v=ui-mobile-4">
 <link rel="stylesheet" href="/public/admin/assets/css/login-polish.css?v=2">
+<link rel="stylesheet" href="/public/admin/assets/css/login-premium-v2.css?v=20260831-premium-login-v2">
 </head>
 <body class="auth-body">
 <main class="auth-layout">
-    <section class="auth-brand-panel">
+    <section class="auth-brand-panel" aria-label="Hercule POS administration">
         <div class="auth-brand">
             <span class="auth-logo">H</span>
             <span><strong>Hercule</strong><small>License Admin</small></span>
@@ -90,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <?php if ($error): ?>
-            <div class="auth-error" role="alert">
+            <div class="auth-error" role="alert" aria-live="assertive">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16h.01"/></svg>
                 <span><?= htmlspecialchars($error) ?></span>
             </div>
@@ -103,27 +104,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <span>Authenticator or recovery code</span>
                 <div class="auth-input">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/></svg>
-                    <input id="mfa-code" type="text" name="mfa_code" required autofocus autocomplete="one-time-code" inputmode="text" maxlength="11" placeholder="000000 or recovery code">
+                    <input id="mfa-code" type="text" name="mfa_code" required autofocus autocomplete="one-time-code" inputmode="text" maxlength="11" placeholder="000000 or recovery code" aria-describedby="mfa-code-error">
                 </div>
+                <span class="auth-field-error" id="mfa-code-error" aria-live="polite"></span>
             </label>
             <?php else: ?>
             <label class="auth-field" for="login-username">
                 <span>Username</span>
                 <div class="auth-input">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M5 20c.3-4 2.5-6 7-6s6.7 2 7 6"/></svg>
-                    <input id="login-username" type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" autofocus required autocomplete="username" placeholder="Enter your username" autocapitalize="none" spellcheck="false">
+                    <input id="login-username" type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" autofocus required autocomplete="username" placeholder="Enter your username" autocapitalize="none" spellcheck="false" aria-describedby="login-username-error">
                 </div>
+                <span class="auth-field-error" id="login-username-error" aria-live="polite"></span>
             </label>
 
             <label class="auth-field" for="login-password">
                 <span>Password</span>
                 <div class="auth-input">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-                    <input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
-                    <button type="button" class="password-toggle" data-toggle-password="login-password" aria-label="Show password">
+                    <input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password" aria-describedby="login-password-error">
+                    <button type="button" class="password-toggle" data-toggle-password="login-password" aria-label="Show password" aria-pressed="false">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z"/><circle cx="12" cy="12" r="2"/></svg>
                     </button>
                 </div>
+                <span class="auth-field-error" id="login-password-error" aria-live="polite"></span>
             </label>
 
             <div class="auth-field-checkbox">
@@ -145,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
     </section>
 </main>
-<script src="/public/admin/assets/js/login.js?v=20260826-hardening1" defer></script>
+<script src="/public/admin/assets/js/login.js?v=20260831-premium-login-v2" defer></script>
 <script src="/public/admin/assets/js/login-pwa.js?v=1" defer></script>
 </body>
 </html>
