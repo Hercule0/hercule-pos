@@ -30,8 +30,8 @@ function render_header(string $title): void
 <html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-<meta name="theme-color" content="#0d1117">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050914">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -39,16 +39,16 @@ function render_header(string $title): void
 <link rel="icon" href="/public/admin/assets/icons/app-icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/public/admin/assets/icons/apple-touch-icon.png" sizes="180x180">
 <title><?= htmlspecialchars($title) ?> — Hercule POS License Engine</title>
-<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260826-hardening2">
+<link rel="stylesheet" href="/public/admin/assets/css/style.css?v=20260831-premium-final1">
 <?php if ($currentPage === 'releases.php'): ?>
-<link rel="stylesheet" href="/public/admin/assets/css/releases.css?v=20260826-hardening2">
+<link rel="stylesheet" href="/public/admin/assets/css/releases.css?v=20260831-premium-final1">
 <?php endif; ?>
 </head>
 <body class="role-<?= htmlspecialchars($role) ?>">
 <div class="app-layout">
     <header class="app-topbar">
         <div class="topbar-left">
-            <button class="mobile-menu-btn" id="mobile-menu-toggle" type="button" aria-label="Toggle navigation menu">
+            <button class="mobile-menu-btn" id="mobile-menu-toggle" type="button" aria-label="Toggle navigation menu" aria-controls="app-sidebar" aria-expanded="false">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
             <a href="/public/admin/index.php" class="app-brand">
@@ -81,7 +81,7 @@ function render_header(string $title): void
             </div>
 
             <div class="user-menu-area">
-                <button class="user-pill-btn" id="user-menu-btn" type="button" aria-expanded="false" aria-label="User profile menu">
+                <button class="user-pill-btn" id="user-menu-btn" type="button" aria-expanded="false" aria-controls="user-dropdown-menu" aria-label="User profile menu">
                     <span class="user-avatar-circle"><?= strtoupper(htmlspecialchars(substr($username, 0, 1))) ?></span>
                     <span class="user-pill-name"><?= htmlspecialchars($username) ?></span>
                     <svg class="user-pill-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
@@ -199,7 +199,7 @@ function render_footer(): void
         <a href="/public/admin/recovery_requests.php" class="mobile-nav-item <?= $currentPage === 'recovery_requests.php' ? 'active' : '' ?>">
             <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l3 2"/></svg><span>Recovery</span><span class="mobile-nav-badge" id="mobile-recovery-badge" hidden>0</span>
         </a>
-        <button type="button" class="mobile-nav-item" id="mobile-drawer-trigger">
+        <button type="button" class="mobile-nav-item" id="mobile-drawer-trigger" aria-label="Open more navigation options">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg><span>More</span>
         </button>
     </nav>
@@ -207,11 +207,11 @@ function render_footer(): void
 </div>
 
 <div class="toast-stack" id="app-toast-stack" aria-live="polite"></div>
-<script src="/public/admin/assets/js/admin-shell.js?v=20260826-hardening2" defer></script>
-<script src="/public/admin/assets/js/pwa.js?v=20260826-hardening2" defer></script>
-<script src="/public/admin/assets/js/admin-health-live.js?v=20260826-hardening2" defer></script>
+<script src="/public/admin/assets/js/admin-shell.js?v=20260831-premium-final1" defer></script>
+<script src="/public/admin/assets/js/pwa.js?v=20260831-premium-final1" defer></script>
+<script src="/public/admin/assets/js/admin-health-live.js?v=20260831-premium-final1" defer></script>
 <?php if ($currentPage === 'releases.php'): ?>
-<script src="/public/admin/assets/js/release-upload-fast.js?v=20260826-hardening2" defer></script>
+<script src="/public/admin/assets/js/release-upload-fast.js?v=20260831-premium-final1" defer></script>
 <?php endif; ?>
 </body>
 </html>
