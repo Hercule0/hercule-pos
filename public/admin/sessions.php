@@ -74,7 +74,7 @@ flash_render();
                     <div class="session-main">
                         <strong><?= htmlspecialchars($s['username']) ?> · <?= htmlspecialchars(str_replace('_',' ', $s['role'])) ?></strong>
                         <code><?= htmlspecialchars($s['user_agent']) ?></code>
-                        <small>IP <?= htmlspecialchars($s['ip_address']) ?> · Created <?= htmlspecialchars(date('M j, Y · H:i', strtotime($s['created_at']))) ?> · Expires <?= htmlspecialchars(date('M j, Y · H:i', strtotime($s['expires_at']))) ?><?= $expired ? ' · Expired' : '' ?></small>
+                        <small>IP <?= htmlspecialchars($s['ip_address']) ?> · Created <?= htmlspecialchars(date('M j, Y · g:i A', strtotime($s['created_at']))) ?> · Expires <?= htmlspecialchars(date('M j, Y · g:i A', strtotime($s['expires_at']))) ?><?= $expired ? ' · Expired' : '' ?></small>
                     </div>
                     <div class="session-actions">
                         <form method="post" data-confirm="Revoke this remembered session?">
