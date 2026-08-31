@@ -52,6 +52,50 @@ final class PushNotifier
         return $stmt->fetchAll() ?: [];
     }
 
+    private static function decodeBase64Url(string $value): string|false
+    {
+        $padding = (4 - strlen($value) % 4) % 4;
+        return base64_decode(strtr($value . str_repeat('=', $padding), '-_', '+/'), true);
+    }
+
+    /**
+     * Safe operational diagnostics. Never exposes the VAPID private key.
+     */
+    public static function diagnostics(?string $adminUsername = null): array
+    {
+        $config = require __DIR__ . '/../config/config.php';
+        $vapid = $config['vapid'] ?? [];
+        $subject = trim((string)($vapid['subject'] ?? ''));
+        $publicKey = trim((string)($vapid['public_key'] ?? ''));
+        $privateKey = trim((string)($vapid['private_key'] ?? ''));
+
+        $publicRaw = $publicKey !== '' ? self::decodeBase64Url($publicKey) : false;
+        $privateRaw = $privateKey !== '' ? self::decodeBase64Url($privateKey) : false;
+        $publicFormatOk = is_string($publicRaw) && strlen($publicRaw) === 65 && ord($publicRaw[0]) === 4;
+        $privateFormatOk = is_string($privateRaw) && strlen($privateRaw) === 32;
+        $subjectOk = str_starts_with($subject, 'mailto:') || str_starts_with($subject, 'https://');
+
+        $subscriptions = 0;
+        $subscriptionError = null;
+        try {
+            $subscriptions = $adminUsername !== null
+                ? count(self::activeSubscriptionsForAdmin($adminUsername))
+                : count(self::activeSubscriptions());
+        } catch (Throwable $e) {
+            $subscriptionError = 'Push subscription storage is unavailable.';
+        }
+
+        return [
+            'configured' => $subjectOk && $publicFormatOk && $privateFormatOk,
+            'subject_ok' => $subjectOk,
+            'public_key_ok' => $publicFormatOk,
+            'private_key_ok' => $privateFormatOk,
+            'public_key_fingerprint' => $publicFormatOk ? hash('sha256', $publicRaw) : null,
+            'subscriptions_count' => $subscriptions,
+            'subscription_error' => $subscriptionError,
+        ];
+    }
+
     public static function getSubscriptions(?string $eventType = null): array
     {
         if ($eventType === null) {

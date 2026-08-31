@@ -71,6 +71,25 @@
     return outputArray;
   }
 
+  function uint8ArraysEqual(left, right) {
+    if (!left || !right || left.length !== right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] !== right[i]) return false;
+    }
+    return true;
+  }
+
+  function subscriptionUsesPublicKey(subscription, publicKey) {
+    if (!subscription || !subscription.options || !subscription.options.applicationServerKey) return false;
+    try {
+      var actual = new Uint8Array(subscription.options.applicationServerKey);
+      var expected = urlBase64ToUint8Array(publicKey);
+      return uint8ArraysEqual(actual, expected);
+    } catch (error) {
+      return false;
+    }
+  }
+
   function saveSubscription(subscription) {
     var payload = subscription.toJSON ? subscription.toJSON() : subscription;
     payload.device_id = getPushDeviceId();
@@ -108,10 +127,20 @@
     return Promise.all([registration.pushManager.getSubscription(), getPushConfig()]).then(function (values) {
       var subscription = values[0];
       var config = values[1];
-      if (subscription) return subscription;
-      return registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(config.publicKey)
+
+      if (subscription && subscriptionUsesPublicKey(subscription, config.publicKey)) {
+        return subscription;
+      }
+
+      var removeOldSubscription = subscription
+        ? subscription.unsubscribe().catch(function () { return false; })
+        : Promise.resolve(true);
+
+      return removeOldSubscription.then(function () {
+        return registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(config.publicKey)
+        });
       });
     }).then(function (subscription) {
       if (!subscription) return null;
@@ -161,10 +190,7 @@
     }
 
     var stack = document.getElementById("app-toast-stack");
-    if (!stack) {
-      window.alert(title + "\n" + message);
-      return;
-    }
+    if (!stack) return;
 
     var toast = document.createElement("div");
     toast.className = "app-toast " + (/^(success|warning|error|info)$/.test(type || "") ? type : "info");
@@ -328,13 +354,17 @@
         return;
       }
       if (isiOS && !standalone) {
-        window.alert("To install Hercule Admin: open this page in Safari, tap Share, then choose Add to Home Screen.");
+        showPushToast("Install Hercule Admin", "Open this page in Safari, tap Share, then choose Add to Home Screen.", "info");
         return;
       }
       if (!standalone) {
-        window.alert(registrationReady
-          ? "Chrome is preparing the app. Refresh this page once, then tap Install mobile app again or choose Install app from the Chrome menu."
-          : "The app service worker is not ready. Check your connection, refresh this page, then try again.");
+        showPushToast(
+          "Install Hercule Admin",
+          registrationReady
+            ? "Chrome is preparing the app. Refresh once, then choose Install app from the browser menu."
+            : "The app service worker is not ready. Check your connection, refresh, then try again.",
+          registrationReady ? "info" : "warning"
+        );
       }
     });
   });

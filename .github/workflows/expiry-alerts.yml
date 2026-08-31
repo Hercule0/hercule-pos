@@ -1,0 +1,76 @@
+name: License expiry push alerts
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-expiry-alerts
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: pos
+  PHP_VERSION: '8.3'
+
+jobs:
+  send-expiry-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5 / Node 24
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          tools: composer:v2
+
+      - name: Install runtime dependencies
+        run: composer install --no-dev --prefer-dist --no-progress --no-interaction --classmap-authoritative
+
+      - name: Azure Login
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2 / Node 24
+        with:
+          client-id: 150cc0b0-555b-4674-a977-dfb62f7387ec
+          tenant-id: cb4f9603-299f-4515-b736-2d50c9c37494
+          subscription-id: e2eb7728-917f-4818-b7d7-8e82228f9d22
+
+      - name: Load production notification configuration and send alerts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
+          if [ -z "$resource_group" ]; then echo "Could not resolve Azure Web App resource group." >&2; exit 1; fi
+          settings="$(az webapp config appsettings list --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json)"
+          get_setting() { jq -r --arg name "$1" '[.[] | select(.name == $name) | .value][0] // empty' <<<"$settings"; }
+
+          export DB_HOST="$(get_setting DB_HOST)"
+          export DB_PORT="$(get_setting DB_PORT)"
+          export DB_NAME="$(get_setting DB_NAME)"
+          export DB_USER="$(get_setting DB_USER)"
+          export DB_PASS="$(get_setting DB_PASS)"
+          export VAPID_SUBJECT="$(get_setting VAPID_SUBJECT)"
+          export VAPID_PUBLIC_KEY="$(get_setting VAPID_PUBLIC_KEY)"
+          export VAPID_PRIVATE_KEY="$(get_setting VAPID_PRIVATE_KEY)"
+          DB_PORT="${DB_PORT:-3306}"; VAPID_SUBJECT="${VAPID_SUBJECT:-mailto:admin@herculepos.com}"; export DB_PORT VAPID_SUBJECT
+
+          for value in "$DB_PASS" "$VAPID_PRIVATE_KEY"; do [ -n "$value" ] && echo "::add-mask::$value"; done
+          missing=0
+          for name in DB_HOST DB_NAME DB_USER DB_PASS VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then echo "Azure App Setting ${name} is missing." >&2; missing=1; fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
+          php db/migrate_expiry_alerts.php
+          php db/migrate_notification_preferences.php
+          php db/migrate_push_subscription_hygiene.php
+          php scripts/send_expiry_alerts.php
