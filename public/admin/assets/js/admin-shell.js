@@ -73,20 +73,66 @@
     dialog.className = "app-dialog";
     dialog.setAttribute("aria-labelledby", "app-dialog-title");
     dialog.setAttribute("aria-describedby", "app-dialog-message");
-    dialog.innerHTML =
-      '<form method="dialog" class="app-dialog-shell" novalidate>' +
-        '<p class="app-dialog-kicker">Confirm action</p>' +
-        '<h2 class="app-dialog-title" id="app-dialog-title">Continue?</h2>' +
-        '<p class="app-dialog-message" id="app-dialog-message"></p>' +
-        '<div class="app-dialog-field" data-password-field hidden>' +
-          '<label for="app-dialog-password">Current password</label>' +
-          '<input id="app-dialog-password" type="password" autocomplete="current-password" spellcheck="false">' +
-        '</div>' +
-        '<div class="app-dialog-actions">' +
-          '<button class="app-dialog-btn app-dialog-cancel" value="cancel" type="submit">Cancel</button>' +
-          '<button class="app-dialog-btn app-dialog-confirm" value="confirm" type="submit">Continue</button>' +
-        '</div>' +
-      '</form>';
+
+    var form = document.createElement("form");
+    form.method = "dialog";
+    form.className = "app-dialog-shell";
+    form.noValidate = true;
+
+    var kicker = document.createElement("p");
+    kicker.className = "app-dialog-kicker";
+    kicker.textContent = "Confirm action";
+
+    var title = document.createElement("h2");
+    title.className = "app-dialog-title";
+    title.id = "app-dialog-title";
+    title.textContent = "Continue?";
+
+    var message = document.createElement("p");
+    message.className = "app-dialog-message";
+    message.id = "app-dialog-message";
+
+    var field = document.createElement("div");
+    field.className = "app-dialog-field";
+    field.dataset.passwordField = "1";
+    field.hidden = true;
+
+    var passwordLabel = document.createElement("label");
+    passwordLabel.htmlFor = "app-dialog-password";
+    passwordLabel.textContent = "Current password";
+
+    var passwordInput = document.createElement("input");
+    passwordInput.id = "app-dialog-password";
+    passwordInput.type = "password";
+    passwordInput.autocomplete = "current-password";
+    passwordInput.spellcheck = false;
+
+    field.appendChild(passwordLabel);
+    field.appendChild(passwordInput);
+
+    var actions = document.createElement("div");
+    actions.className = "app-dialog-actions";
+
+    var cancel = document.createElement("button");
+    cancel.className = "app-dialog-btn app-dialog-cancel";
+    cancel.value = "cancel";
+    cancel.type = "submit";
+    cancel.textContent = "Cancel";
+
+    var confirm = document.createElement("button");
+    confirm.className = "app-dialog-btn app-dialog-confirm";
+    confirm.value = "confirm";
+    confirm.type = "submit";
+    confirm.textContent = "Continue";
+
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    form.appendChild(kicker);
+    form.appendChild(title);
+    form.appendChild(message);
+    form.appendChild(field);
+    form.appendChild(actions);
+    dialog.appendChild(form);
     document.body.appendChild(dialog);
     return dialog;
   }
@@ -185,10 +231,11 @@
         if (!result.confirmed) return;
 
         if (needsPassword) {
+          var password = result.password;
           var input = document.createElement("input");
           input.type = "hidden";
           input.name = "current_password";
-          input.value = result.password;
+          input.value = password;
           form.appendChild(input);
         }
 
