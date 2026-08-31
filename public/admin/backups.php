@@ -33,7 +33,7 @@ render_header('Backups');
         </article>
         <article>
             <span>Latest backup</span>
-            <strong><?= $status['latest_at'] ? htmlspecialchars(gmdate('M j, Y H:i', strtotime($status['latest_at']))) . ' UTC' : 'None' ?></strong>
+            <strong><?= $status['latest_at'] ? htmlspecialchars(gmdate('M j, Y g:i A', strtotime($status['latest_at']))) . ' UTC' : 'None' ?></strong>
             <small><?= $status['latest_age_hours'] !== null ? htmlspecialchars((string)$status['latest_age_hours']) . ' hours ago' : 'No encrypted backup detected in Azure persistent storage' ?></small>
         </article>
         <article>
@@ -84,7 +84,7 @@ render_header('Backups');
                     <?php foreach ($status['files'] as $file): ?>
                         <tr>
                             <td><code dir="ltr"><?= htmlspecialchars($file['name']) ?></code></td>
-                            <td><?= htmlspecialchars(gmdate('M j, Y H:i', strtotime($file['modified_at']))) ?> UTC</td>
+                            <td><?= htmlspecialchars(gmdate('M j, Y g:i A', strtotime($file['modified_at']))) ?> UTC</td>
                             <td><?= htmlspecialchars(BackupManager::formatBytes((int)$file['size_bytes'])) ?></td>
                             <td>
                                 <?php if (($file['checksum_status'] ?? '') === 'verified'): ?>
@@ -121,7 +121,7 @@ render_header('Backups');
     <section class="detail-section">
         <div class="section-heading"><div><p class="eyebrow">Schedule</p><h2>How the backup pipeline works</h2></div></div>
         <div class="backup-checklist">
-            <article><span class="timeline-dot"></span><div><strong>03:30 Iraq time every day</strong><p>GitHub Actions signs into Azure using OIDC, reads the current production database and backup settings, and creates one encrypted dump.</p></div></article>
+            <article><span class="timeline-dot"></span><div><strong>3:30 AM Iraq time every day</strong><p>GitHub Actions signs into Azure using OIDC, reads the current production database and backup settings, and creates one encrypted dump.</p></div></article>
             <article><span class="timeline-dot"></span><div><strong>Restore verification before storage</strong><p>The encrypted archive is decrypted only inside the isolated runner and restored into a disposable MySQL instance. A failed restore stops the pipeline.</p></div></article>
             <article><span class="timeline-dot"></span><div><strong>Seven Azure recovery copies</strong><p>Only after verification, the encrypted archive plus SHA-256 and HMAC sidecars are synchronized to <code>/home/backups/hercule-pos</code>. The newest seven are retained.</p></div></article>
             <article><span class="timeline-dot"></span><div><strong>Fourteen-day off-server copy</strong><p>The same verified encrypted files are retained as a GitHub Actions artifact for 14 days, giving recovery options outside the Web App host.</p></div></article>
