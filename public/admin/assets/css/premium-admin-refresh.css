@@ -1,0 +1,510 @@
+/* Hercule POS Admin — Premium production refinement
+   Loaded last. This layer consolidates responsive behavior, data-density,
+   accessibility states and interaction surfaces without changing backend logic. */
+
+:root {
+  --app-bg-deep: #070b12;
+  --app-surface-1: #0d141f;
+  --app-surface-2: #121c2a;
+  --app-surface-3: #172335;
+  --app-line: rgba(148, 163, 184, .13);
+  --app-line-strong: rgba(148, 163, 184, .22);
+  --app-text: #f7f9fc;
+  --app-text-soft: #b7c4d4;
+  --app-text-muted: #788ba4;
+  --app-brand: #48c5fa;
+  --app-brand-strong: #159bd5;
+  --app-focus: #8bdcff;
+  --app-success: #43d59a;
+  --app-warning: #f6c453;
+  --app-danger: #fb7185;
+  --app-radius-control: 10px;
+  --app-radius-card: 15px;
+  --app-radius-panel: 18px;
+  --app-control-h: 40px;
+  --app-page-pad: clamp(14px, 2vw, 28px);
+  --app-content-max: 1560px;
+  --app-shadow-card: 0 14px 34px rgba(0, 0, 0, .15);
+  --app-shadow-float: 0 24px 70px rgba(0, 0, 0, .42);
+  --scrollbar-track: rgba(255,255,255,.025);
+  --scrollbar-thumb: rgba(148,163,184,.27);
+  --scrollbar-thumb-hover: rgba(139,220,255,.46);
+}
+
+html {
+  min-width: 0;
+  max-width: 100%;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+
+/* ---------- App shell ---------- */
+.app-topbar {
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+.app-brand { min-width: 0; }
+.brand-badge {
+  position: relative;
+  isolation: isolate;
+}
+.brand-badge::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.app-body-container { width: 100%; }
+.app-main-content {
+  width: min(100%, var(--app-content-max)) !important;
+  padding-inline: var(--app-page-pad) !important;
+}
+
+.app-sidebar {
+  scrollbar-gutter: stable;
+}
+.sidebar-nav { min-width: 0; }
+.sidebar-link {
+  position: relative;
+  overflow: hidden;
+}
+.sidebar-link > span:not(.sidebar-counter):not(.sidebar-pill-ok) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-link.active::before {
+  content: "";
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--app-brand);
+  box-shadow: 0 0 16px rgba(72,197,250,.42);
+}
+
+/* ---------- Type + hierarchy ---------- */
+.page-title,
+.page-hero h1 {
+  max-width: 100%;
+  text-wrap: balance;
+}
+.page-subtitle,
+.page-hero .page-subtitle {
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+
+.page-header-bar,
+.page-hero {
+  gap: 14px !important;
+}
+
+/* ---------- Dense, stable cards ---------- */
+.panel,
+.card,
+.data-card,
+.form-card,
+.stat-card {
+  border: 1px solid var(--app-line) !important;
+  box-shadow: var(--app-shadow-card) !important;
+}
+
+.stat-card {
+  min-height: 118px !important;
+}
+.stat-card::after { opacity: .032 !important; }
+
+.panel-header,
+.card-header,
+.data-card-header {
+  min-width: 0;
+}
+
+/* ---------- Buttons ---------- */
+button,
+.btn,
+.app-primary-action,
+.app-secondary-action,
+.primary-btn,
+.secondary-btn,
+.table-btn,
+.header-icon-btn,
+.user-pill-btn,
+.mobile-menu-btn,
+.mobile-nav-item {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+.btn:not([disabled]),
+a.btn,
+.app-primary-action,
+.app-secondary-action,
+.primary-btn:not(:disabled),
+.secondary-btn:not(:disabled),
+.table-btn:not(:disabled),
+.header-icon-btn,
+.user-pill-btn,
+.mobile-menu-btn,
+.mobile-nav-item {
+  cursor: pointer;
+}
+
+button:disabled,
+.btn[disabled],
+.primary-btn:disabled,
+.secondary-btn:disabled {
+  cursor: not-allowed !important;
+}
+
+.btn,
+.app-primary-action,
+.app-secondary-action,
+.primary-btn,
+.secondary-btn,
+.table-btn {
+  min-height: var(--app-control-h) !important;
+}
+
+/* ---------- Forms ---------- */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+select,
+textarea {
+  max-width: 100%;
+  border-radius: var(--app-radius-control) !important;
+}
+
+textarea { resize: none; }
+
+input::placeholder,
+textarea::placeholder { opacity: .82; }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--app-focus) !important;
+  outline-offset: 2px !important;
+}
+
+/* ---------- Data tables: container owns horizontal overflow ---------- */
+.modern-table-wrapper,
+.table-wrapper,
+.table-responsive,
+.data-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: visible;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modern-table,
+.table-wrapper table,
+.table-responsive table,
+.data-table-wrap table {
+  width: 100%;
+}
+
+.modern-table th,
+.modern-table td,
+table th,
+table td {
+  vertical-align: middle;
+}
+
+.cell-actions {
+  flex-wrap: wrap;
+  gap: 6px !important;
+}
+
+/* ---------- Toolbars / filters ---------- */
+.license-tools,
+.customer-toolbar,
+.recovery-tools,
+.toolbar,
+.filters-bar,
+.filter-row,
+.page-header-actions,
+.hero-actions {
+  min-width: 0;
+}
+
+.app-search { max-width: 100%; }
+.app-search input { width: 100%; }
+
+/* ---------- Dropdowns, popovers and menus ---------- */
+.user-dropdown-card,
+.dropdown-menu,
+.action-menu,
+.popover,
+.context-menu {
+  max-width: min(92vw, 360px);
+  max-height: min(72vh, 560px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: var(--app-shadow-float) !important;
+}
+
+/* ---------- App-owned confirmation dialog ---------- */
+.app-dialog {
+  width: min(92vw, 470px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid rgba(148,163,184,.2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(18,28,42,.99), rgba(10,16,25,.995));
+  color: var(--app-text);
+  box-shadow: var(--app-shadow-float);
+}
+.app-dialog::backdrop {
+  background: rgba(3,7,12,.72);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.app-dialog-shell { padding: 20px; }
+.app-dialog-kicker {
+  margin: 0 0 7px;
+  color: var(--app-brand);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.app-dialog-title {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 1.15rem;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+}
+.app-dialog-message {
+  margin: 10px 0 0;
+  color: var(--app-text-soft);
+  font-size: .9rem;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+.app-dialog-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+}
+.app-dialog-field label {
+  color: #a9b8c9;
+  font-size: 12px;
+  font-weight: 700;
+}
+.app-dialog-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(148,163,184,.18);
+  background: rgba(7,11,18,.72);
+  color: var(--app-text);
+}
+.app-dialog-field input:focus {
+  border-color: rgba(72,197,250,.5);
+  box-shadow: 0 0 0 3px rgba(72,197,250,.08);
+}
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+.app-dialog-btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,.16);
+  font-weight: 750;
+}
+.app-dialog-cancel {
+  background: rgba(148,163,184,.06);
+  color: #becbd9;
+}
+.app-dialog-confirm {
+  border-color: rgba(72,197,250,.35);
+  background: linear-gradient(180deg, #52c7fa, #159bd5);
+  color: #04131d;
+}
+.app-dialog[data-tone="danger"] .app-dialog-kicker { color: #fb93a3; }
+.app-dialog[data-tone="danger"] .app-dialog-confirm {
+  border-color: rgba(251,113,133,.42);
+  background: linear-gradient(180deg, #fb8da0, #e94f69);
+  color: #1c070b;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 900px) {
+  .app-main-content {
+    width: 100% !important;
+    padding-inline: 14px !important;
+    padding-bottom: calc(86px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .app-topbar {
+    padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right)) !important;
+  }
+
+  .brand-text span,
+  .system-status-pill,
+  .push-enable-btn,
+  .test-alert-btn,
+  .user-pill-name,
+  .user-pill-chevron {
+    display: none !important;
+  }
+
+  .topbar-left,
+  .topbar-actions,
+  .notification-wrap {
+    min-width: 0;
+  }
+
+  .topbar-actions { gap: 6px !important; }
+  .header-icon-btn,
+  .user-pill-btn,
+  .mobile-menu-btn {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  .page-header-bar,
+  .page-hero,
+  .license-tools,
+  .customer-toolbar,
+  .recovery-tools,
+  .toolbar,
+  .filters-bar,
+  .filter-row {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .page-header-actions,
+  .hero-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .page-header-actions > *,
+  .hero-actions > * {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-search { width: 100% !important; }
+  .app-search kbd { display: none; }
+
+  .pill-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .pill-filter { justify-content: space-between; }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .dashboard-grid,
+  .dashboard-side,
+  .detail-grid,
+  .form-grid,
+  .cards-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .modern-table th,
+  .modern-table td,
+  table th,
+  table td {
+    white-space: nowrap;
+  }
+
+  .app-dialog-shell { padding: 18px; }
+  .app-dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-main-content { padding-inline: 10px !important; }
+
+  .brand-text strong { font-size: .94rem; }
+  .brand-badge { width: 34px !important; height: 34px !important; }
+
+  .page-title,
+  .page-hero h1 { font-size: clamp(1.45rem, 8vw, 1.8rem) !important; }
+
+  .stats-grid { grid-template-columns: 1fr !important; }
+  .stat-card { min-height: 104px !important; }
+
+  .page-header-actions,
+  .hero-actions,
+  .pill-filters { grid-template-columns: 1fr; }
+
+  .app-mobile-nav {
+    padding-bottom: max(7px, env(safe-area-inset-bottom));
+  }
+
+  .mobile-nav-item span:not(.mobile-nav-badge) {
+    max-width: 68px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid CanvasText !important;
+  }
+  *::-webkit-scrollbar-thumb { background: CanvasText; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
