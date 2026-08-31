@@ -15,7 +15,7 @@ if (!is_string($agent) || !is_string($chat)) {
     $fail('AI gateway sources could not be read');
 }
 
-$modeValidation = strpos($agent, "if (!in_array(\$mode, ['plan','synthesize'], true))");
+$modeValidation = strpos($agent, "if (!in_array(\$mode, ['understand','plan','synthesize'], true))");
 $privacyGate = strpos($agent, '$privacy = ai_privacy_policy($body);');
 $questionRedaction = strpos($agent, 'ai_privacy_redact_text($question, 6000)');
 $ipLimit = strpos($agent, "RateLimiter::check(client_ip(),'ai_agent_ip'");
