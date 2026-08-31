@@ -96,7 +96,7 @@ flash_render();
                     <option value="24h">Mute for 24 hours</option>
                 </select>
             </label>
-            <?php if ($muted): ?><p class="notification-muted-until">Muted until <?= htmlspecialchars(date('M j, Y H:i', strtotime($prefs['muted_until']))) ?></p><?php endif; ?>
+            <?php if ($muted): ?><p class="notification-muted-until">Muted until <?= htmlspecialchars(date('M j, Y g:i A', strtotime($prefs['muted_until']))) ?></p><?php endif; ?>
         </div>
 
         <div class="dialog-actions notification-settings-actions">
