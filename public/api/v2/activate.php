@@ -13,6 +13,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 $input = json_input();
 [$licenseKey, $hwid, $appVersion, $protocolVersion] = v2_input_identity($input);
 v2_rate_limit($licenseKey, 'activate');
+v2_ensure_identity($licenseKey, $hwid);
 
 // Public activation may only claim a terminal role. Management-only devices
 // are created later through an authenticated manager/pairing workflow.
