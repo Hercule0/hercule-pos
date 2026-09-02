@@ -5,6 +5,11 @@
  * Adds stable cloud/store/device UUIDs and separates terminal entitlement
  * capacity from the legacy max_activations field while preserving v1.
  *
+ * UUID columns intentionally remain nullable at the schema level because
+ * legacy v1 issue/activation paths must keep working unchanged. Existing rows
+ * are fully backfilled here; any future v1-created row is assigned its stable
+ * UUID lazily on the first v2 operation.
+ *
  * Usage in production:
  *   php db/migrate_multi_entitlement_v2.php
  */
@@ -80,23 +85,22 @@ foreach ($activationColumns as $column => $definition) {
     }
 }
 
-// Existing licenses become one-store identities without changing their legacy key.
+// Existing rows get stable identities immediately. A legacy license does NOT
+// become Multi merely because old max_activations happened to be >1.
 $pdo->exec("UPDATE licenses SET license_uuid = UUID() WHERE license_uuid IS NULL OR license_uuid = ''");
 $pdo->exec("UPDATE licenses SET store_uuid = UUID() WHERE store_uuid IS NULL OR store_uuid = ''");
-$pdo->exec('UPDATE licenses SET max_terminals = max_activations WHERE max_terminals IS NULL OR max_terminals < 1');
+$pdo->exec('UPDATE licenses SET max_terminals = CASE WHEN multi_cashier = 1 THEN GREATEST(1, max_activations) ELSE 1 END WHERE max_terminals IS NULL OR max_terminals < 1');
 $pdo->exec("UPDATE licenses SET features_json = JSON_OBJECT('multi_cashier', IF(multi_cashier = 1, TRUE, FALSE), 'offline_sale', TRUE) WHERE features_json IS NULL");
 
-// Every historical activation receives a stable device UUID. Existing devices
-// retain terminal-counting semantics so v1 capacity remains unchanged.
 $pdo->exec("UPDATE license_activations SET device_uuid = UUID() WHERE device_uuid IS NULL OR device_uuid = ''");
 $pdo->exec("UPDATE license_activations SET device_role = 'single_terminal' WHERE device_role IS NULL OR device_role = ''");
 $pdo->exec('UPDATE license_activations SET counts_as_terminal = 1 WHERE counts_as_terminal IS NULL');
 
 $duplicates = (int) $pdo->query(
     "SELECT COUNT(*) FROM (
-        SELECT license_uuid FROM licenses GROUP BY license_uuid HAVING COUNT(*) > 1
+        SELECT license_uuid FROM licenses WHERE license_uuid IS NOT NULL GROUP BY license_uuid HAVING COUNT(*) > 1
         UNION ALL
-        SELECT store_uuid FROM licenses GROUP BY store_uuid HAVING COUNT(*) > 1
+        SELECT store_uuid FROM licenses WHERE store_uuid IS NOT NULL GROUP BY store_uuid HAVING COUNT(*) > 1
     ) AS d"
 )->fetchColumn();
 if ($duplicates !== 0) {
@@ -104,7 +108,10 @@ if ($duplicates !== 0) {
 }
 
 $deviceDuplicates = (int) $pdo->query(
-    'SELECT COUNT(*) FROM (SELECT device_uuid FROM license_activations GROUP BY device_uuid HAVING COUNT(*) > 1) AS d'
+    "SELECT COUNT(*) FROM (
+        SELECT device_uuid FROM license_activations
+        WHERE device_uuid IS NOT NULL GROUP BY device_uuid HAVING COUNT(*) > 1
+    ) AS d"
 )->fetchColumn();
 if ($deviceDuplicates !== 0) {
     throw new RuntimeException('MC-002 verification failed: duplicate device UUIDs detected.');
@@ -127,21 +134,18 @@ if (!$indexExists('license_activations', 'idx_activations_terminal_capacity')) {
     echo "ADDED - idx_activations_terminal_capacity\n";
 }
 
-// Tighten UUID columns only after every historical row has been backfilled.
-$pdo->exec('ALTER TABLE licenses MODIFY license_uuid VARCHAR(36) NOT NULL');
-$pdo->exec('ALTER TABLE licenses MODIFY store_uuid VARCHAR(36) NOT NULL');
-$pdo->exec('ALTER TABLE licenses MODIFY max_terminals INT UNSIGNED NOT NULL DEFAULT 1');
-$pdo->exec('ALTER TABLE license_activations MODIFY device_uuid VARCHAR(36) NOT NULL');
-
 $missingLicenses = (int) $pdo->query(
-    "SELECT COUNT(*) FROM licenses WHERE license_uuid IS NULL OR license_uuid = '' OR store_uuid IS NULL OR store_uuid = '' OR max_terminals < 1"
+    "SELECT COUNT(*) FROM licenses
+     WHERE license_uuid IS NULL OR license_uuid = ''
+        OR store_uuid IS NULL OR store_uuid = ''
+        OR max_terminals IS NULL OR max_terminals < 1"
 )->fetchColumn();
 $missingDevices = (int) $pdo->query(
     "SELECT COUNT(*) FROM license_activations WHERE device_uuid IS NULL OR device_uuid = ''"
 )->fetchColumn();
 
 if ($missingLicenses !== 0 || $missingDevices !== 0) {
-    throw new RuntimeException('MC-002 verification failed: UUID/capacity backfill incomplete.');
+    throw new RuntimeException('MC-002 verification failed: historical UUID/capacity backfill incomplete.');
 }
 
 echo "MC-002 entitlement v2 migration complete.\n";
