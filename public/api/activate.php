@@ -63,23 +63,34 @@ if (!RateLimiter::check('key:' . $licenseKey, 'activate_by_key', $rateLimitCfg['
     json_response(['ok' => false, 'error' => 'Too many activation attempts for this license key. Please try again in a few minutes.'], 429);
 }
 
-// A blocked HWID stays blocked even if its activation slot was reset.
-// This is intentionally checked before License::activate() so the existing
-// license activation logic remains unchanged and backwards compatible.
-if (DeviceManager::isBlocked($licenseKey, $hwid)) {
-    $payload = [
-        'status' => 'device_blocked',
-        'error' => 'This device has been blocked by the license administrator.',
-        'server_time' => gmdate('Y-m-d\TH:i:s\Z'),
-    ];
-    json_response(['ok' => false] + RsaSigner::sign($payload));
+// MC-001: an existing inactive HWID is handled under the same license-row
+// lock used by new activations. This prevents an old device from silently
+// returning after its seat has already been consumed by a replacement.
+$result = DeviceManager::activateExistingSafely($licenseKey, $hwid, client_ip());
+
+if ($result === null) {
+    // A blocked HWID stays blocked even if its activation slot was reset.
+    if (DeviceManager::isBlocked($licenseKey, $hwid)) {
+        $payload = [
+            'status' => 'device_blocked',
+            'error' => 'This device has been blocked by the license administrator.',
+            'server_time' => gmdate('Y-m-d\TH:i:s\Z'),
+        ];
+        json_response(['ok' => false] + RsaSigner::sign($payload));
+    }
+
+    $result = License::activate($licenseKey, $hwid, client_ip());
 }
 
-$result = License::activate($licenseKey, $hwid, client_ip());
-
 if (!$result['ok']) {
+    $safeStatus = in_array(
+        $result['code'] ?? '',
+        ['device_blocked', 'device_revoked', 'device_replaced'],
+        true
+    ) ? $result['code'] : 'invalid';
+
     $payload = [
-        'status' => 'invalid',
+        'status' => $safeStatus,
         'error' => $result['error'],
         'server_time' => gmdate('Y-m-d\TH:i:s\Z'),
     ];
