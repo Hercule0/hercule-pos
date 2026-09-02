@@ -49,6 +49,68 @@ function v2_signed_success(array $payload): void
     json_response(['ok' => true] + RsaSigner::sign($payload));
 }
 
+/**
+ * Gives legacy v1-created rows their stable v2 identity lazily.
+ * This preserves the v1 INSERT contract while guaranteeing that any row
+ * exposed through v2 has immutable license/store/device UUIDs.
+ */
+function v2_ensure_identity(string $licenseKey, string $hwid): void
+{
+    if (!Entitlement::schemaReady()) {
+        return;
+    }
+
+    $pdo = Database::pdo();
+    $lock = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT * FROM licenses WHERE license_key = ?' . $lock);
+        $stmt->execute([$licenseKey]);
+        $license = $stmt->fetch();
+        if (!$license) {
+            $pdo->commit();
+            return;
+        }
+
+        $licenseUuid = trim((string) ($license['license_uuid'] ?? ''));
+        $storeUuid = trim((string) ($license['store_uuid'] ?? ''));
+        $maxTerminals = (int) ($license['max_terminals'] ?? 0);
+        $features = trim((string) ($license['features_json'] ?? ''));
+
+        if ($licenseUuid === '') $licenseUuid = Entitlement::uuidV4();
+        if ($storeUuid === '') $storeUuid = Entitlement::uuidV4();
+        if ($maxTerminals < 1) $maxTerminals = !empty($license['multi_cashier']) ? max(1, (int) $license['max_activations']) : 1;
+        if ($features === '') {
+            $features = json_encode([
+                'multi_cashier' => !empty($license['multi_cashier']),
+                'offline_sale' => true,
+            ], JSON_UNESCAPED_SLASHES);
+        }
+
+        $updateLicense = $pdo->prepare(
+            'UPDATE licenses
+             SET license_uuid = ?, store_uuid = ?, max_terminals = ?, features_json = ?
+             WHERE id = ?'
+        );
+        $updateLicense->execute([$licenseUuid, $storeUuid, $maxTerminals, $features, $license['id']]);
+
+        $activationStmt = $pdo->prepare(
+            'SELECT id, device_uuid FROM license_activations WHERE license_id = ? AND hwid = ? LIMIT 1'
+        );
+        $activationStmt->execute([(int) $license['id'], $hwid]);
+        $activation = $activationStmt->fetch();
+        if ($activation && trim((string) ($activation['device_uuid'] ?? '')) === '') {
+            $updateActivation = $pdo->prepare('UPDATE license_activations SET device_uuid = ? WHERE id = ?');
+            $updateActivation->execute([Entitlement::uuidV4(), $activation['id']]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
 function v2_rate_limit(string $licenseKey, string $endpoint): void
 {
     $config = require __DIR__ . '/../../../config/config.php';
