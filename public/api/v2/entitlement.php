@@ -13,6 +13,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 $input = json_input();
 [$licenseKey, $hwid] = v2_input_identity($input);
 v2_rate_limit($licenseKey, 'entitlement');
+v2_ensure_identity($licenseKey, $hwid);
 
 $result = Entitlement::entitlementForDevice($licenseKey, $hwid);
 if (!$result['ok']) {
