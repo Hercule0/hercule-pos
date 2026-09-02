@@ -35,6 +35,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 LicenseLifecycle::updateActivationLimit($licenseId, (int) ($_POST['max_activations'] ?? 0), $admin);
                 flash_set('Device activation limit updated.');
                 break;
+            case 'multi_entitlement':
+                $enabled = (string) ($_POST['multi_cashier'] ?? '0') === '1';
+                LicenseLifecycle::updateMultiEntitlement(
+                    $licenseId,
+                    $enabled,
+                    (int) ($_POST['max_terminals'] ?? 1),
+                    (int) ($_POST['max_management_devices'] ?? 1),
+                    $admin
+                );
+                flash_set($enabled ? 'Multi-Cashier entitlement enabled/updated.' : 'Multi-Cashier entitlement disabled.');
+                break;
             case 'transfer_customer':
                 LicenseLifecycle::transferCustomer($licenseId, (int) ($_POST['customer_id'] ?? 0), $admin);
                 flash_set('License transferred to the selected customer.');
@@ -55,6 +66,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $license = License::findById($licenseId);
+$entitlementReady = array_key_exists('multi_cashier', $license)
+    && array_key_exists('max_terminals', $license)
+    && array_key_exists('entitlement_version', $license);
+
 $customerStmt = $pdo->prepare('SELECT id, name FROM customers WHERE id = ?');
 $customerStmt->execute([(int) $license['customer_id']]);
 $currentCustomer = $customerStmt->fetch();
@@ -63,6 +78,17 @@ $customers = $pdo->query('SELECT id, name FROM customers ORDER BY name ASC')->fe
 $activeStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE license_id = ? AND is_active = 1');
 $activeStmt->execute([$licenseId]);
 $activeDevices = (int) $activeStmt->fetchColumn();
+
+$activeTerminals = $activeDevices;
+$activeManagement = 0;
+if ($entitlementReady) {
+    $terminalStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE license_id = ? AND is_active = 1 AND counts_as_terminal = 1');
+    $terminalStmt->execute([$licenseId]);
+    $activeTerminals = (int) $terminalStmt->fetchColumn();
+    $managementStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE license_id = ? AND is_active = 1 AND counts_as_terminal = 0');
+    $managementStmt->execute([$licenseId]);
+    $activeManagement = (int) $managementStmt->fetchColumn();
+}
 
 $eventsStmt = $pdo->prepare('SELECT event_type, note, created_by, created_at FROM subscription_events WHERE license_id = ? ORDER BY created_at DESC LIMIT 12');
 $eventsStmt->execute([$licenseId]);
@@ -81,7 +107,7 @@ flash_render();
         <div>
             <p class="eyebrow">License lifecycle</p>
             <h1><?= htmlspecialchars($license['license_key']) ?></h1>
-            <p class="page-subtitle">Adjust duration, plan, activation capacity, ownership, and internal notes without replacing the license key.</p>
+            <p class="page-subtitle">Adjust duration, plan, activation capacity, ownership, Multi-Cashier entitlement, and internal notes without replacing the license key.</p>
         </div>
     </section>
 
@@ -114,10 +140,30 @@ flash_render();
 
         <form method="post" class="lifecycle-card">
             <?= Csrf::field() ?>
-            <div><h2>Device capacity</h2><p>Increase or reduce activation slots. The limit cannot be set below the number of devices that are currently active.</p></div>
+            <div><h2>Legacy device capacity</h2><p>Maintains compatibility with API v1. When Multi-Cashier is enabled, this value is mirrored to the terminal entitlement and increments the entitlement version.</p></div>
             <label><span>Maximum active devices</span><input type="number" name="max_activations" min="<?= max(1, $activeDevices) ?>" max="100" value="<?= (int) $license['max_activations'] ?>" required inputmode="numeric"></label>
             <button class="primary-btn" type="submit" name="action" value="activation_limit">Save device limit</button>
         </form>
+
+        <?php if ($entitlementReady): ?>
+        <form method="post" class="lifecycle-card lifecycle-wide">
+            <?= Csrf::field() ?>
+            <input type="hidden" name="multi_cashier" value="0">
+            <div>
+                <h2>Multi-Cashier entitlement</h2>
+                <p>Enable the same license/store for multiple POS terminals. Terminal seats and management-only devices are counted separately.</p>
+                <small>Store UUID: <code><?= htmlspecialchars((string) ($license['store_uuid'] ?? 'not assigned')) ?></code> · Entitlement v<?= (int) ($license['entitlement_version'] ?? 1) ?></small>
+            </div>
+            <label><span>Enable Multi-Cashier</span><input type="checkbox" name="multi_cashier" value="1" <?= !empty($license['multi_cashier']) ? 'checked' : '' ?>></label>
+            <label><span>Maximum POS terminals</span><input type="number" name="max_terminals" min="<?= max(1, $activeTerminals) ?>" max="100" value="<?= max(1, (int) ($license['max_terminals'] ?? 1)) ?>" required inputmode="numeric"><small><?= $activeTerminals ?> terminal(s) currently active.</small></label>
+            <label><span>Maximum management-only devices</span><input type="number" name="max_management_devices" min="<?= max(0, $activeManagement) ?>" max="100" value="<?= max(0, (int) ($license['max_management_devices'] ?? 1)) ?>" required inputmode="numeric"><small><?= $activeManagement ?> management device(s) currently active.</small></label>
+            <button class="primary-btn" type="submit" name="action" value="multi_entitlement">Save Multi entitlement</button>
+        </form>
+        <?php else: ?>
+        <section class="lifecycle-card lifecycle-wide">
+            <div><h2>Multi-Cashier entitlement</h2><p>Run <code>php db/migrate_multi_entitlement_v2.php</code> before configuring Multi-Cashier seats.</p></div>
+        </section>
+        <?php endif; ?>
 
         <form method="post" class="lifecycle-card" data-confirm="Transfer this license to the selected customer?">
             <?= Csrf::field() ?>
@@ -154,5 +200,5 @@ flash_render();
     </section>
 </div>
 
-<script src="/public/admin/assets/js/license-lifecycle.js?v=20260826-hardening1" defer></script>
+<script src="/public/admin/assets/js/license-lifecycle.js?v=20260902-mc002" defer></script>
 <?php render_footer(); ?>
