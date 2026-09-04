@@ -28,9 +28,39 @@
     }
   }
 
+  function exposeLifecycleAction() {
+    var bar = document.querySelector(".license-action-bar");
+    if (!bar || bar.querySelector("[data-license-lifecycle-link]")) return;
+    var id = new URLSearchParams(window.location.search).get("id");
+    if (!id || !/^\d+$/.test(id)) return;
+
+    var link = document.createElement("a");
+    link.className = "detail-action";
+    link.setAttribute("data-license-lifecycle-link", "");
+    link.href = "/public/admin/license_lifecycle.php?id=" + encodeURIComponent(id);
+    link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M17 4v6M6 14h4M14 14h4M6 18h4M14 18h4"/></svg><span>Lifecycle & Multi</span>';
+    bar.appendChild(link);
+  }
+
+  function normalizeV2VerificationRows() {
+    document.querySelectorAll(".verification-row").forEach(function (row) {
+      var strong = row.querySelector("strong");
+      var status = row.querySelector(".activity-status");
+      if (!strong || !status) return;
+      var label = String(strong.textContent || "").trim().toLowerCase();
+      if (label !== "ok v2") return;
+      strong.textContent = "Successful verification";
+      status.textContent = "✓";
+      status.classList.remove("failed");
+      status.classList.add("ok");
+    });
+  }
+
   function start() {
     bindDialog("[data-open-renew-dialog]", "renew-dialog", "[data-close-renew-dialog]");
     bindDialog("[data-open-danger-dialog]", "danger-dialog", "[data-close-danger-dialog]");
+    exposeLifecycleAction();
+    normalizeV2VerificationRows();
 
     var plan = document.getElementById("renew-plan");
     var custom = document.getElementById("renew-custom-days-row");
