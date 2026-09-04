@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/LicenseLifecycle.php';
+require_once __DIR__ . '/../../includes/EntitlementV2.php';
+require_once __DIR__ . '/../../includes/MultiEntitlementAdmin.php';
 
 Auth::require();
 Auth::requirePermission('licenses.manage');
@@ -35,6 +37,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 LicenseLifecycle::updateActivationLimit($licenseId, (int) ($_POST['max_activations'] ?? 0), $admin);
                 flash_set('Device activation limit updated.');
                 break;
+            case 'multi_entitlement':
+                MultiEntitlementAdmin::update(
+                    $licenseId,
+                    isset($_POST['multi_cashier']) && $_POST['multi_cashier'] === '1',
+                    (int) ($_POST['max_terminals'] ?? 1),
+                    (int) ($_POST['max_management_devices'] ?? 1),
+                    $admin
+                );
+                flash_set('Multi-Cashier entitlement updated.');
+                break;
             case 'transfer_customer':
                 LicenseLifecycle::transferCustomer($licenseId, (int) ($_POST['customer_id'] ?? 0), $admin);
                 flash_set('License transferred to the selected customer.');
@@ -64,6 +76,25 @@ $activeStmt = $pdo->prepare('SELECT COUNT(*) FROM license_activations WHERE lice
 $activeStmt->execute([$licenseId]);
 $activeDevices = (int) $activeStmt->fetchColumn();
 
+$multiSchemaReady = EntitlementV2::schemaReady();
+$activeTerminals = $activeDevices;
+$activeManagementDevices = 0;
+if ($multiSchemaReady) {
+    $terminalStmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM license_activations
+         WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL AND counts_as_terminal = 1'
+    );
+    $terminalStmt->execute([$licenseId]);
+    $activeTerminals = (int) $terminalStmt->fetchColumn();
+
+    $managementStmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM license_activations
+         WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL AND counts_as_terminal = 0'
+    );
+    $managementStmt->execute([$licenseId]);
+    $activeManagementDevices = (int) $managementStmt->fetchColumn();
+}
+
 $eventsStmt = $pdo->prepare('SELECT event_type, note, created_by, created_at FROM subscription_events WHERE license_id = ? ORDER BY created_at DESC LIMIT 12');
 $eventsStmt->execute([$licenseId]);
 $events = $eventsStmt->fetchAll();
@@ -81,7 +112,7 @@ flash_render();
         <div>
             <p class="eyebrow">License lifecycle</p>
             <h1><?= htmlspecialchars($license['license_key']) ?></h1>
-            <p class="page-subtitle">Adjust duration, plan, activation capacity, ownership, and internal notes without replacing the license key.</p>
+            <p class="page-subtitle">Adjust duration, plan, activation capacity, Multi-Cashier seats, ownership, and internal notes without replacing the license key.</p>
         </div>
     </section>
 
@@ -89,7 +120,11 @@ flash_render();
         <article><span>Customer</span><strong><?= htmlspecialchars($currentCustomer['name'] ?? 'Unknown') ?></strong></article>
         <article><span>Plan</span><strong><?= htmlspecialchars(str_replace('_', ' ', $license['plan'])) ?></strong></article>
         <article><span>Expiry</span><strong><?= $license['expires_at'] ? htmlspecialchars(date('M j, Y', strtotime($license['expires_at']))) : 'Lifetime' ?></strong></article>
-        <article><span>Devices</span><strong><?= $activeDevices ?> / <?= (int) $license['max_activations'] ?></strong></article>
+        <?php if ($multiSchemaReady): ?>
+            <article><span>Multi-Cashier</span><strong><?= !empty($license['multi_cashier']) ? 'Enabled' : 'Single' ?></strong><small><?= $activeTerminals ?> / <?= (int) ($license['max_terminals'] ?? 1) ?> terminals</small></article>
+        <?php else: ?>
+            <article><span>Devices</span><strong><?= $activeDevices ?> / <?= (int) $license['max_activations'] ?></strong></article>
+        <?php endif; ?>
     </section>
 
     <section class="lifecycle-grid">
@@ -112,11 +147,43 @@ flash_render();
             <button class="primary-btn" type="submit" name="action" value="change_plan">Update plan</button>
         </form>
 
+        <?php if ($multiSchemaReady): ?>
+        <form method="post" class="lifecycle-card lifecycle-wide">
+            <?= Csrf::field() ?>
+            <div>
+                <h2>Multi-Cashier entitlement</h2>
+                <p>Controls whether this same license/store may run multiple POS terminals. Management-only devices use a separate seat pool. Reducing a limit below currently active devices is blocked.</p>
+            </div>
+            <label>
+                <span>Multi-Cashier</span>
+                <select name="multi_cashier" required>
+                    <option value="0" <?= empty($license['multi_cashier']) ? 'selected' : '' ?>>Disabled — Single terminal</option>
+                    <option value="1" <?= !empty($license['multi_cashier']) ? 'selected' : '' ?>>Enabled</option>
+                </select>
+            </label>
+            <label>
+                <span>Maximum POS terminals</span>
+                <input type="number" name="max_terminals" min="<?= max(1, $activeTerminals) ?>" max="100" value="<?= (int) ($license['max_terminals'] ?? 1) ?>" required inputmode="numeric">
+                <small><?= $activeTerminals ?> terminal(s) active now</small>
+            </label>
+            <label>
+                <span>Maximum management devices</span>
+                <input type="number" name="max_management_devices" min="<?= max(1, $activeManagementDevices) ?>" max="20" value="<?= (int) ($license['max_management_devices'] ?? 1) ?>" required inputmode="numeric">
+                <small><?= $activeManagementDevices ?> management device(s) active now</small>
+            </label>
+            <button class="primary-btn" type="submit" name="action" value="multi_entitlement">Save Multi entitlement</button>
+        </form>
+        <?php else: ?>
+        <section class="lifecycle-card lifecycle-wide">
+            <div><h2>Multi-Cashier entitlement</h2><p>Fix408 server migration must be applied before Multi-Cashier seats can be managed.</p></div>
+        </section>
+        <?php endif; ?>
+
         <form method="post" class="lifecycle-card">
             <?= Csrf::field() ?>
-            <div><h2>Device capacity</h2><p>Increase or reduce activation slots. The limit cannot be set below the number of devices that are currently active.</p></div>
+            <div><h2>Legacy device capacity</h2><p>Compatibility limit for older v1 desktop clients. Under Fix408 this value is synchronized with the POS terminal-seat limit.</p></div>
             <label><span>Maximum active devices</span><input type="number" name="max_activations" min="<?= max(1, $activeDevices) ?>" max="100" value="<?= (int) $license['max_activations'] ?>" required inputmode="numeric"></label>
-            <button class="primary-btn" type="submit" name="action" value="activation_limit">Save device limit</button>
+            <button class="primary-btn" type="submit" name="action" value="activation_limit">Save legacy limit</button>
         </form>
 
         <form method="post" class="lifecycle-card" data-confirm="Transfer this license to the selected customer?">
@@ -154,5 +221,5 @@ flash_render();
     </section>
 </div>
 
-<script src="/public/admin/assets/js/license-lifecycle.js?v=20260826-hardening1" defer></script>
+<script src="/public/admin/assets/js/license-lifecycle.js?v=20260904-fix408" defer></script>
 <?php render_footer(); ?>
