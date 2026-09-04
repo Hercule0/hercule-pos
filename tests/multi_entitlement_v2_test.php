@@ -19,6 +19,8 @@ $pdo->exec(file_get_contents(__DIR__ . '/../db/schema.sqlite.test.sql'));
 Database::setTestInstance($pdo);
 
 // Mirror the production Fix408 migration in SQLite for the business-logic test.
+// The canonical lightweight SQLite fixture predates device-management's
+// app_version column, so include it here because Entitlement v2 persists it.
 foreach ([
     "ALTER TABLE licenses ADD COLUMN license_uuid TEXT",
     "ALTER TABLE licenses ADD COLUMN store_uuid TEXT",
@@ -28,6 +30,7 @@ foreach ([
     "ALTER TABLE licenses ADD COLUMN features_json TEXT",
     "ALTER TABLE licenses ADD COLUMN entitlement_version INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE licenses ADD COLUMN offline_valid_until TEXT",
+    "ALTER TABLE license_activations ADD COLUMN app_version TEXT",
     "ALTER TABLE license_activations ADD COLUMN device_uuid TEXT",
     "ALTER TABLE license_activations ADD COLUMN store_uuid TEXT",
     "ALTER TABLE license_activations ADD COLUMN device_role TEXT NOT NULL DEFAULT 'single_terminal'",
@@ -124,10 +127,13 @@ $replace = EntitlementV2::replaceDevice([
     'reason' => 'hardware replacement',
 ]);
 g1_check('manager device replacement is atomic at seat level', ($replace['ok'] ?? false) === true);
-$oldAfter = $pdo->prepare('SELECT is_active,revoked_at FROM license_activations WHERE device_uuid=?')->execute([$terminal2Uuid]);
-$oldRow = $pdo->query("SELECT is_active,revoked_at FROM license_activations WHERE device_uuid='{$terminal2Uuid}'")->fetch();
+$oldRowStmt = $pdo->prepare('SELECT is_active,revoked_at FROM license_activations WHERE device_uuid=?');
+$oldRowStmt->execute([$terminal2Uuid]);
+$oldRow = $oldRowStmt->fetch();
 g1_check('replaced old device is inactive and permanently revoked', (int) $oldRow['is_active'] === 0 && !empty($oldRow['revoked_at']));
-$newRow = $pdo->query("SELECT is_active FROM license_activations WHERE device_uuid='{$replacementUuid}'")->fetch();
+$newRowStmt = $pdo->prepare('SELECT is_active FROM license_activations WHERE device_uuid=?');
+$newRowStmt->execute([$replacementUuid]);
+$newRow = $newRowStmt->fetch();
 g1_check('replacement device is the active seat holder', (int) $newRow['is_active'] === 1);
 $versionAfter = (int) EntitlementV2::entitlementByKey($key)['entitlement_version'];
 g1_check('device lifecycle advances entitlement_version', $versionAfter > $versionBefore);
