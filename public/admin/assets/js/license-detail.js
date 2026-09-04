@@ -38,7 +38,19 @@
     link.className = "detail-action";
     link.setAttribute("data-license-lifecycle-link", "");
     link.href = "/public/admin/license_lifecycle.php?id=" + encodeURIComponent(id);
-    link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M17 4v6M6 14h4M14 14h4M6 18h4M14 18h4"/></svg><span>Lifecycle & Multi</span>';
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M4 7h16M7 4v6M17 4v6M6 14h4M14 14h4M6 18h4M14 18h4");
+    svg.appendChild(path);
+
+    var label = document.createElement("span");
+    label.textContent = "Lifecycle & Multi";
+
+    link.appendChild(svg);
+    link.appendChild(label);
     bar.appendChild(link);
   }
 
