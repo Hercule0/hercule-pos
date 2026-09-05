@@ -462,8 +462,10 @@ final class EntitlementV2
     private static function findLicenseForUpdate(string $licenseKey): ?array
     {
         $pdo = Database::pdo();
-        $lock = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
-        $stmt = $pdo->prepare('SELECT * FROM licenses WHERE license_key = ?' . $lock . ' LIMIT 1');
+        $limitAndLock = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? ' LIMIT 1 FOR UPDATE'
+            : ' LIMIT 1';
+        $stmt = $pdo->prepare('SELECT * FROM licenses WHERE license_key = ?' . $limitAndLock);
         $stmt->execute([$licenseKey]);
         $row = $stmt->fetch();
         return $row ?: null;
