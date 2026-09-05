@@ -23,14 +23,17 @@ foreach ($checks as $needle => $message) {
     }
 }
 
-if (str_contains($backup, "--user=\"$DB_USER\" \\\n  --ssl \\\n")) {
+// The old failure came from a literal standalone --ssl argument in the dump
+// command. The only allowed legacy --ssl occurrence now is the capability-
+// selected array fallback above.
+if (str_contains($backup, "  --ssl \\\n")) {
     fwrite(STDERR, "FAIL: backup still hard-codes the incompatible --ssl flag\n");
     exit(1);
 }
 
 $requiredPos = strpos($backup, '--ssl-mode=REQUIRED');
 $refusePos = strpos($backup, 'refusing an unencrypted database connection');
-$dumpPos = strpos($backup, "mysqldump \\");
+$dumpPos = strpos($backup, "mysqldump \\\n");
 if ($requiredPos === false || $refusePos === false || $dumpPos === false || $refusePos > $dumpPos) {
     fwrite(STDERR, "FAIL: TLS capability gate is not enforced before mysqldump execution\n");
     exit(1);
