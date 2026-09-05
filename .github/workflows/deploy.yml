@@ -151,3 +151,60 @@ jobs:
             exit 1
           fi
           bash deploy_package/scripts/check_entitlement_v2_routes.sh "https://$APP_HOST"
+
+      - name: Diagnose Azure runtime drift
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
+          APP_HOST="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query defaultHostName --output tsv)"
+          echo "=== App Service runtime topology ==="
+          if ! az webapp list-instances --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query '[].{id:name,state:state}' --output table; then
+            echo "WARN: az webapp list-instances is unavailable on this runner."
+          fi
+
+          echo "=== Non-secret deployment/storage settings ==="
+          az webapp config appsettings list --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" \
+            --query "[?name=='WEBSITE_RUN_FROM_PACKAGE' || name=='WEBSITES_ENABLE_APP_SERVICE_STORAGE' || name=='WEBSITE_ENABLE_SYNC_UPDATE_SITE' || name=='SCM_DO_BUILD_DURING_DEPLOYMENT'].{name:name,value:value}" \
+            --output table
+
+          echo "=== Kudu wwwroot Entitlement v2 files ==="
+          profile="$(az webapp deployment list-publishing-profiles --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json --query "[?publishMethod=='MSDeploy'] | [0]")"
+          kudu_user="$(jq -r '.userName // empty' <<<"$profile")"
+          kudu_pass="$(jq -r '.userPWD // empty' <<<"$profile")"
+          publish_url="$(jq -r '.publishUrl // empty' <<<"$profile")"
+          if [ -n "$kudu_user" ] && [ -n "$kudu_pass" ] && [ -n "$publish_url" ]; then
+            echo "::add-mask::$kudu_user"
+            echo "::add-mask::$kudu_pass"
+            kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
+            cmd='for f in /home/site/wwwroot/public/api/v2/validate.php /home/site/wwwroot/public/api/v2/activate.php; do if [ -f "$f" ]; then stat -c "%n size=%s mtime=%y" "$f"; sha256sum "$f"; else echo "MISSING $f"; fi; done'
+            payload="$(jq -nc --arg command "$cmd" '{command:$command,dir:"/home/site/wwwroot"}')"
+            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' -X POST --data "$payload" "$kudu_base/api/command"
+          else
+            echo "WARN: Kudu publishing profile unavailable; skipped direct wwwroot inspection."
+          fi
+
+          echo "=== Repeated public route probes ==="
+          probe_url="https://${APP_HOST}/public/api/v2/validate.php"
+          for attempt in {1..12}; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+              --dump-header "$headers" --output "$body" --write-out '%{http_code}' \
+              --header 'Content-Type: application/json' --header 'Accept: application/json' \
+              --data '{}' "$probe_url" || true)"
+            server="$(awk 'BEGIN{IGNORECASE=1} /^Server:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
+            ctype="$(awk 'BEGIN{IGNORECASE=1} /^Content-Type:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
+            affinity="$(awk 'BEGIN{IGNORECASE=1} /^Set-Cookie:.*ARRAffinity=/{print; exit}' "$headers" | sed -E 's/(ARRAffinity=)[^;]+/\1<redacted>/g' | tr -d '\r')"
+            echo "probe ${attempt}/12 status=${status:-curl_error} server=${server:-unknown} content-type=${ctype:-unknown} ${affinity:-}"
+            if [ "$status" != "400" ]; then
+              echo "ERROR: runtime drift reproduced during repeated production probe."
+              head -c 300 "$body" || true
+              echo
+              rm -f "$headers" "$body"
+              exit 1
+            fi
+            rm -f "$headers" "$body"
+            sleep 5
+          done
+          echo "Azure runtime drift diagnostic passed: 12/12 live probes remained on signed-v2 route."
