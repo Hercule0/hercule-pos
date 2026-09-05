@@ -158,17 +158,23 @@ jobs:
           set -Eeuo pipefail
           resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
           APP_HOST="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query defaultHostName --output tsv)"
+
           echo "=== App Service runtime topology ==="
-          if ! az webapp list-instances --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query '[].{id:name,state:state}' --output table; then
-            echo "WARN: az webapp list-instances is unavailable on this runner."
-          fi
+          instances_json="$(az webapp list-instances --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json 2>/dev/null || echo '[]')"
+          echo "instance_count=$(jq 'length' <<<"$instances_json")"
+          jq '[.[] | {name:(.name // .id // "unknown"), state:(.state // "unknown"), status:(.status // "unknown")}]' <<<"$instances_json"
+          server_farm_id="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query serverFarmId --output tsv)"
+          az appservice plan show --ids "$server_farm_id" --query '{sku:sku.name,capacity:sku.capacity,numberOfWorkers:numberOfWorkers,maximumNumberOfWorkers:maximumNumberOfWorkers}' --output json
+
+          echo "=== Deployment Center source ==="
+          source_json="$(az webapp deployment source show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json 2>/dev/null || echo '{}')"
+          jq '{repoUrl:(.repoUrl // null), branch:(.branch // null), isManualIntegration:(.isManualIntegration // null), isMercurial:(.isMercurial // null)}' <<<"$source_json"
 
           echo "=== Non-secret deployment/storage settings ==="
           az webapp config appsettings list --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" \
             --query "[?name=='WEBSITE_RUN_FROM_PACKAGE' || name=='WEBSITES_ENABLE_APP_SERVICE_STORAGE' || name=='WEBSITE_ENABLE_SYNC_UPDATE_SITE' || name=='SCM_DO_BUILD_DURING_DEPLOYMENT'].{name:name,value:value}" \
             --output table
 
-          echo "=== Kudu wwwroot Entitlement v2 files ==="
           profile="$(az webapp deployment list-publishing-profiles --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json --query "[?publishMethod=='MSDeploy'] | [0]")"
           kudu_user="$(jq -r '.userName // empty' <<<"$profile")"
           kudu_pass="$(jq -r '.userPWD // empty' <<<"$profile")"
@@ -177,11 +183,22 @@ jobs:
             echo "::add-mask::$kudu_user"
             echo "::add-mask::$kudu_pass"
             kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
-            cmd='for f in /home/site/wwwroot/public/api/v2/validate.php /home/site/wwwroot/public/api/v2/activate.php; do if [ -f "$f" ]; then stat -c "%n size=%s mtime=%y" "$f"; sha256sum "$f"; else echo "MISSING $f"; fi; done'
+
+            echo "=== Kudu deployment history ==="
+            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" "$kudu_base/api/deployments" \
+              | jq '[.[0:10][] | {id,status,status_text,deployer,message,received_time,start_time,end_time,active}]'
+
+            echo "=== Kudu wwwroot Entitlement v2 files ==="
+            cmd="bash -lc 'for f in /home/site/wwwroot/public/api/v2/validate.php /home/site/wwwroot/public/api/v2/activate.php; do if [ -f \"\$f\" ]; then stat -c \"%n size=%s mtime=%y\" \"\$f\"; sha256sum \"\$f\"; else echo \"MISSING \$f\"; fi; done'"
             payload="$(jq -nc --arg command "$cmd" '{command:$command,dir:"/home/site/wwwroot"}')"
-            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' -X POST --data "$payload" "$kudu_base/api/command"
+            kudu_result="$(curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' -X POST --data "$payload" "$kudu_base/api/command")"
+            echo "$kudu_result" | jq '{Output,Error,ExitCode}'
+            if jq -e '.ExitCode != 0 or (.Output | contains("MISSING"))' <<<"$kudu_result" >/dev/null; then
+              echo "ERROR: Kudu wwwroot does not contain the expected Entitlement v2 files." >&2
+              exit 1
+            fi
           else
-            echo "WARN: Kudu publishing profile unavailable; skipped direct wwwroot inspection."
+            echo "WARN: Kudu publishing profile unavailable; skipped direct wwwroot/deployment inspection."
           fi
 
           echo "=== Repeated public route probes ==="
