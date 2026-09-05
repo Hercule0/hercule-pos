@@ -5,6 +5,17 @@ on:
     # 00:30 UTC = 03:30 Iraq time; one verified backup per day.
     - cron: "30 0 * * *"
   workflow_dispatch:
+  # Fix436: any change to the backup/restore pipeline must prove itself against
+  # the production DB configuration before it can be considered healthy.
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/backup_database.sh'
+      - 'scripts/verify_backup.sh'
+      - 'scripts/restore_database.sh'
+      - '.github/workflows/database-backup.yml'
+      - 'tests/backup_*_test.php'
 
 permissions:
   contents: read
