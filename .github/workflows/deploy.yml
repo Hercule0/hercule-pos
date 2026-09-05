@@ -192,7 +192,7 @@ jobs:
             expected_file="deploy_package/public/api/v2/$rel"
             actual_file="${RUNNER_TEMP}/kudu-$rel"
             curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
-              "$kudu_base/api/vfs/home/site/wwwroot/public/api/v2/$rel" \
+              "$kudu_base/api/vfs/site/wwwroot/public/api/v2/$rel" \
               --output "$actual_file"
             expected_sha="$(sha256sum "$expected_file" | awk '{print $1}')"
             actual_sha="$(sha256sum "$actual_file" | awk '{print $1}')"
