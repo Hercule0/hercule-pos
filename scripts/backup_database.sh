@@ -36,6 +36,10 @@ if ! command -v php >/dev/null 2>&1; then
   echo "PHP CLI is required to create authenticated backup metadata." >&2
   exit 1
 fi
+if ! command -v mysqldump >/dev/null 2>&1; then
+  echo "mysqldump is required to create the database backup." >&2
+  exit 1
+fi
 
 mkdir -p "$BACKUP_DIR"
 
@@ -69,12 +73,28 @@ trap cleanup EXIT
 # Legacy archives keep their old filename and can still be restored explicitly.
 encrypted="$BACKUP_DIR/hercule-${DB_NAME}-${timestamp}.v2.sql.enc"
 
+# Fix436: MySQL 8 clients use --ssl-mode=REQUIRED while some compatible
+# clients expose the older --ssl flag. Select only a capability advertised by
+# the installed client and fail closed if mandatory TLS cannot be requested.
+# Never fall back to a plaintext database connection.
+dump_help="$(mysqldump --help 2>&1 || true)"
+dump_tls_args=()
+if grep -q -- '--ssl-mode' <<<"$dump_help"; then
+  dump_tls_args+=(--ssl-mode=REQUIRED)
+elif grep -Eq -- '(^|[[:space:]])--ssl([=[:space:]]|$)' <<<"$dump_help"; then
+  dump_tls_args+=(--ssl)
+else
+  echo "mysqldump client does not expose a supported mandatory TLS option; refusing an unencrypted database connection." >&2
+  exit 1
+fi
+
+echo "Database backup transport: mandatory TLS enabled (${dump_tls_args[0]})."
 export MYSQL_PWD="$DB_PASS"
 mysqldump \
   --host="$DB_HOST" \
   --port="$DB_PORT" \
   --user="$DB_USER" \
-  --ssl \
+  "${dump_tls_args[@]}" \
   --single-transaction \
   --quick \
   --routines \
