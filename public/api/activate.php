@@ -3,14 +3,14 @@
  * POST /api/activate.php
  * Body: { "license_key": "...", "hwid": "...", "app_version": "..." }
  *
- * First-time device activation. Called once by the desktop app when a
- * license key is entered, before the trial/paid period begins tracking
- * this specific machine.
+ * Backwards-compatible v1 activation. Fix408 preserves the exact v1 signed
+ * response contract while closing the inactive-HWID seat bypass.
  */
 
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../../includes/RateLimiter.php';
 require_once __DIR__ . '/../../includes/DeviceManager.php';
+require_once __DIR__ . '/../../includes/EntitlementV2.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'error' => 'Method not allowed'], 405);
@@ -64,8 +64,6 @@ if (!RateLimiter::check('key:' . $licenseKey, 'activate_by_key', $rateLimitCfg['
 }
 
 // A blocked HWID stays blocked even if its activation slot was reset.
-// This is intentionally checked before License::activate() so the existing
-// license activation logic remains unchanged and backwards compatible.
 if (DeviceManager::isBlocked($licenseKey, $hwid)) {
     $payload = [
         'status' => 'device_blocked',
@@ -75,7 +73,16 @@ if (DeviceManager::isBlocked($licenseKey, $hwid)) {
     json_response(['ok' => false] + RsaSigner::sign($payload));
 }
 
-$result = License::activate($licenseKey, $hwid, client_ip());
+// Fix408: serialize all v1 seat decisions per license. Existing inactive HWIDs
+// no longer jump directly back to is_active=1 when the last seat is occupied,
+// and a final-revoked device can never silently return through the old API.
+$result = EntitlementV2::withSeatLock($licenseKey, static function () use ($licenseKey, $hwid): array {
+    $preflight = EntitlementV2::preflightLegacyActivation($licenseKey, $hwid);
+    if (!($preflight['ok'] ?? false)) {
+        return $preflight;
+    }
+    return License::activate($licenseKey, $hwid, client_ip());
+});
 
 if (!$result['ok']) {
     $payload = [

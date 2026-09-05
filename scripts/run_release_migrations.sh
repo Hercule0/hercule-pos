@@ -15,6 +15,8 @@ migrations=(
   "db/migrate_push_subscription_hygiene.php"
 )
 
+fix408_migration="db/migrate_fix408.php"
+
 echo "Hercule POS release migration preflight"
 echo "Application root: $ROOT_DIR"
 echo
@@ -27,15 +29,24 @@ for migration in "${migrations[@]}"; do
   fi
 done
 
+if [[ ! -f "$fix408_migration" ]]; then
+  echo "ERROR: required Multi-Cashier migration is missing: $fix408_migration" >&2
+  echo "Entitlement v2 must not be deployed without its schema migration." >&2
+  exit 2
+fi
+
 for migration in "${migrations[@]}"; do
   echo "==> php $migration"
   php "$migration"
   echo
- done
+done
 
-echo "==> php db/migrate.php"
-php db/migrate.php
+# Fix408 wrapper intentionally runs the canonical migration first and then the
+# idempotent Entitlement v2 migration. Keeping the pair together prevents a
+# deployed /public/api/v2 surface from being left on a v1-only database.
+echo "==> php $fix408_migration"
+php "$fix408_migration"
 
 echo
-echo "All release migrations completed successfully."
-echo "Next: run the production smoke-test checklist in docs/RELEASE_READINESS.md before enabling scheduled jobs."
+echo "All release migrations completed successfully, including Entitlement v2."
+echo "Next: verify /public/api/v2/validate.php returns signed JSON, then run the production smoke-test checklist in docs/RELEASE_READINESS.md before enabling scheduled jobs."
