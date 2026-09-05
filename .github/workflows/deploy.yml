@@ -164,7 +164,9 @@ jobs:
           echo "instance_count=$(jq 'length' <<<"$instances_json")"
           jq '[.[] | {name:(.name // .id // "unknown"), state:(.state // "unknown"), status:(.status // "unknown")}]' <<<"$instances_json"
           server_farm_id="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query serverFarmId --output tsv)"
-          az appservice plan show --ids "$server_farm_id" --query '{sku:sku.name,capacity:sku.capacity,numberOfWorkers:numberOfWorkers,maximumNumberOfWorkers:maximumNumberOfWorkers}' --output json
+          if ! az appservice plan show --ids "$server_farm_id" --query '{sku:sku.name,capacity:sku.capacity,numberOfWorkers:numberOfWorkers,maximumNumberOfWorkers:maximumNumberOfWorkers}' --output json; then
+            echo "WARN: GitHub OIDC identity cannot read App Service plan metadata; continuing with webapp/Kudu diagnostics."
+          fi
 
           echo "=== Deployment Center source ==="
           source_json="$(az webapp deployment source show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json 2>/dev/null || echo '{}')"
