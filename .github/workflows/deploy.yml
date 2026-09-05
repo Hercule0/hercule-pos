@@ -125,10 +125,8 @@ jobs:
             echo "Could not resolve the deployed Azure Web App hostname."
             exit 1
           fi
-
           HEALTH_URL="https://$APP_HOST/public/health.php?format=json"
           echo "Waiting for application and database readiness at $HEALTH_URL"
-
           for attempt in {1..12}; do
             if bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"; then
               echo "Deployment health verification passed."
@@ -163,10 +161,6 @@ jobs:
           instances_json="$(az webapp list-instances --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json 2>/dev/null || echo '[]')"
           echo "instance_count=$(jq 'length' <<<"$instances_json")"
           jq '[.[] | {name:(.name // .id // "unknown"), state:(.state // "unknown"), status:(.status // "unknown")}]' <<<"$instances_json"
-          server_farm_id="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query serverFarmId --output tsv)"
-          if ! az appservice plan show --ids "$server_farm_id" --query '{sku:sku.name,capacity:sku.capacity,numberOfWorkers:numberOfWorkers,maximumNumberOfWorkers:maximumNumberOfWorkers}' --output json; then
-            echo "WARN: GitHub OIDC identity cannot read App Service plan metadata; continuing with webapp/Kudu diagnostics."
-          fi
 
           echo "=== Deployment Center source ==="
           source_json="$(az webapp deployment source show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json 2>/dev/null || echo '{}')"
@@ -181,27 +175,35 @@ jobs:
           kudu_user="$(jq -r '.userName // empty' <<<"$profile")"
           kudu_pass="$(jq -r '.userPWD // empty' <<<"$profile")"
           publish_url="$(jq -r '.publishUrl // empty' <<<"$profile")"
-          if [ -n "$kudu_user" ] && [ -n "$kudu_pass" ] && [ -n "$publish_url" ]; then
-            echo "::add-mask::$kudu_user"
-            echo "::add-mask::$kudu_pass"
-            kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
+          if [ -z "$kudu_user" ] || [ -z "$kudu_pass" ] || [ -z "$publish_url" ]; then
+            echo "ERROR: Kudu publishing profile unavailable." >&2
+            exit 1
+          fi
+          echo "::add-mask::$kudu_user"
+          echo "::add-mask::$kudu_pass"
+          kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
 
-            echo "=== Kudu deployment history ==="
-            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" "$kudu_base/api/deployments" \
-              | jq '[.[0:10][] | {id,status,status_text,deployer,message,received_time,start_time,end_time,active}]'
+          echo "=== Kudu deployment history ==="
+          curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" "$kudu_base/api/deployments" \
+            | jq '[.[0:10][] | {id,status,status_text,deployer,message,received_time,start_time,end_time,active}]'
 
-            echo "=== Kudu wwwroot Entitlement v2 files ==="
-            cmd="bash -lc 'for f in /home/site/wwwroot/public/api/v2/validate.php /home/site/wwwroot/public/api/v2/activate.php; do if [ -f \"\$f\" ]; then stat -c \"%n size=%s mtime=%y\" \"\$f\"; sha256sum \"\$f\"; else echo \"MISSING \$f\"; fi; done'"
-            payload="$(jq -nc --arg command "$cmd" '{command:$command,dir:"/home/site/wwwroot"}')"
-            kudu_result="$(curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' -X POST --data "$payload" "$kudu_base/api/command")"
-            echo "$kudu_result" | jq '{Output,Error,ExitCode}'
-            if jq -e '.ExitCode != 0 or (.Output | contains("MISSING"))' <<<"$kudu_result" >/dev/null; then
-              echo "ERROR: Kudu wwwroot does not contain the expected Entitlement v2 files." >&2
+          echo "=== Exact Kudu wwwroot v2 file verification ==="
+          for rel in validate.php activate.php; do
+            expected_file="deploy_package/public/api/v2/$rel"
+            actual_file="${RUNNER_TEMP}/kudu-$rel"
+            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
+              "$kudu_base/api/vfs/home/site/wwwroot/public/api/v2/$rel" \
+              --output "$actual_file"
+            expected_sha="$(sha256sum "$expected_file" | awk '{print $1}')"
+            actual_sha="$(sha256sum "$actual_file" | awk '{print $1}')"
+            expected_size="$(wc -c < "$expected_file" | tr -d ' ')"
+            actual_size="$(wc -c < "$actual_file" | tr -d ' ')"
+            echo "$rel expected_sha=$expected_sha actual_sha=$actual_sha expected_size=$expected_size actual_size=$actual_size"
+            if [ "$expected_sha" != "$actual_sha" ] || [ "$expected_size" != "$actual_size" ]; then
+              echo "ERROR: Kudu wwwroot $rel does not exactly match the validated deployment artifact." >&2
               exit 1
             fi
-          else
-            echo "WARN: Kudu publishing profile unavailable; skipped direct wwwroot/deployment inspection."
-          fi
+          done
 
           echo "=== Repeated public route probes ==="
           probe_url="https://${APP_HOST}/public/api/v2/validate.php"
@@ -214,16 +216,15 @@ jobs:
               --data '{}' "$probe_url" || true)"
             server="$(awk 'BEGIN{IGNORECASE=1} /^Server:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
             ctype="$(awk 'BEGIN{IGNORECASE=1} /^Content-Type:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' "$headers")"
-            affinity="$(awk 'BEGIN{IGNORECASE=1} /^Set-Cookie:.*ARRAffinity=/{print; exit}' "$headers" | sed -E 's/(ARRAffinity=)[^;]+/\1<redacted>/g' | tr -d '\r')"
-            echo "probe ${attempt}/12 status=${status:-curl_error} server=${server:-unknown} content-type=${ctype:-unknown} ${affinity:-}"
+            echo "probe ${attempt}/12 status=${status:-curl_error} server=${server:-unknown} content-type=${ctype:-unknown}"
             if [ "$status" != "400" ]; then
-              echo "ERROR: runtime drift reproduced during repeated production probe."
-              head -c 300 "$body" || true
-              echo
+              echo "ERROR: runtime drift reproduced during repeated production probe." >&2
+              head -c 300 "$body" >&2 || true
+              echo >&2
               rm -f "$headers" "$body"
               exit 1
             fi
             rm -f "$headers" "$body"
             sleep 5
           done
-          echo "Azure runtime drift diagnostic passed: 12/12 live probes remained on signed-v2 route."
+          echo "Azure runtime drift diagnostic passed: exact Kudu files + 12/12 live probes are healthy."
