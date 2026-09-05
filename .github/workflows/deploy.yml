@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        uses: shivammathur/setup-php@f3e473d116dcccadd5a048ff273f7fcc4a7b6c09 # v2
         with:
           php-version: ${{ env.PHP_VERSION }}
           tools: composer:v2
@@ -132,11 +132,22 @@ jobs:
           for attempt in {1..12}; do
             if bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"; then
               echo "Deployment health verification passed."
-              exit 0
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "Deployment did not become application+database healthy."
+              exit 1
             fi
             echo "Health verification attempt $attempt/12 failed; retrying in 5 seconds..."
             sleep 5
           done
 
-          echo "Deployment did not become application+database healthy."
-          exit 1
+      - name: Verify Entitlement v2 production routes
+        shell: bash
+        run: |
+          APP_HOST="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" --output tsv)"
+          if [ -z "$APP_HOST" ]; then
+            echo "Could not resolve the deployed Azure Web App hostname."
+            exit 1
+          fi
+          bash deploy_package/scripts/check_entitlement_v2_routes.sh "https://$APP_HOST"
