@@ -179,6 +179,19 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: deploy_package
 
+      - name: Restart Azure production worker on deployed package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
+          if [ -z "$resource_group" ]; then
+            echo "Could not resolve the Azure Web App resource group." >&2
+            exit 1
+          fi
+          echo "Restarting ${AZURE_WEBAPP_NAME} so the public worker remounts the exact OneDeploy wwwroot..."
+          az webapp restart --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group"
+          echo "Azure production worker restart requested successfully."
+
       - name: Verify deployed application health
         shell: bash
         run: |
@@ -189,16 +202,16 @@ jobs:
           fi
           HEALTH_URL="https://$APP_HOST/public/health.php?format=json"
           echo "Waiting for application and database readiness at $HEALTH_URL"
-          for attempt in {1..12}; do
+          for attempt in {1..24}; do
             if bash deploy_package/scripts/check_production_health.sh "$HEALTH_URL"; then
-              echo "Deployment health verification passed."
+              echo "Deployment health verification passed after worker restart."
               break
             fi
-            if [ "$attempt" -eq 12 ]; then
-              echo "Deployment did not become application+database healthy."
+            if [ "$attempt" -eq 24 ]; then
+              echo "Deployment did not become application+database healthy after worker restart."
               exit 1
             fi
-            echo "Health verification attempt $attempt/12 failed; retrying in 5 seconds..."
+            echo "Health verification attempt $attempt/24 failed; retrying in 5 seconds..."
             sleep 5
           done
 
