@@ -61,6 +61,48 @@ jobs:
           php tests/run_regressions.php
           php tests/test_update_signer.php
 
+      - name: Run G1 entitlement certification evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          g1_tests=(
+            entitlement_v2_mysql_lock_syntax_test.php
+            multi_entitlement_v2_test.php
+            multi_entitlement_admin_test.php
+            entitlement_v2_validate_bootstrap_test.php
+          )
+          for test_name in "${g1_tests[@]}"; do
+            echo "[G1] running tests/${test_name}"
+            php "tests/${test_name}"
+          done
+          python3 - <<'PY'
+          import hashlib, json, os
+          names = [
+              'entitlement_v2_mysql_lock_syntax_test.php',
+              'multi_entitlement_v2_test.php',
+              'multi_entitlement_admin_test.php',
+              'entitlement_v2_validate_bootstrap_test.php',
+          ]
+          tests = []
+          for name in names:
+              path = os.path.join('tests', name)
+              with open(path, 'rb') as fh:
+                  digest = hashlib.sha256(fh.read()).hexdigest()
+              tests.append({'name': name, 'sha256': digest, 'passed': True})
+          payload = {
+              'schema_version': 1,
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'commit_sha': os.environ['GITHUB_SHA'].lower(),
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'all_passed': True,
+              'tests': tests,
+          }
+          with open('g1-test-evidence.json', 'w', encoding='utf-8') as fh:
+              json.dump(payload, fh, separators=(',', ':'))
+              fh.write('\n')
+          print('Stamped g1-test-evidence.json for', payload['commit_sha'], 'run', payload['run_id'])
+          PY
+
       - name: Stamp tested deployment provenance
         shell: bash
         run: |
@@ -93,6 +135,8 @@ jobs:
             --exclude='web.config' \
             ./ deploy_package/
           test -s deploy_package/deployment-source.json
+          test -s deploy_package/g1-test-evidence.json
+          test -s deploy_package/includes/G1ProductionAttestation.php
 
       - name: Upload validated deployment package
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -224,17 +268,19 @@ jobs:
           done
 
           echo "=== Exact deployed provenance verification ==="
-          actual_source="${RUNNER_TEMP}/kudu-deployment-source.json"
-          curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
-            "$kudu_base/api/vfs/site/wwwroot/deployment-source.json" \
-            --output "$actual_source"
-          expected_source_sha="$(sha256sum deploy_package/deployment-source.json | awk '{print $1}')"
-          actual_source_sha="$(sha256sum "$actual_source" | awk '{print $1}')"
-          echo "deployment-source.json expected_sha=$expected_source_sha actual_sha=$actual_source_sha"
-          if [ "$expected_source_sha" != "$actual_source_sha" ]; then
-            echo "ERROR: deployed provenance does not match the validated package." >&2
-            exit 1
-          fi
+          for rel in deployment-source.json g1-test-evidence.json includes/G1ProductionAttestation.php; do
+            actual_file="${RUNNER_TEMP}/kudu-$(basename "$rel")"
+            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
+              "$kudu_base/api/vfs/site/wwwroot/$rel" \
+              --output "$actual_file"
+            expected_sha="$(sha256sum "deploy_package/$rel" | awk '{print $1}')"
+            actual_sha="$(sha256sum "$actual_file" | awk '{print $1}')"
+            echo "$rel expected_sha=$expected_sha actual_sha=$actual_sha"
+            if [ "$expected_sha" != "$actual_sha" ]; then
+              echo "ERROR: deployed $rel does not match the validated package." >&2
+              exit 1
+            fi
+          done
 
           echo "=== Repeated public route probes ==="
           probe_url="https://${APP_HOST}/public/api/v2/validate.php"

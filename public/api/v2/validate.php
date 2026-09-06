@@ -2,6 +2,16 @@
 require_once __DIR__ . '/_common.php';
 require_once __DIR__ . '/../../../includes/MultiEntitlementPolicy.php';
 
+// Fix473: Azure/Kudu can contain a newly deployed PHP file while the public
+// nginx path for that brand-new filename still returns 404. Reuse the already
+// production-proven validate.php route for G1 attestation. The mode is GET-only,
+// rate-limited, RSA-signed, and backed by deployment/test evidence.
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET'
+    && filter_var($_GET['g1_attestation'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+    require_once __DIR__ . '/../../../includes/G1ProductionAttestation.php';
+    G1ProductionAttestation::respond();
+}
+
 $input = v2_input();
 $bootstrapRequested = filter_var($input['bootstrap_if_unbound'] ?? false, FILTER_VALIDATE_BOOLEAN);
 $bootstrapStage = 'request_received';

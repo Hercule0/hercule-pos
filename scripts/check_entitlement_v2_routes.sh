@@ -93,7 +93,13 @@ diagnose_kudu_g1() {
   curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" "$kudu_base/api/deployments" 2>/dev/null \
     | jq '[.[0:3][] | {id,status,status_text,deployer,message,received_time,start_time,end_time,active}]' || true
 
-  for rel in public/api/v2/validate.php public/api/v2/activate.php public/api/v2/g1_attestation.php deployment-source.json; do
+  for rel in \
+    public/api/v2/validate.php \
+    public/api/v2/activate.php \
+    public/api/v2/g1_attestation.php \
+    includes/G1ProductionAttestation.php \
+    deployment-source.json \
+    g1-test-evidence.json; do
     expected="$ROOT/$rel"
     actual="$(mktemp)"
     status="$(curl --silent --show-error -u "$kudu_user:$kudu_pass" \
@@ -123,7 +129,7 @@ probe_g1_attestation() {
     status="$(curl --silent --show-error --location --connect-timeout 10 --max-time 20 \
       --output "$body_file" --write-out '%{http_code}' \
       --header 'Accept: application/json' \
-      "${BASE_URL}/public/api/v2/g1_attestation.php" || true)"
+      "${BASE_URL}/public/api/v2/validate.php?g1_attestation=1" || true)"
 
     if [[ "$status" == "200" ]]; then
       break
@@ -137,7 +143,10 @@ probe_g1_attestation() {
       return 1
     fi
 
-    if [[ "$status" != "404" && "$status" != "502" && "$status" != "503" && "$status" != "000" && -n "$status" ]]; then
+    # The route filename itself is already production-proven. Only temporary
+    # upstream/service-unavailable states are retryable; 404 or any other
+    # application status is an immediate fail-closed deployment error.
+    if [[ "$status" != "502" && "$status" != "503" && "$status" != "000" && -n "$status" ]]; then
       echo "ERROR: G1 production attestation returned unexpected HTTP ${status}." >&2
       head -c 500 "$body_file" >&2 || true
       echo >&2
@@ -154,10 +163,16 @@ probe_g1_attestation() {
     if(!is_array($doc)||($doc["ok"]??false)!==true||!is_array($doc["payload"]??null)) { fwrite(STDERR,"Invalid G1 attestation envelope\n"); exit(1); }
     $p=$doc["payload"];
     if((int)($p["schema_version"]??0)!==2||($p["status"]??"")!=="G1_ENTITLEMENT_V2_PRODUCTION_CERTIFIED") { fwrite(STDERR,"Invalid G1 attestation payload\n"); exit(1); }
+    if(($p["routes"]["g1_attestation"]["via"]??"")!=="validate.php?g1_attestation=1") { fwrite(STDERR,"Invalid G1 attestation route binding\n"); exit(1); }
+    if(empty($p["deployment"]["g1_test_evidence_sha256"])) { fwrite(STDERR,"G1 test evidence digest missing\n"); exit(1); }
+    foreach(["concurrent_last_seat","inactive_hwid_reactivation","replace_a_to_b_revoke_a","upgrade_1_to_2","downgrade_below_active_blocked","v1_v2_compatibility"] as $scenario) {
+      $row=$p["scenarios"][$scenario]??null;
+      if(!is_array($row)||($row["status"]??"")!=="PASS"||empty($row["evidence"])) { fwrite(STDERR,"G1 scenario evidence missing: $scenario\n"); exit(1); }
+    }
     require $argv[2]."/includes/RsaSigner.php";
     $pub=file_get_contents($argv[2]."/keys/license_signing_public.pem");
     if(!RsaSigner::verify($p,(string)($doc["signature"]??""),$pub)) { fwrite(STDERR,"G1 attestation RSA verification failed\n"); exit(1); }
-    echo "PASS G1 production attestation: exact deployment provenance + RSA signature verified\n";
+    echo "PASS G1 production attestation: proven-route=true, test-evidence=true, exact deployment provenance + RSA signature verified\n";
   ' "$body_file" "$ROOT"
   rm -f "$body_file"
   trap - RETURN
