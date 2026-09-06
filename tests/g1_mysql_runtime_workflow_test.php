@@ -14,10 +14,19 @@ $checks = [
     'runtime proof runs after live G1 route certification' => $routePos !== false && $mysqlPos !== false && $routePos < $mysqlPos,
     'runtime proof runs before final drift diagnostics' => $mysqlPos !== false && $diagPos !== false && $mysqlPos < $diagPos,
     'runtime evidence uploads after proof' => $mysqlPos !== false && $uploadPos !== false && $mysqlPos < $uploadPos,
-    'Kudu arms one-time token outside wwwroot' => str_contains($workflow, '/home/data/hercule-g1/mysql-runtime-probe.token') && str_contains($workflow, 'openssl rand -hex 32'),
-    'one-time token is masked in Actions logs' => str_contains($workflow, '::add-mask::$token'),
+    'Kudu VFS token lives outside wwwroot' => str_contains($workflow, 'api/vfs/data/hercule-g1-mysql-runtime-probe.token') && str_contains($workflow, 'openssl rand -hex 32'),
+    'legacy nested token path is removed' => !str_contains($workflow, '/home/data/hercule-g1/mysql-runtime-probe.token'),
+    'obsolete Kudu command token arming is removed' => !str_contains($workflow, '$kudu_base/api/command') && !str_contains($workflow, 'token_command='),
+    'Kudu VFS PUT arms token directly' => str_contains($workflow, '--request PUT') && str_contains($workflow, "Content-Type: application/octet-stream") && str_contains($workflow, '--data-binary "$token_payload"'),
+    'Kudu VFS DELETE cleans token directly' => str_contains($workflow, '--request DELETE') && str_contains($workflow, "cleanup_probe_token"),
+    'VFS mutation is explicit with If-Match' => substr_count($workflow, 'If-Match: *') >= 2,
+    'one-time token is masked in Actions logs' => str_contains($workflow, '::add-mask::$token') && str_contains($workflow, '::add-mask::$token_payload'),
     'token has short expiration' => str_contains($workflow, 'date +%s') && str_contains($workflow, '+ 120'),
     'token is cleaned on exit' => str_contains($workflow, 'cleanup_probe_token') && str_contains($workflow, 'trap cleanup_probe_token EXIT'),
+    'armed token is read back before public proof' => str_contains($workflow, 'get_status=') && str_contains($workflow, 'Kudu VFS could not read back armed probe token'),
+    'armed token exact SHA is verified' => str_contains($workflow, 'expected_token_sha=') && str_contains($workflow, 'actual_token_sha=') && str_contains($workflow, 'read-back did not match the armed bytes'),
+    'armed token exact byte size is verified' => str_contains($workflow, 'expected_token_size=') && str_contains($workflow, 'actual_token_size='),
+    'token value is never printed by verification' => !str_contains($workflow, 'echo "$token_payload"') && !str_contains($workflow, 'cat "$token_check"'),
     'web-worker proof uses proven POST validate transport' => str_contains($workflow, 'validate.php?g1_mysql_runtime_probe=1') && str_contains($workflow, 'X-Hercule-G1-Probe-Token'),
     'proof requires MySQL driver' => str_contains($workflow, '.payload.database_driver == "mysql"'),
     'proof requires exact production function' => str_contains($workflow, '.payload.tested_function == "EntitlementV2::withSeatLock"'),
@@ -32,6 +41,7 @@ $checks = [
     'evidence binds exact commit' => str_contains($workflow, "'commit_sha': os.environ['GITHUB_SHA'].lower()"),
     'evidence binds workflow run' => str_contains($workflow, "'run_id': os.environ['GITHUB_RUN_ID']"),
     'evidence records production web-worker transport' => str_contains($workflow, "'transport': 'production_php_web_worker'"),
+    'evidence records Kudu VFS token transport' => str_contains($workflow, "'token_transport': 'kudu_vfs_home_data'"),
     'runtime evidence is retained for audit' => str_contains($workflow, 'g1-production-mysql-runtime-${{ github.run_id }}') && str_contains($workflow, 'retention-days: 30'),
     'final drift gate verifies deployed helper bytes' => str_contains($workflow, 'includes/G1ProductionMysqlProbe.php'),
     'obsolete Kudu PHP CLI execution is removed' => !str_contains($workflow, 'php /home/site/wwwroot/scripts/g1_mysql_runtime_probe.php'),
@@ -48,4 +58,4 @@ if ($failed) {
     exit(1);
 }
 
-echo "PASS Fix476 G1 MySQL runtime workflow — web-worker=true one-time-token=true source-bound=true artifact=true\n";
+echo "PASS Fix477 G1 MySQL runtime workflow — kudu-vfs=true exact-token-bytes=true web-worker=true source-bound=true artifact=true\n";
