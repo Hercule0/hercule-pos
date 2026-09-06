@@ -11,9 +11,10 @@ final class G1ProductionAttestation
         'entitlement_v2_validate_bootstrap_test.php',
     ];
 
-    public static function respond(): void
+    public static function respond(bool $allowPost = false): void
     {
-        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? ''));
+        if ($method !== 'GET' && !($allowPost && $method === 'POST')) {
             json_response(['ok' => false, 'error' => 'Method not allowed'], 405);
         }
 
@@ -76,6 +77,12 @@ final class G1ProductionAttestation
         }
 
         $baseUrl = trim((string) ($_ENV['HERCULE_PUBLIC_BASE_URL'] ?? $_SERVER['HERCULE_PUBLIC_BASE_URL'] ?? getenv('HERCULE_PUBLIC_BASE_URL') ?: ''));
+        if ($baseUrl === '') {
+            $azureHost = trim((string) ($_ENV['WEBSITE_HOSTNAME'] ?? $_SERVER['WEBSITE_HOSTNAME'] ?? getenv('WEBSITE_HOSTNAME') ?: ''));
+            if ($azureHost !== '' && preg_match('/^[A-Za-z0-9.-]+$/', $azureHost)) {
+                $baseUrl = 'https://' . $azureHost;
+            }
+        }
         if (!preg_match('#^https://[A-Za-z0-9.-]+(?::\d+)?(?:/.*)?$#', $baseUrl)) {
             json_response(['ok' => false, 'error' => 'Production public base URL is unavailable.'], 503);
         }
@@ -102,7 +109,10 @@ final class G1ProductionAttestation
             'routes' => [
                 'activate_v2' => ['signed_response' => true, 'schema_version' => 2],
                 'validate_v2' => ['signed_response' => true, 'schema_version' => 2],
-                'g1_attestation' => ['via' => 'validate.php?g1_attestation=1', 'signed_response' => true],
+                'g1_attestation' => [
+                    'via' => 'POST validate.php?g1_attestation=1',
+                    'signed_response' => true,
+                ],
             ],
             'scenarios' => self::buildScenarioEvidence($evidence),
         ];

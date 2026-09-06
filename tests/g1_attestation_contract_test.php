@@ -17,9 +17,12 @@ $checks = [
     'G1 requires deployment-bound test evidence' => str_contains($helper, 'g1-test-evidence.json') && str_contains($helper, 'assertEvidenceMatchesDeployment'),
     'all six scenarios are server constructed' => str_contains($helper, "'concurrent_last_seat'") && str_contains($helper, "'v1_v2_compatibility'"),
     'scenario PASS carries test SHA evidence' => str_contains($helper, "['status' => 'PASS', 'evidence' => \$proof]"),
-    'G1 is exposed through proven validate route' => str_contains($validate, "\$_GET['g1_attestation']") && str_contains($validate, 'G1ProductionAttestation::respond()'),
+    'G1 is intercepted on proven POST validate route' => str_contains($validate, "=== 'POST'") && str_contains($validate, "\$_GET['g1_attestation']") && str_contains($validate, 'G1ProductionAttestation::respond(true)'),
     'legacy dedicated endpoint delegates to same helper' => str_contains($endpoint, 'G1ProductionAttestation::respond()'),
-    'post-deploy probe uses proven validate route' => str_contains($probe, 'validate.php?g1_attestation=1'),
+    'helper allows POST only when explicitly requested by caller' => str_contains($helper, 'respond(bool $allowPost = false)') && str_contains($helper, "\$allowPost && \$method === 'POST'"),
+    'post-deploy probe uses POST transport on validate route' => str_contains($probe, 'validate.php?g1_attestation=1') && str_contains($probe, "--data '{}'"),
+    'signed payload records POST route binding' => str_contains($helper, "'via' => 'POST validate.php?g1_attestation=1'"),
+    'Azure hostname fallback is trusted environment-only' => str_contains($helper, 'WEBSITE_HOSTNAME') && !str_contains($helper, 'HTTP_HOST'),
     'post-deploy probe verifies RSA signature' => str_contains($probe, 'RsaSigner::verify'),
     'attestation never accepts scenario results from request input' => !str_contains($helper, 'json_input(') && !str_contains($helper, '$_POST'),
 ];
@@ -33,4 +36,4 @@ if ($failed) {
     fwrite(STDERR, 'G1 attestation contract failures: ' . implode(', ', $failed) . "\n");
     exit(1);
 }
-echo "PASS G1 signed production attestation contract — proven-route=true, evidence-bound=true\n";
+echo "PASS G1 signed production attestation contract — post-route=true, evidence-bound=true, rsa=true\n";

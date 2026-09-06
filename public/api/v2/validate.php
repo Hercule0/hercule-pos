@@ -2,14 +2,16 @@
 require_once __DIR__ . '/_common.php';
 require_once __DIR__ . '/../../../includes/MultiEntitlementPolicy.php';
 
-// Fix473: Azure/Kudu can contain a newly deployed PHP file while the public
-// nginx path for that brand-new filename still returns 404. Reuse the already
-// production-proven validate.php route for G1 attestation. The mode is GET-only,
-// rate-limited, RSA-signed, and backed by deployment/test evidence.
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET'
+// Fix475: Azure production proves this API path on POST. GET requests to the
+// same /public/api/v2/validate.php path are rejected by the public nginx layer
+// before PHP even runs, while Kudu contains the exact deployed bytes. Keep G1
+// on the same filename AND the same proven HTTP method, but intercept it before
+// normal entitlement request parsing. It remains rate-limited, evidence-bound,
+// MySQL/schema-checked, and RSA-signed.
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
     && filter_var($_GET['g1_attestation'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
     require_once __DIR__ . '/../../../includes/G1ProductionAttestation.php';
-    G1ProductionAttestation::respond();
+    G1ProductionAttestation::respond(true);
 }
 
 $input = v2_input();
