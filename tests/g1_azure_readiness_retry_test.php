@@ -18,7 +18,8 @@ $checks = [
     'all six scenario evidence rows are checked' => str_contains($script, 'downgrade_below_active_blocked') && str_contains($script, 'v1_v2_compatibility'),
     'final failure stays fail-closed' => str_contains($script, 'did not become live'),
     'final failure invokes Kudu diagnostic' => str_contains($script, 'diagnose_kudu_g1 || true'),
-    'diagnostic checks validate route helper and runtime probe' => str_contains($script, 'public/api/v2/validate.php') && str_contains($script, 'includes/G1ProductionAttestation.php') && str_contains($script, 'scripts/g1_mysql_runtime_probe.php'),
+    'diagnostic checks validate route attestation and web-worker probe helper' => str_contains($script, 'public/api/v2/validate.php') && str_contains($script, 'includes/G1ProductionAttestation.php') && str_contains($script, 'includes/G1ProductionMysqlProbe.php'),
+    'diagnostic no longer depends on obsolete CLI probe' => !str_contains($script, 'scripts/g1_mysql_runtime_probe.php'),
     'diagnostic checks deployed evidence' => str_contains($script, 'g1-test-evidence.json') && str_contains($script, 'deployment-source.json'),
     'diagnostic compares expected and actual SHA' => str_contains($script, 'KUDU_COMPARE'),
     'Kudu credentials are masked' => str_contains($script, '::add-mask::$kudu_user') && str_contains($script, '::add-mask::$kudu_pass'),
@@ -33,4 +34,4 @@ if ($failed) {
     fwrite(STDERR, 'G1 Azure readiness retry failures: ' . implode(', ', $failed) . "\n");
     exit(1);
 }
-echo "PASS G1 Azure readiness + Kudu diagnostic — post-route=true, bounded=true, evidence=true, rsa-required=true\n";
+echo "PASS G1 Azure readiness + Kudu diagnostic — post-route=true, web-worker-proof=true, bounded=true, evidence=true\n";
