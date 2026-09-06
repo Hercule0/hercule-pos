@@ -19,7 +19,7 @@ $checks = [
     'scenario PASS carries test SHA evidence' => str_contains($helper, "['status' => 'PASS', 'evidence' => \$proof]"),
     'G1 is intercepted on proven POST validate route' => str_contains($validate, "=== 'POST'") && str_contains($validate, "\$_GET['g1_attestation']") && str_contains($validate, 'G1ProductionAttestation::respond(true)'),
     'legacy dedicated endpoint delegates to same helper' => str_contains($endpoint, 'G1ProductionAttestation::respond()'),
-    'helper allows POST only when explicitly requested by caller' => str_contains($helper, 'respond(bool $allowPost = false)') && str_contains($helper, "$allowPost && $method === 'POST'"),
+    'helper allows POST only when explicitly requested by caller' => str_contains($helper, 'respond(bool $allowPost = false)') && str_contains($helper, "\$allowPost && \$method === 'POST'"),
     'post-deploy probe uses POST transport on validate route' => str_contains($probe, 'validate.php?g1_attestation=1') && str_contains($probe, "--data '{}'"),
     'signed payload records POST route binding' => str_contains($helper, "'via' => 'POST validate.php?g1_attestation=1'"),
     'Azure hostname fallback is trusted environment-only' => str_contains($helper, 'WEBSITE_HOSTNAME') && !str_contains($helper, 'HTTP_HOST'),
