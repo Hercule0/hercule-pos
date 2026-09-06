@@ -137,6 +137,7 @@ jobs:
           test -s deploy_package/deployment-source.json
           test -s deploy_package/g1-test-evidence.json
           test -s deploy_package/includes/G1ProductionAttestation.php
+          test -s deploy_package/scripts/g1_mysql_runtime_probe.php
 
       - name: Upload validated deployment package
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -225,6 +226,95 @@ jobs:
           fi
           bash deploy_package/scripts/check_entitlement_v2_routes.sh "https://$APP_HOST"
 
+      - name: Verify production MySQL seat-lock runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
+          if [ -z "$resource_group" ]; then
+            echo "Could not resolve the Azure Web App resource group for the MySQL runtime proof." >&2
+            exit 1
+          fi
+
+          profile="$(az webapp deployment list-publishing-profiles --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --output json --query "[?publishMethod=='MSDeploy'] | [0]")"
+          kudu_user="$(jq -r '.userName // empty' <<<"$profile")"
+          kudu_pass="$(jq -r '.userPWD // empty' <<<"$profile")"
+          publish_url="$(jq -r '.publishUrl // empty' <<<"$profile")"
+          if [ -z "$kudu_user" ] || [ -z "$kudu_pass" ] || [ -z "$publish_url" ]; then
+            echo "ERROR: Kudu publishing profile unavailable for the MySQL runtime proof." >&2
+            exit 1
+          fi
+          echo "::add-mask::$kudu_user"
+          echo "::add-mask::$kudu_pass"
+          kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
+
+          command_payload="$(jq -nc --arg command 'php /home/site/wwwroot/scripts/g1_mysql_runtime_probe.php' --arg dir '/home/site/wwwroot' '{command:$command,dir:$dir}')"
+          command_response="${RUNNER_TEMP}/g1-mysql-kudu-command.json"
+          curl --fail --silent --show-error \
+            -u "$kudu_user:$kudu_pass" \
+            -H 'Content-Type: application/json' \
+            --data "$command_payload" \
+            "$kudu_base/api/command" \
+            --output "$command_response"
+
+          exit_code="$(jq -r '.ExitCode // .exitCode // empty' "$command_response")"
+          output="$(jq -r '.Output // .output // ""' "$command_response")"
+          if [ "$exit_code" != "0" ]; then
+            echo "ERROR: production MySQL runtime probe failed in Kudu with exit=${exit_code:-unknown}." >&2
+            printf '%s\n' "$output" | tail -n 20 >&2
+            exit 1
+          fi
+
+          probe_json="$(printf '%s\n' "$output" | grep -E '^\{.*\}$' | tail -n 1)"
+          if [ -z "$probe_json" ]; then
+            echo "ERROR: production MySQL runtime probe returned no JSON evidence." >&2
+            exit 1
+          fi
+          jq -e '
+            .ok == true and
+            .status == "G1_MYSQL_RUNTIME_PROBE_PASS" and
+            .database_driver == "mysql" and
+            .entitlement_schema_ready == true and
+            .independent_connections == true and
+            .named_lock_exclusion == true and
+            .lock_handoff == true and
+            .production_rows_mutated == false and
+            (.entitlement_source_sha256 | test("^[a-f0-9]{64}$"))
+          ' <<<"$probe_json" >/dev/null
+
+          expected_source_sha="$(sha256sum deploy_package/includes/EntitlementV2.php | awk '{print $1}')"
+          runtime_source_sha="$(jq -r '.entitlement_source_sha256' <<<"$probe_json")"
+          if [ "$expected_source_sha" != "$runtime_source_sha" ]; then
+            echo "ERROR: production MySQL runtime probe executed against a different EntitlementV2 source." >&2
+            exit 1
+          fi
+
+          PROBE_JSON="$probe_json" python3 - <<'PY'
+          import json, os, datetime
+          probe = json.loads(os.environ['PROBE_JSON'])
+          evidence = {
+              'schema_version': 1,
+              'status': 'G1_PRODUCTION_MYSQL_SEAT_LOCK_CERTIFIED',
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'commit_sha': os.environ['GITHUB_SHA'].lower(),
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'probe': probe,
+          }
+          with open('g1-production-runtime-evidence.json', 'w', encoding='utf-8') as fh:
+              json.dump(evidence, fh, separators=(',', ':'))
+              fh.write('\n')
+          print('PASS production MySQL seat-lock runtime proof: exclusion=true handoff=true rows_mutated=false')
+          PY
+
+      - name: Upload G1 production MySQL runtime evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 / Node 24
+        with:
+          name: g1-production-mysql-runtime-${{ github.run_id }}
+          path: g1-production-runtime-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Diagnose Azure runtime drift
         shell: bash
         run: |
@@ -281,7 +371,7 @@ jobs:
           done
 
           echo "=== Exact deployed provenance verification ==="
-          for rel in deployment-source.json g1-test-evidence.json includes/G1ProductionAttestation.php; do
+          for rel in deployment-source.json g1-test-evidence.json includes/G1ProductionAttestation.php scripts/g1_mysql_runtime_probe.php; do
             actual_file="${RUNNER_TEMP}/kudu-$(basename "$rel")"
             curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
               "$kudu_base/api/vfs/site/wwwroot/$rel" \
