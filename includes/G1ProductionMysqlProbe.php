@@ -12,10 +12,11 @@ final class G1ProductionMysqlProbe
             json_response(['ok' => false, 'error' => 'Not found.'], 404);
         }
 
-        if (!RateLimiter::check(client_ip(), 'g1_mysql_runtime_probe', 6, 5)) {
-            json_response(['ok' => false, 'error' => 'Too many requests.'], 429);
-        }
-
+        // Do not call RateLimiter here: its normal production implementation
+        // persists api_requests rows. This certification path must be strictly
+        // zero-write at the database layer. The 256-bit, short-lived, one-time
+        // Kudu-armed token is the sole access gate and is consumed before any
+        // MySQL proof work begins.
         self::consumeOneTimeToken();
 
         $root = dirname(__DIR__);
