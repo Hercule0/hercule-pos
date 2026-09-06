@@ -17,6 +17,7 @@ $checks = [
     'token comparison is timing-safe' => str_contains($helper, 'hash_equals($expected, $provided)'),
     'matching token is consumed before proof' => str_contains($helper, 'ftruncate($fh, 0)') && str_contains($helper, '@unlink(self::TOKEN_FILE)'),
     'token file consumption is locked' => str_contains($helper, 'flock($fh, LOCK_EX)'),
+    'probe avoids DB-backed RateLimiter writes' => !str_contains($helper, 'RateLimiter::'),
     'probe requires real MySQL driver' => str_contains($helper, "!== 'mysql'"),
     'probe verifies Entitlement v2 schema readiness' => str_contains($helper, 'EntitlementV2::schemaReady()'),
     'probe invokes exact production seat-lock function' => str_contains($helper, 'EntitlementV2::withSeatLock($syntheticKey'),
@@ -46,4 +47,4 @@ if ($failed) {
     exit(1);
 }
 
-echo "PASS Fix476 G1 web-worker MySQL probe contract — one-time-token=true withSeatLock=true no-row-mutation=true rsa=true\n";
+echo "PASS Fix476 G1 web-worker MySQL probe contract — one-time-token=true withSeatLock=true db-zero-write=true rsa=true\n";
