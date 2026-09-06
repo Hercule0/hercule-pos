@@ -248,12 +248,13 @@ jobs:
           echo "::add-mask::$kudu_user"
           echo "::add-mask::$kudu_pass"
           kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
+          token_vfs_url="$kudu_base/api/vfs/data/hercule-g1-mysql-runtime-probe.token"
 
           cleanup_probe_token() {
-            local cleanup_payload
-            cleanup_payload="$(jq -nc --arg command 'rm -f /home/data/hercule-g1/mysql-runtime-probe.token' --arg dir '/home' '{command:$command,dir:$dir}')"
-            curl --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' \
-              --data "$cleanup_payload" "$kudu_base/api/command" >/dev/null 2>&1 || true
+            curl --silent --show-error --request DELETE \
+              -u "$kudu_user:$kudu_pass" \
+              -H 'If-Match: *' \
+              "$token_vfs_url" >/dev/null 2>&1 || true
           }
           trap cleanup_probe_token EXIT
 
@@ -262,17 +263,41 @@ jobs:
           for attempt in 1 2 3; do
             token="$(openssl rand -hex 32)"
             expires_at="$(( $(date +%s) + 120 ))"
+            token_payload="${token}|${expires_at}"
             echo "::add-mask::$token"
-            token_command="mkdir -p /home/data/hercule-g1 && umask 077 && printf '%s|%s\\n' '$token' '$expires_at' > /home/data/hercule-g1/mysql-runtime-probe.token"
-            command_payload="$(jq -nc --arg command "$token_command" --arg dir '/home' '{command:$command,dir:$dir}')"
-            command_response="${RUNNER_TEMP}/g1-mysql-token-command.json"
-            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' \
-              --data "$command_payload" "$kudu_base/api/command" --output "$command_response"
-            exit_code="$(jq -r '.ExitCode // .exitCode // empty' "$command_response")"
-            if [ "$exit_code" != "0" ]; then
-              echo "ERROR: could not arm one-time production MySQL probe token." >&2
+            echo "::add-mask::$token_payload"
+
+            put_status="$(curl --silent --show-error --request PUT \
+              -u "$kudu_user:$kudu_pass" \
+              -H 'If-Match: *' \
+              -H 'Content-Type: application/octet-stream' \
+              --data-binary "$token_payload" \
+              --output /dev/null --write-out '%{http_code}' \
+              "$token_vfs_url" || true)"
+            if [ "$put_status" != "200" ] && [ "$put_status" != "201" ] && [ "$put_status" != "204" ]; then
+              echo "ERROR: Kudu VFS could not arm one-time production MySQL probe token; HTTP ${put_status:-curl_error}." >&2
               exit 1
             fi
+
+            token_check="${RUNNER_TEMP}/g1-mysql-probe-token-check"
+            get_status="$(curl --silent --show-error \
+              -u "$kudu_user:$kudu_pass" \
+              --output "$token_check" --write-out '%{http_code}' \
+              "$token_vfs_url" || true)"
+            if [ "$get_status" != "200" ]; then
+              echo "ERROR: Kudu VFS could not read back armed probe token; HTTP ${get_status:-curl_error}." >&2
+              exit 1
+            fi
+            expected_token_sha="$(printf '%s' "$token_payload" | sha256sum | awk '{print $1}')"
+            actual_token_sha="$(sha256sum "$token_check" | awk '{print $1}')"
+            expected_token_size="${#token_payload}"
+            actual_token_size="$(wc -c < "$token_check" | tr -d ' ')"
+            rm -f "$token_check"
+            if [ "$expected_token_sha" != "$actual_token_sha" ] || [ "$expected_token_size" != "$actual_token_size" ]; then
+              echo "ERROR: Kudu VFS probe token read-back did not match the armed bytes." >&2
+              exit 1
+            fi
+            echo "Kudu VFS one-time probe token armed and exact-byte verified (size=${actual_token_size})."
 
             status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
               --output "$body_file" --write-out '%{http_code}' \
@@ -332,20 +357,21 @@ jobs:
           with open(os.environ['PROBE_FILE'], 'r', encoding='utf-8') as fh:
               doc = json.load(fh)
           evidence = {
-              'schema_version': 2,
+              'schema_version': 3,
               'status': 'G1_PRODUCTION_MYSQL_SEAT_LOCK_CERTIFIED',
               'repository': os.environ['GITHUB_REPOSITORY'],
               'commit_sha': os.environ['GITHUB_SHA'].lower(),
               'run_id': os.environ['GITHUB_RUN_ID'],
               'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
               'transport': 'production_php_web_worker',
+              'token_transport': 'kudu_vfs_home_data',
               'rsa_signature_verified': True,
               'probe': doc['payload'],
           }
           with open('g1-production-runtime-evidence.json', 'w', encoding='utf-8') as fh:
               json.dump(evidence, fh, separators=(',', ':'))
               fh.write('\n')
-          print('PASS production MySQL seat-lock runtime proof: web-worker=true withSeatLock=true exclusion=true handoff=true rows_mutated=false')
+          print('PASS production MySQL seat-lock runtime proof: web-worker=true withSeatLock=true exclusion=true handoff=true rows_mutated=false token_transport=kudu_vfs')
           PY
           cleanup_probe_token
           trap - EXIT

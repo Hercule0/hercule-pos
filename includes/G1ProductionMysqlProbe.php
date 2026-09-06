@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class G1ProductionMysqlProbe
 {
-    private const TOKEN_FILE = '/home/data/hercule-g1/mysql-runtime-probe.token';
+    private const TOKEN_FILE = '/home/data/hercule-g1-mysql-runtime-probe.token';
 
     public static function respond(): void
     {
@@ -15,8 +15,8 @@ final class G1ProductionMysqlProbe
         // Do not call RateLimiter here: its normal production implementation
         // persists api_requests rows. This certification path must be strictly
         // zero-write at the database layer. The 256-bit, short-lived, one-time
-        // Kudu-armed token is the sole access gate and is consumed before any
-        // MySQL proof work begins.
+        // Kudu-VFS-armed token is the sole access gate and is consumed before
+        // any MySQL proof work begins.
         self::consumeOneTimeToken();
 
         $root = dirname(__DIR__);

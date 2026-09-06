@@ -11,7 +11,8 @@ $checks = [
     'probe runs through production POST validate route' => str_contains($validate, "g1_mysql_runtime_probe") && str_contains($validate, 'G1ProductionMysqlProbe::respond()'),
     'probe intercepts before normal entitlement input parsing' => strpos($validate, 'G1ProductionMysqlProbe::respond()') < strpos($validate, '$input = v2_input()'),
     'probe requires one-time token header' => str_contains($helper, 'HTTP_X_HERCULE_G1_PROBE_TOKEN'),
-    'token lives outside public wwwroot' => str_contains($helper, "/home/data/hercule-g1/mysql-runtime-probe.token"),
+    'token lives outside public wwwroot in flat Kudu VFS data root' => str_contains($helper, "/home/data/hercule-g1-mysql-runtime-probe.token"),
+    'legacy nested token path is removed' => !str_contains($helper, '/home/data/hercule-g1/mysql-runtime-probe.token'),
     'token is exact 64-hex material' => str_contains($helper, "^[a-f0-9]{64}$"),
     'token has explicit expiration' => str_contains($helper, '$expiresAt >= time()'),
     'token comparison is timing-safe' => str_contains($helper, 'hash_equals($expected, $provided)'),
@@ -47,4 +48,4 @@ if ($failed) {
     exit(1);
 }
 
-echo "PASS Fix476 G1 web-worker MySQL probe contract — one-time-token=true withSeatLock=true db-zero-write=true rsa=true\n";
+echo "PASS Fix477 G1 web-worker MySQL probe contract — kudu-vfs=true one-time-token=true withSeatLock=true db-zero-write=true rsa=true\n";
