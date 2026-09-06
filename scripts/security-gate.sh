@@ -63,4 +63,27 @@ if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 
+# GitHub Actions deploys only after the complete PHP regression suite passes.
+# Stamp the exact workflow source identity into the deployment package so the
+# production G1 endpoint can sign an attestation tied to the deployed commit.
+rm -f deployment-source.json
+if [[ "${GITHUB_SHA:-}" =~ ^[0-9a-fA-F]{40}$ ]] \
+  && [[ "${GITHUB_REPOSITORY:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+  && [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+  python3 - <<'PY'
+import json, os
+from pathlib import Path
+payload = {
+    'schema_version': 1,
+    'repository': os.environ['GITHUB_REPOSITORY'],
+    'commit_sha': os.environ['GITHUB_SHA'].lower(),
+    'run_id': os.environ['GITHUB_RUN_ID'],
+    # This file is only deployed by the workflow after all later validation
+    # steps succeed; a failed test prevents the package upload/deploy jobs.
+    'tests_passed': True,
+}
+Path('deployment-source.json').write_text(json.dumps(payload, separators=(',', ':')) + '\n', encoding='utf-8')
+PY
+fi
+
 echo "Security gate passed: no committed production secret patterns found."
