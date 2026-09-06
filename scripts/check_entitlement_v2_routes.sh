@@ -55,19 +55,41 @@ PY
 }
 
 probe_g1_attestation() {
-  local body_file status
+  local body_file status attempt
   body_file="$(mktemp)"
   trap 'rm -f "$body_file"' RETURN
-  status="$(curl --silent --show-error --location --connect-timeout 10 --max-time 20 \
-    --output "$body_file" --write-out '%{http_code}' \
-    --header 'Accept: application/json' \
-    "${BASE_URL}/public/api/v2/g1_attestation.php")"
-  if [[ "$status" != "200" ]]; then
-    echo "ERROR: G1 production attestation returned HTTP ${status}." >&2
-    head -c 500 "$body_file" >&2 || true
-    echo >&2
-    return 1
-  fi
+
+  for attempt in {1..12}; do
+    status="$(curl --silent --show-error --location --connect-timeout 10 --max-time 20 \
+      --output "$body_file" --write-out '%{http_code}' \
+      --header 'Accept: application/json' \
+      "${BASE_URL}/public/api/v2/g1_attestation.php" || true)"
+
+    if [[ "$status" == "200" ]]; then
+      break
+    fi
+
+    if [[ "$attempt" -eq 12 ]]; then
+      echo "ERROR: G1 production attestation did not become live; last HTTP status=${status:-curl_error}." >&2
+      head -c 500 "$body_file" >&2 || true
+      echo >&2
+      return 1
+    fi
+
+    # OneDeploy may report completion a few seconds before every public worker
+    # observes the new wwwroot. Treat 404/502/503 as deployment-readiness states,
+    # never as a successful certification result.
+    if [[ "$status" != "404" && "$status" != "502" && "$status" != "503" && "$status" != "000" && -n "$status" ]]; then
+      echo "ERROR: G1 production attestation returned unexpected HTTP ${status}." >&2
+      head -c 500 "$body_file" >&2 || true
+      echo >&2
+      return 1
+    fi
+
+    echo "G1 attestation readiness attempt ${attempt}/12 returned ${status:-curl_error}; retrying..."
+    sleep 5
+  done
+
   php -r '
     $doc=json_decode(file_get_contents($argv[1]),true);
     if(!is_array($doc)||($doc["ok"]??false)!==true||!is_array($doc["payload"]??null)) { fwrite(STDERR,"Invalid G1 attestation envelope\n"); exit(1); }
