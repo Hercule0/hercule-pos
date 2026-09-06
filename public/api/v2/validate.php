@@ -14,6 +14,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
     G1ProductionAttestation::respond(true);
 }
 
+// Fix476: production MySQL proof must execute inside the real PHP web worker,
+// not the Kudu sidecar (which has no PHP CLI). Access is fail-closed behind a
+// short-lived, one-time token created through authenticated Kudu access. The
+// probe uses only a synthetic key and performs no row mutation.
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+    && filter_var($_GET['g1_mysql_runtime_probe'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+    require_once __DIR__ . '/../../../includes/G1ProductionMysqlProbe.php';
+    G1ProductionMysqlProbe::respond();
+}
+
 $input = v2_input();
 $bootstrapRequested = filter_var($input['bootstrap_if_unbound'] ?? false, FILTER_VALIDATE_BOOLEAN);
 $bootstrapStage = 'request_received';

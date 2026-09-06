@@ -137,7 +137,7 @@ jobs:
           test -s deploy_package/deployment-source.json
           test -s deploy_package/g1-test-evidence.json
           test -s deploy_package/includes/G1ProductionAttestation.php
-          test -s deploy_package/scripts/g1_mysql_runtime_probe.php
+          test -s deploy_package/includes/G1ProductionMysqlProbe.php
 
       - name: Upload validated deployment package
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -231,8 +231,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           resource_group="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].resourceGroup | [0]" --output tsv)"
-          if [ -z "$resource_group" ]; then
-            echo "Could not resolve the Azure Web App resource group for the MySQL runtime proof." >&2
+          APP_HOST="$(az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group "$resource_group" --query defaultHostName --output tsv)"
+          if [ -z "$resource_group" ] || [ -z "$APP_HOST" ]; then
+            echo "Could not resolve Azure production runtime for the MySQL proof." >&2
             exit 1
           fi
 
@@ -248,64 +249,106 @@ jobs:
           echo "::add-mask::$kudu_pass"
           kudu_host="${publish_url#https://}"; kudu_host="${kudu_host#http://}"; kudu_host="${kudu_host%%:*}"; kudu_base="https://${kudu_host}"
 
-          command_payload="$(jq -nc --arg command 'php /home/site/wwwroot/scripts/g1_mysql_runtime_probe.php' --arg dir '/home/site/wwwroot' '{command:$command,dir:$dir}')"
-          command_response="${RUNNER_TEMP}/g1-mysql-kudu-command.json"
-          curl --fail --silent --show-error \
-            -u "$kudu_user:$kudu_pass" \
-            -H 'Content-Type: application/json' \
-            --data "$command_payload" \
-            "$kudu_base/api/command" \
-            --output "$command_response"
+          cleanup_probe_token() {
+            local cleanup_payload
+            cleanup_payload="$(jq -nc --arg command 'rm -f /home/data/hercule-g1/mysql-runtime-probe.token' --arg dir '/home' '{command:$command,dir:$dir}')"
+            curl --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' \
+              --data "$cleanup_payload" "$kudu_base/api/command" >/dev/null 2>&1 || true
+          }
+          trap cleanup_probe_token EXIT
 
-          exit_code="$(jq -r '.ExitCode // .exitCode // empty' "$command_response")"
-          output="$(jq -r '.Output // .output // ""' "$command_response")"
-          if [ "$exit_code" != "0" ]; then
-            echo "ERROR: production MySQL runtime probe failed in Kudu with exit=${exit_code:-unknown}." >&2
-            printf '%s\n' "$output" | tail -n 20 >&2
+          body_file="${RUNNER_TEMP}/g1-mysql-web-worker.json"
+          status=""
+          for attempt in 1 2 3; do
+            token="$(openssl rand -hex 32)"
+            expires_at="$(( $(date +%s) + 120 ))"
+            echo "::add-mask::$token"
+            token_command="mkdir -p /home/data/hercule-g1 && umask 077 && printf '%s|%s\\n' '$token' '$expires_at' > /home/data/hercule-g1/mysql-runtime-probe.token"
+            command_payload="$(jq -nc --arg command "$token_command" --arg dir '/home' '{command:$command,dir:$dir}')"
+            command_response="${RUNNER_TEMP}/g1-mysql-token-command.json"
+            curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" -H 'Content-Type: application/json' \
+              --data "$command_payload" "$kudu_base/api/command" --output "$command_response"
+            exit_code="$(jq -r '.ExitCode // .exitCode // empty' "$command_response")"
+            if [ "$exit_code" != "0" ]; then
+              echo "ERROR: could not arm one-time production MySQL probe token." >&2
+              exit 1
+            fi
+
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+              --output "$body_file" --write-out '%{http_code}' \
+              --header 'Content-Type: application/json' \
+              --header 'Accept: application/json' \
+              --header "X-Hercule-G1-Probe-Token: $token" \
+              --data '{}' \
+              "https://${APP_HOST}/public/api/v2/validate.php?g1_mysql_runtime_probe=1" || true)"
+            if [ "$status" = "200" ]; then
+              break
+            fi
+            echo "MySQL web-worker proof attempt ${attempt}/3 returned ${status:-curl_error}; retrying with a fresh one-time token..."
+            sleep 3
+          done
+
+          if [ "$status" != "200" ]; then
+            echo "ERROR: production PHP web-worker MySQL proof failed; HTTP ${status:-curl_error}." >&2
+            head -c 500 "$body_file" >&2 || true
+            echo >&2
             exit 1
           fi
 
-          probe_json="$(printf '%s\n' "$output" | grep -E '^\{.*\}$' | tail -n 1)"
-          if [ -z "$probe_json" ]; then
-            echo "ERROR: production MySQL runtime probe returned no JSON evidence." >&2
-            exit 1
-          fi
           jq -e '
             .ok == true and
-            .status == "G1_MYSQL_RUNTIME_PROBE_PASS" and
-            .database_driver == "mysql" and
-            .entitlement_schema_ready == true and
-            .independent_connections == true and
-            .named_lock_exclusion == true and
-            .lock_handoff == true and
-            .production_rows_mutated == false and
-            (.entitlement_source_sha256 | test("^[a-f0-9]{64}$"))
-          ' <<<"$probe_json" >/dev/null
+            (.payload | type == "object") and
+            .payload.status == "G1_MYSQL_RUNTIME_PROBE_PASS" and
+            .payload.database_driver == "mysql" and
+            .payload.entitlement_schema_ready == true and
+            .payload.tested_function == "EntitlementV2::withSeatLock" and
+            .payload.independent_connections == true and
+            .payload.named_lock_exclusion == true and
+            .payload.lock_handoff == true and
+            .payload.synthetic_key_only == true and
+            .payload.production_rows_mutated == false and
+            (.payload.entitlement_source_sha256 | test("^[a-f0-9]{64}$")) and
+            (.signature | type == "string" and length > 64)
+          ' "$body_file" >/dev/null
 
           expected_source_sha="$(sha256sum deploy_package/includes/EntitlementV2.php | awk '{print $1}')"
-          runtime_source_sha="$(jq -r '.entitlement_source_sha256' <<<"$probe_json")"
+          runtime_source_sha="$(jq -r '.payload.entitlement_source_sha256' "$body_file")"
           if [ "$expected_source_sha" != "$runtime_source_sha" ]; then
-            echo "ERROR: production MySQL runtime probe executed against a different EntitlementV2 source." >&2
+            echo "ERROR: web-worker MySQL proof executed against a different EntitlementV2 source." >&2
             exit 1
           fi
 
-          PROBE_JSON="$probe_json" python3 - <<'PY'
+          php -r '
+            $doc=json_decode(file_get_contents($argv[1]),true);
+            require $argv[2]."/includes/RsaSigner.php";
+            $pub=file_get_contents($argv[2]."/keys/license_signing_public.pem");
+            if(!is_array($doc)||!is_array($doc["payload"]??null)||!RsaSigner::verify($doc["payload"],(string)($doc["signature"]??""),$pub)) {
+              fwrite(STDERR,"Production MySQL runtime proof RSA verification failed\n"); exit(1);
+            }
+          ' "$body_file" deploy_package
+
+          PROBE_FILE="$body_file" python3 - <<'PY'
           import json, os, datetime
-          probe = json.loads(os.environ['PROBE_JSON'])
+          with open(os.environ['PROBE_FILE'], 'r', encoding='utf-8') as fh:
+              doc = json.load(fh)
           evidence = {
-              'schema_version': 1,
+              'schema_version': 2,
               'status': 'G1_PRODUCTION_MYSQL_SEAT_LOCK_CERTIFIED',
               'repository': os.environ['GITHUB_REPOSITORY'],
               'commit_sha': os.environ['GITHUB_SHA'].lower(),
               'run_id': os.environ['GITHUB_RUN_ID'],
               'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
-              'probe': probe,
+              'transport': 'production_php_web_worker',
+              'rsa_signature_verified': True,
+              'probe': doc['payload'],
           }
           with open('g1-production-runtime-evidence.json', 'w', encoding='utf-8') as fh:
               json.dump(evidence, fh, separators=(',', ':'))
               fh.write('\n')
-          print('PASS production MySQL seat-lock runtime proof: exclusion=true handoff=true rows_mutated=false')
+          print('PASS production MySQL seat-lock runtime proof: web-worker=true withSeatLock=true exclusion=true handoff=true rows_mutated=false')
           PY
+          cleanup_probe_token
+          trap - EXIT
 
       - name: Upload G1 production MySQL runtime evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 / Node 24
@@ -371,7 +414,7 @@ jobs:
           done
 
           echo "=== Exact deployed provenance verification ==="
-          for rel in deployment-source.json g1-test-evidence.json includes/G1ProductionAttestation.php scripts/g1_mysql_runtime_probe.php; do
+          for rel in deployment-source.json g1-test-evidence.json includes/G1ProductionAttestation.php includes/G1ProductionMysqlProbe.php; do
             actual_file="${RUNNER_TEMP}/kudu-$(basename "$rel")"
             curl --fail --silent --show-error -u "$kudu_user:$kudu_pass" \
               "$kudu_base/api/vfs/site/wwwroot/$rel" \
