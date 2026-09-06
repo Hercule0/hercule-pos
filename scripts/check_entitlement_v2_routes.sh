@@ -98,7 +98,7 @@ diagnose_kudu_g1() {
     public/api/v2/activate.php \
     public/api/v2/g1_attestation.php \
     includes/G1ProductionAttestation.php \
-    scripts/g1_mysql_runtime_probe.php \
+    includes/G1ProductionMysqlProbe.php \
     deployment-source.json \
     g1-test-evidence.json; do
     expected="$ROOT/$rel"
@@ -146,9 +146,6 @@ probe_g1_attestation() {
       return 1
     fi
 
-    # validate.php POST is already production-proven. Only temporary upstream
-    # or service-unavailable states are retryable; routing/method failures are
-    # immediate fail-closed errors.
     if [[ "$status" != "502" && "$status" != "503" && "$status" != "000" && -n "$status" ]]; then
       echo "ERROR: G1 production attestation returned unexpected HTTP ${status}." >&2
       head -c 500 "$body_file" >&2 || true
