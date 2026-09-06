@@ -15,8 +15,8 @@ $checks = [
     'deployment package must contain provenance' => str_contains($workflow, 'test -s deploy_package/deployment-source.json'),
     'Kudu verifies G1 route bytes' => str_contains($workflow, 'validate.php activate.php g1_attestation.php'),
     'Kudu verifies provenance bytes' => str_contains($workflow, 'kudu-deployment-source.json'),
-    'attestation reads deployed provenance' => str_contains($attestation, "deployment-source.json"),
-    'attestation rejects untested provenance' => str_contains($attestation, "|| !$testsPassed"),
+    'attestation reads deployed provenance' => str_contains($attestation, 'deployment-source.json'),
+    'attestation rejects untested provenance' => str_contains($attestation, '|| !$testsPassed'),
 ];
 
 $failed = [];
