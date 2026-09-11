@@ -106,7 +106,8 @@ diagnose_kudu_g1() {
     includes/G1ProductionAttestation.php \
     includes/G1ProductionMysqlProbe.php \
     deployment-source.json \
-    g1-test-evidence.json; do
+    g1-test-evidence.json \
+    fix496-test-evidence.json; do
     expected="$ROOT/$rel"
     actual="$(mktemp)"
     status="$(curl --silent --show-error -u "$kudu_user:$kudu_pass" \
@@ -177,9 +178,12 @@ probe_g1_attestation() {
     $p=$doc["payload"];
     if((int)($p["schema_version"]??0)!==2||($p["status"]??"")!=="G1_ENTITLEMENT_V2_PRODUCTION_CERTIFIED") { fwrite(STDERR,"Invalid G1 attestation payload\n"); exit(1); }
     if(($p["routes"]["g1_attestation"]["via"]??"")!=="POST validate.php?g1_attestation=1") { fwrite(STDERR,"Invalid G1 attestation route binding\n"); exit(1); }
-    if(($p["runtime"]["manager_action_auth"]??false)!==true||($p["runtime"]["strict_transition_contract"]??false)!==true) { fwrite(STDERR,"Fix496 runtime guarantees missing\n"); exit(1); }
-    if(empty($p["deployment"]["g1_test_evidence_sha256"])) { fwrite(STDERR,"G1 test evidence digest missing\n"); exit(1); }
-    foreach(["concurrent_last_seat","inactive_hwid_reactivation","replace_a_to_b_revoke_a","upgrade_1_to_2","downgrade_below_active_blocked","v1_v2_compatibility","atomic_license_transition","strict_source_transition_contract","manager_action_auth"] as $scenario) {
+    if(($p["runtime"]["manager_action_auth"]??false)!==true
+       ||($p["runtime"]["strict_transition_contract"]??false)!==true
+       ||($p["runtime"]["secure_single_to_multi_upgrade"]??false)!==true
+       ||($p["runtime"]["fix496_source_bound"]??false)!==true) { fwrite(STDERR,"Fix496 runtime guarantees missing\n"); exit(1); }
+    if(empty($p["deployment"]["g1_test_evidence_sha256"])||empty($p["deployment"]["fix496_test_evidence_sha256"])) { fwrite(STDERR,"Release evidence digest missing\n"); exit(1); }
+    foreach(["concurrent_last_seat","inactive_hwid_reactivation","replace_a_to_b_revoke_a","upgrade_1_to_2","downgrade_below_active_blocked","v1_v2_compatibility","atomic_license_transition","strict_source_transition_contract","manager_action_auth","secure_single_to_multi_upgrade","fix496_release_contract"] as $scenario) {
       $row=$p["scenarios"][$scenario]??null;
       if(!is_array($row)||($row["status"]??"")!=="PASS"||empty($row["evidence"])) { fwrite(STDERR,"G1 scenario evidence missing: $scenario\n"); exit(1); }
     }
@@ -189,7 +193,7 @@ probe_g1_attestation() {
     require $argv[2]."/includes/RsaSigner.php";
     $pub=file_get_contents($argv[2]."/keys/license_signing_public.pem");
     if(!RsaSigner::verify($p,(string)($doc["signature"]??""),$pub)) { fwrite(STDERR,"G1 attestation RSA verification failed\n"); exit(1); }
-    echo "PASS G1 production attestation: Fix496 manager-auth + strict-transition + complete Multi route evidence verified\n";
+    echo "PASS G1 production attestation: Fix496 final evidence + manager-auth + strict-transition + secure-upgrade + complete Multi routes verified\n";
   ' "$body_file" "$ROOT"
   rm -f "$body_file"
   trap - RETURN
