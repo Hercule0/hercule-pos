@@ -9,6 +9,9 @@ final class G1ProductionAttestation
         'multi_entitlement_v2_test.php',
         'multi_entitlement_admin_test.php',
         'entitlement_v2_validate_bootstrap_test.php',
+        'device_license_transition_test.php',
+        'device_license_transition_contract_test.php',
+        'multi_manager_action_auth_test.php',
     ];
 
     public static function respond(bool $allowPost = false): void
@@ -45,10 +48,14 @@ final class G1ProductionAttestation
             'includes/EntitlementV2.php',
             'includes/MultiEntitlementAdmin.php',
             'includes/MultiEntitlementPolicy.php',
+            'includes/ManagerDeviceAuth.php',
+            'includes/DeviceLicenseTransition.php',
             'includes/G1ProductionAttestation.php',
             'public/api/v2/_common.php',
             'public/api/v2/activate.php',
             'public/api/v2/validate.php',
+            'public/api/v2/device/transition.php',
+            'public/api/v2/device/release.php',
             'public/api/v2/device/replace.php',
             'public/api/v2/device/revoke.php',
             'db/migrate_multi_entitlement_v2.php',
@@ -105,10 +112,16 @@ final class G1ProductionAttestation
             'runtime' => [
                 'database_driver' => $driver,
                 'entitlement_schema_ready' => true,
+                'manager_action_auth' => true,
+                'strict_transition_contract' => true,
             ],
             'routes' => [
                 'activate_v2' => ['signed_response' => true, 'schema_version' => 2],
                 'validate_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'transition_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'release_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'replace_v2' => ['signed_response' => true, 'schema_version' => 2, 'manager_capability_required' => true],
+                'revoke_v2' => ['signed_response' => true, 'schema_version' => 2, 'manager_capability_for_cross_device' => true],
                 'g1_attestation' => [
                     'via' => 'POST validate.php?g1_attestation=1',
                     'signed_response' => true,
@@ -191,6 +204,9 @@ final class G1ProductionAttestation
             'upgrade_1_to_2' => $make(['multi_entitlement_admin_test.php']),
             'downgrade_below_active_blocked' => $make(['multi_entitlement_admin_test.php']),
             'v1_v2_compatibility' => $make(['multi_entitlement_v2_test.php', 'entitlement_v2_validate_bootstrap_test.php']),
+            'atomic_license_transition' => $make(['device_license_transition_test.php', 'device_license_transition_contract_test.php']),
+            'strict_source_transition_contract' => $make(['device_license_transition_contract_test.php']),
+            'manager_action_auth' => $make(['multi_manager_action_auth_test.php']),
         ];
     }
 }
