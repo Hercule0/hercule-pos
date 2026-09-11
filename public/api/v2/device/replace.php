@@ -10,7 +10,18 @@ try {
     if (!($auth['ok'] ?? false)) {
         v2_signed_response($auth);
     }
-    v2_signed_response(EntitlementV2::replaceDevice($input, client_ip()));
+
+    $result = EntitlementV2::replaceDevice($input, client_ip());
+    if (($result['ok'] ?? false) && in_array(strtolower((string) ($input['device_role'] ?? '')), ['manager_server', 'manager_terminal'], true)) {
+        $issueRequest = [
+            'license_key' => (string) ($input['license_key'] ?? ''),
+            'hwid' => (string) ($input['new_hwid'] ?? ''),
+            'device_uuid' => (string) ($input['new_device_uuid'] ?? ''),
+            'device_role' => (string) ($input['device_role'] ?? ''),
+        ];
+        $result = ManagerDeviceAuth::maybeIssueForActivation($issueRequest, $result);
+    }
+    v2_signed_response($result);
 } catch (Throwable $e) {
     v2_exception_response($e);
 }
