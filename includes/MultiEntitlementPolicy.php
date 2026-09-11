@@ -1,25 +1,48 @@
 <?php
 /**
- * Fix408 / Multi Phase 1 — activation policy shared by the v2 activation API.
+ * Fix408 / Fix496 — activation policy shared by the v2 activation API.
  *
- * A license without multi_cashier may keep/replace its single POS terminal,
- * but it can never activate a second concurrent terminal even if stale legacy
- * limits were configured incorrectly. Management-only seats remain separate.
+ * - A non-Multi license may never activate a second concurrent terminal.
+ * - A device may not promote itself into a Manager role merely by sending
+ *   device_role=manager_*.
+ * - manager_server may bootstrap only an unused/unbound store.
+ * - Any NEW manager identity after bootstrap requires authorization from an
+ *   already-active Manager device capability.
  */
 require_once __DIR__ . '/Database.php';
+require_once __DIR__ . '/ManagerDeviceAuth.php';
 
 final class MultiEntitlementPolicy
 {
     private const TERMINAL_ROLES = ['single_terminal', 'manager_terminal', 'cashier_terminal'];
+    private const MANAGER_ROLES = ['manager_server', 'manager_terminal'];
 
     public static function preflightActivation(array $request): array
     {
         $licenseKey = trim((string) ($request['license_key'] ?? ''));
         $hwid = trim((string) ($request['hwid'] ?? ''));
-        $role = trim((string) ($request['device_role'] ?? 'single_terminal'));
+        $role = strtolower(trim((string) ($request['device_role'] ?? 'single_terminal')));
+        $managerPolicy = null;
 
-        if ($licenseKey === '' || $hwid === '' || !in_array($role, self::TERMINAL_ROLES, true)) {
+        if ($licenseKey === '' || $hwid === '') {
             return ['ok' => true];
+        }
+
+        if (in_array($role, self::MANAGER_ROLES, true)) {
+            try {
+                $managerPolicy = ManagerDeviceAuth::authorizeManagerProvisioning($licenseKey, $request, $role);
+            } catch (InvalidArgumentException $e) {
+                return [
+                    'ok' => false,
+                    'status' => 'invalid_manager_identity',
+                    'error' => $e->getMessage(),
+                ];
+            }
+            if (!($managerPolicy['ok'] ?? false)) return $managerPolicy;
+        }
+
+        if (!in_array($role, self::TERMINAL_ROLES, true)) {
+            return $managerPolicy ?? ['ok' => true];
         }
 
         $pdo = Database::pdo();
@@ -27,7 +50,7 @@ final class MultiEntitlementPolicy
         $stmt->execute([$licenseKey]);
         $license = $stmt->fetch();
         if (!$license || (int) ($license['multi_cashier'] ?? 0) === 1) {
-            return ['ok' => true];
+            return $managerPolicy ?? ['ok' => true];
         }
 
         // Allow the same existing terminal to validate/reactivate/upgrade its
@@ -46,6 +69,6 @@ final class MultiEntitlementPolicy
             ];
         }
 
-        return ['ok' => true];
+        return $managerPolicy ?? ['ok' => true];
     }
 }

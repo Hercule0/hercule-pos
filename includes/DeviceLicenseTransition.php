@@ -1,14 +1,14 @@
 <?php
 /**
- * Fix495 — atomic device move into the canonical Multi store license.
+ * Fix495 / Fix496 — atomic device move into the canonical Multi store license.
  *
- * The operation is idempotent and acquires the same named seat locks used by
- * EntitlementV2 before mutating either source or target license. A device that
- * was temporarily activated with another license is released from that source
- * and admitted to the target Store UUID in one database transaction.
+ * The operation is idempotent, holds deterministic source/target seat locks,
+ * requires an explicitly supplied source license to actually own the device,
+ * and blocks manager-role self-promotion during transition.
  */
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/EntitlementV2.php';
+require_once __DIR__ . '/ManagerDeviceAuth.php';
 
 final class DeviceLicenseTransition
 {
@@ -27,12 +27,23 @@ final class DeviceLicenseTransition
         $role = self::normalizeRole((string) ($request['device_role'] ?? 'cashier_terminal'));
         $appVersion = self::optionalString($request, 'app_version', 50);
         $countsAsTerminal = self::roleCountsAsTerminal($role);
+        $transitionId = substr(hash(
+            'sha256',
+            "hercule-transition-v1\0" . $targetKey . "\0" . ($sourceKey ?? '') . "\0" .
+            $hwid . "\0" . $storeUuid . "\0" . $deviceUuid . "\0" . $role
+        ), 0, 32);
+
+        if (in_array($role, ['manager_server', 'manager_terminal'], true)) {
+            $managerPolicy = ManagerDeviceAuth::authorizeManagerProvisioning($targetKey, $request, $role);
+            if (!($managerPolicy['ok'] ?? false)) return $managerPolicy;
+        }
 
         $keys = [$targetKey];
         if ($sourceKey !== null) $keys[] = $sourceKey;
 
         return self::withSeatLocks($keys, function () use (
-            $targetKey, $sourceKey, $hwid, $storeUuid, $deviceUuid, $role, $appVersion, $countsAsTerminal, $ip
+            $targetKey, $sourceKey, $hwid, $storeUuid, $deviceUuid, $role,
+            $appVersion, $countsAsTerminal, $ip, $transitionId
         ): array {
             $pdo = Database::pdo();
             $pdo->beginTransaction();
@@ -97,6 +108,22 @@ final class DeviceLicenseTransition
                     && hash_equals(strtolower((string) ($targetActivation['store_uuid'] ?? '')), $storeUuid)
                     && strtolower((string) ($targetActivation['device_role'] ?? '')) === $role;
 
+                // If the caller explicitly says this is a move from another
+                // license, that source must contain the historical device row.
+                // A successful retry still has the source row (inactive + UUID
+                // cleared), so missing rows are never treated as idempotency.
+                if ($sourceKey !== null && !$sourceActivation) {
+                    $pdo->rollBack();
+                    return self::failure('source_activation_missing', 'Source license does not contain this device activation.');
+                }
+                if ($sourceActivation
+                    && (int) $sourceActivation['is_active'] !== 1
+                    && empty($sourceActivation['device_uuid'])
+                    && !$targetAlreadyExact) {
+                    $pdo->rollBack();
+                    return self::failure('source_activation_inactive', 'Source device is no longer active and target transition is not complete.');
+                }
+
                 $sourceChanged = false;
                 if ($sourceActivation && ((int) $sourceActivation['is_active'] === 1 || !empty($sourceActivation['device_uuid']))) {
                     $pdo->prepare(
@@ -145,6 +172,12 @@ final class DeviceLicenseTransition
                     $activationId = (int) $targetActivation['id'];
                 }
 
+                $sourceReleased = $sourceKey !== null && (
+                    $sourceChanged
+                    || ($sourceActivation && (int) $sourceActivation['is_active'] !== 1 && empty($sourceActivation['device_uuid']))
+                );
+                $duplicate = $targetAlreadyExact && !$sourceChanged;
+
                 self::logVerification((int) $target['id'], $targetKey, $hwid, 'ok_v2_transition', $ip);
                 $pdo->commit();
                 return [
@@ -153,8 +186,9 @@ final class DeviceLicenseTransition
                     'device_uuid' => $deviceUuid,
                     'device_role' => $role,
                     'counts_as_terminal' => $countsAsTerminal,
-                    'source_released' => $sourceChanged,
-                    'duplicate' => $targetAlreadyExact,
+                    'source_released' => $sourceReleased,
+                    'duplicate' => $duplicate,
+                    'transition_id' => $transitionId,
                     'entitlement' => EntitlementV2::entitlementByKey($targetKey),
                 ];
             } catch (Throwable $e) {
@@ -227,7 +261,7 @@ final class DeviceLicenseTransition
 
     private static function isExpired(array $license): bool { return !empty($license['expires_at']) && strtotime((string) $license['expires_at']) < time(); }
     private static function roleCountsAsTerminal(string $role): bool { return in_array($role, ['single_terminal','manager_terminal','cashier_terminal'], true); }
-    private static function normalizeRole(string $role): string { $role = trim($role); if (!in_array($role, self::DEVICE_ROLES, true)) throw new InvalidArgumentException('Invalid device_role.'); return $role; }
+    private static function normalizeRole(string $role): string { $role = strtolower(trim($role)); if (!in_array($role, self::DEVICE_ROLES, true)) throw new InvalidArgumentException('Invalid device_role.'); return $role; }
     private static function requiredUuid(array $request, string $key): string { $value = strtolower(trim((string) ($request[$key] ?? ''))); if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $value)) throw new InvalidArgumentException("Invalid {$key}."); return $value; }
     private static function requiredString(array $request, string $key, int $max): string { $value = trim((string) ($request[$key] ?? '')); if ($value === '' || strlen($value) > $max || preg_match('/[\x00-\x1F\x7F]/', $value)) throw new InvalidArgumentException("Invalid {$key}."); return $value; }
     private static function optionalString(array $request, string $key, int $max): ?string { $value = trim((string) ($request[$key] ?? '')); if ($value === '') return null; if (strlen($value) > $max || preg_match('/[\x00-\x1F\x7F]/', $value)) throw new InvalidArgumentException("Invalid {$key}."); return $value; }
