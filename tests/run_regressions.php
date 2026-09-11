@@ -30,15 +30,12 @@ if ($failures) {
     exit(1);
 }
 
-// Fix496 release evidence is generated only after the complete focused suite
-// passes. It binds the new Multi security/transition tests AND the exact source
-// files they certify to the workflow commit/run. The deployment package keeps
-// this root artifact while excluding tests themselves.
 $fix496Tests = [
     'device_license_transition_test.php',
     'device_license_transition_contract_test.php',
     'multi_manager_action_auth_test.php',
     'multi_manager_upgrade_test.php',
+    'manager_server_lifecycle_test.php',
     'fix496_release_contract_test.php',
 ];
 $fix496Sources = [
