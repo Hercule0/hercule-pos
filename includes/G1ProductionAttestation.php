@@ -16,6 +16,7 @@ final class G1ProductionAttestation
         'device_license_transition_contract_test.php',
         'multi_manager_action_auth_test.php',
         'multi_manager_upgrade_test.php',
+        'manager_server_lifecycle_test.php',
         'fix496_release_contract_test.php',
     ];
 
@@ -145,6 +146,7 @@ final class G1ProductionAttestation
                 'manager_action_auth' => true,
                 'strict_transition_contract' => true,
                 'secure_single_to_multi_upgrade' => true,
+                'manager_server_authority_continuity' => true,
                 'fix496_source_bound' => true,
             ],
             'routes' => [
@@ -283,6 +285,7 @@ final class G1ProductionAttestation
             'strict_source_transition_contract' => $make(['device_license_transition_contract_test.php']),
             'manager_action_auth' => $make(['multi_manager_action_auth_test.php']),
             'secure_single_to_multi_upgrade' => $make(['multi_manager_upgrade_test.php']),
+            'manager_server_authority_continuity' => $make(['manager_server_lifecycle_test.php']),
             'fix496_release_contract' => $make(['fix496_release_contract_test.php']),
         ];
     }
