@@ -159,25 +159,31 @@ final class ManagerDeviceAuth
         $existingStmt->execute([(int) $license['id'], $hwid]);
         $existing = $existingStmt->fetch();
 
+        $existingRole = $existing ? strtolower((string) ($existing['device_role'] ?? '')) : '';
         if ($existing
             && empty($existing['revoked_at'])
-            && in_array(strtolower((string) ($existing['device_role'] ?? '')), self::MANAGER_ROLES, true)
+            && $existingRole === $requestedRole
+            && in_array($existingRole, self::MANAGER_ROLES, true)
             && !empty($existing['device_uuid'])
             && hash_equals(strtolower((string) $existing['device_uuid']), $deviceUuid)) {
             return ['ok' => true, 'manager_role' => true, 'existing_manager' => true];
         }
 
-        // Only manager_server may bootstrap an entirely new/unbound store and
-        // only when no active activation already exists on the license.
-        if ($requestedRole === 'manager_server' && empty($license['store_uuid'])) {
-            $count = $pdo->prepare(
-                'SELECT COUNT(*) FROM license_activations
-                 WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL'
-            );
-            $count->execute([(int) $license['id']]);
-            if ((int) $count->fetchColumn() === 0) {
-                return ['ok' => true, 'manager_role' => true, 'bootstrap_manager' => true];
+        // Exactly one manager_server establishes the store. It may bootstrap
+        // only an unused/unbound license; after store binding, a second server
+        // role cannot be provisioned through public activation/transition.
+        if ($requestedRole === 'manager_server') {
+            if (empty($license['store_uuid'])) {
+                $count = $pdo->prepare(
+                    'SELECT COUNT(*) FROM license_activations
+                     WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL'
+                );
+                $count->execute([(int) $license['id']]);
+                if ((int) $count->fetchColumn() === 0) {
+                    return ['ok' => true, 'manager_role' => true, 'bootstrap_manager' => true];
+                }
             }
+            return self::failure('manager_server_already_established', 'This store already has an established Manager Server.');
         }
 
         $requesterHwid = trim((string) ($request['requester_hwid'] ?? ''));
