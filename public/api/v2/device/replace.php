@@ -11,6 +11,15 @@ try {
         v2_signed_response($auth);
     }
 
+    $rolePolicy = ManagerDeviceAuth::preflightReplacementRole(
+        (string) ($input['license_key'] ?? ''),
+        $oldDeviceUuid,
+        (string) ($input['device_role'] ?? 'cashier_terminal')
+    );
+    if (!($rolePolicy['ok'] ?? false)) {
+        v2_signed_response($rolePolicy);
+    }
+
     $result = EntitlementV2::replaceDevice($input, client_ip());
     if (($result['ok'] ?? false) && in_array(strtolower((string) ($input['device_role'] ?? '')), ['manager_server', 'manager_terminal'], true)) {
         $issueRequest = [
