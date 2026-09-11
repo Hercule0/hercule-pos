@@ -18,8 +18,6 @@ final class ManagerDeviceAuth
     {
         if (!(bool) ($result['ok'] ?? false)) return $result;
 
-        // Defensive one-time semantics: never trust or re-expose capability
-        // fields that may have been carried in by an upstream/retry result.
         unset($result['manager_auth_token'], $result['manager_auth_token_issued']);
 
         $role = strtolower(trim((string) ($result['device_role'] ?? $request['device_role'] ?? '')));
@@ -104,9 +102,6 @@ final class ManagerDeviceAuth
             && $requesterUuid !== ''
             && hash_equals($requesterUuid, $targetDeviceUuid);
 
-        // Ordinary terminals may release/revoke only themselves. Managers must
-        // prove their capability even for self-destructive lifecycle actions so
-        // license_key + HWID alone cannot disable the store authority device.
         if ($isSelf && !$isManager) {
             return ['ok' => true, 'self' => true, 'requester' => $requester];
         }
@@ -130,6 +125,47 @@ final class ManagerDeviceAuth
             'requester' => $requester,
             'action' => $action,
         ];
+    }
+
+    /** A Manager Server is store authority: permanently replace it, never revoke it. */
+    public static function preflightPermanentRevoke(string $licenseKey, string $targetDeviceUuid): array
+    {
+        $target = self::activationByDevice($licenseKey, $targetDeviceUuid);
+        if (!$target) return ['ok' => true];
+        if (strtolower((string) ($target['device_role'] ?? '')) === 'manager_server') {
+            return self::failure(
+                'manager_server_replace_required',
+                'Manager Server cannot be permanently revoked. Replace it with another Manager Server instead.'
+            );
+        }
+        return ['ok' => true];
+    }
+
+    /**
+     * Preserve exactly one Manager Server during replacement. A Manager Server
+     * may only be replaced by another Manager Server, and no other role may be
+     * upgraded into Manager Server through the replacement endpoint.
+     */
+    public static function preflightReplacementRole(string $licenseKey, string $oldDeviceUuid, string $newRole): array
+    {
+        $newRole = strtolower(trim($newRole));
+        $old = self::activationByDevice($licenseKey, $oldDeviceUuid);
+        if (!$old) return ['ok' => true];
+        $oldRole = strtolower((string) ($old['device_role'] ?? ''));
+
+        if ($oldRole === 'manager_server' && $newRole !== 'manager_server') {
+            return self::failure(
+                'manager_server_role_required',
+                'Manager Server replacement must remain a Manager Server.'
+            );
+        }
+        if ($oldRole !== 'manager_server' && $newRole === 'manager_server') {
+            return self::failure(
+                'manager_server_replacement_mismatch',
+                'A non-Manager-Server device cannot be replaced into the Manager Server role.'
+            );
+        }
+        return ['ok' => true];
     }
 
     /**
@@ -183,10 +219,6 @@ final class ManagerDeviceAuth
             return ['ok' => true, 'manager_role' => true, 'existing_manager' => true];
         }
 
-        // Soft release clears the globally unique device/store UUIDs but keeps
-        // the one-way capability fingerprint. Rebinding the same manager HWID
-        // therefore requires possession of the original capability; a copied
-        // license key/HWID pair is insufficient.
         if ($existing
             && (int) ($existing['is_active'] ?? 0) === 0
             && empty($existing['revoked_at'])
@@ -205,7 +237,6 @@ final class ManagerDeviceAuth
         }
 
         if ($requestedRole === 'manager_server') {
-            // Fresh Multi store bootstrap.
             if (empty($license['store_uuid'])) {
                 $count = $pdo->prepare(
                     'SELECT COUNT(*) FROM license_activations
@@ -217,8 +248,6 @@ final class ManagerDeviceAuth
                 }
             }
 
-            // Existing Single-POS -> Multi upgrade. Only the exact registered
-            // single terminal may become the first manager_server.
             $managerCount = $pdo->prepare(
                 "SELECT COUNT(*) FROM license_activations
                  WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL
@@ -253,6 +282,22 @@ final class ManagerDeviceAuth
         if (!($auth['ok'] ?? false)) return $auth;
 
         return ['ok' => true, 'manager_role' => true, 'authorized_by_manager' => true];
+    }
+
+    private static function activationByDevice(string $licenseKey, string $deviceUuid): ?array
+    {
+        $licenseKey = self::requiredString(['license_key' => $licenseKey], 'license_key', 64);
+        $deviceUuid = strtolower(trim($deviceUuid));
+        if (!self::isUuid($deviceUuid)) throw new InvalidArgumentException('Invalid device_uuid.');
+
+        $stmt = Database::pdo()->prepare(
+            'SELECT a.* FROM license_activations a
+             JOIN licenses l ON l.id = a.license_id
+             WHERE l.license_key = ? AND a.device_uuid = ? LIMIT 1'
+        );
+        $stmt->execute([$licenseKey, $deviceUuid]);
+        $row = $stmt->fetch();
+        return $row ?: null;
     }
 
     private static function verifyToken(string $token, string $storedFingerprint): ?array
