@@ -5,11 +5,6 @@
  * The existing certificate_fingerprint field is used as a one-way fingerprint
  * for a random per-manager capability. The raw capability is returned only once
  * inside the already RSA-signed v2 activation response and is never stored.
- *
- * This closes the old requester_hwid-only authorization path without adding a
- * second schema migration. Existing managers with no fingerprint receive a
- * capability the next time they successfully reactivate with their exact
- * registered device identity.
  */
 require_once __DIR__ . '/Database.php';
 
@@ -64,17 +59,10 @@ final class ManagerDeviceAuth
             return $result;
         }
 
-        // Another concurrent request may have won the one-time claim. Never
-        // expose a second capability because the server stores fingerprints only.
         $result['manager_auth_token_issued'] = false;
         return $result;
     }
 
-    /**
-     * Authorize an action that can affect another registered device.
-     * Self release/revoke may be explicitly allowed by the route because those
-     * operations do not grant privilege over another terminal.
-     */
     public static function authorizeAction(
         array $request,
         string $action,
@@ -134,9 +122,15 @@ final class ManagerDeviceAuth
     }
 
     /**
-     * Authorize creation/transition of a NEW manager role. Existing exact
-     * manager devices may reactivate without presenting the capability; any new
-     * manager identity requires authorization from an already-active Manager.
+     * Authorize creation/transition of a Manager role.
+     *
+     * Allowed paths:
+     * 1) exact registered Manager reactivation;
+     * 2) first manager_server on an unused/unbound Multi store;
+     * 3) secure promotion of the exact legacy single_terminal to manager_server
+     *    when Multi is enabled and no Manager Server exists yet;
+     * 4) a new manager_terminal explicitly authorized by an existing Manager
+     *    capability.
      */
     public static function authorizeManagerProvisioning(string $licenseKey, array $request, string $requestedRole): array
     {
@@ -149,10 +143,14 @@ final class ManagerDeviceAuth
         $licenseStmt = $pdo->prepare('SELECT * FROM licenses WHERE license_key = ? LIMIT 1');
         $licenseStmt->execute([$licenseKey]);
         $license = $licenseStmt->fetch();
-        if (!$license) return ['ok' => true, 'manager_role' => true]; // normal invalid-license handling owns this response
+        if (!$license) return ['ok' => true, 'manager_role' => true];
+        if ((int) ($license['multi_cashier'] ?? 0) !== 1) {
+            return self::failure('multi_not_entitled', 'Multi-Cashier is not enabled for this license.');
+        }
 
         $hwid = self::requiredString($request, 'hwid', 160);
         $deviceUuid = self::requiredUuid($request, 'device_uuid');
+        $storeUuid = self::requiredUuid($request, 'store_uuid');
         $existingStmt = $pdo->prepare(
             'SELECT * FROM license_activations WHERE license_id = ? AND hwid = ? LIMIT 1'
         );
@@ -160,19 +158,19 @@ final class ManagerDeviceAuth
         $existing = $existingStmt->fetch();
 
         $existingRole = $existing ? strtolower((string) ($existing['device_role'] ?? '')) : '';
+        $existingUuid = $existing ? strtolower((string) ($existing['device_uuid'] ?? '')) : '';
+        $existingStore = $existing ? strtolower((string) ($existing['store_uuid'] ?? '')) : '';
         if ($existing
             && empty($existing['revoked_at'])
             && $existingRole === $requestedRole
             && in_array($existingRole, self::MANAGER_ROLES, true)
-            && !empty($existing['device_uuid'])
-            && hash_equals(strtolower((string) $existing['device_uuid']), $deviceUuid)) {
+            && $existingUuid !== ''
+            && hash_equals($existingUuid, $deviceUuid)) {
             return ['ok' => true, 'manager_role' => true, 'existing_manager' => true];
         }
 
-        // Exactly one manager_server establishes the store. It may bootstrap
-        // only an unused/unbound license; after store binding, a second server
-        // role cannot be provisioned through public activation/transition.
         if ($requestedRole === 'manager_server') {
+            // Fresh Multi store bootstrap.
             if (empty($license['store_uuid'])) {
                 $count = $pdo->prepare(
                     'SELECT COUNT(*) FROM license_activations
@@ -183,7 +181,31 @@ final class ManagerDeviceAuth
                     return ['ok' => true, 'manager_role' => true, 'bootstrap_manager' => true];
                 }
             }
-            return self::failure('manager_server_already_established', 'This store already has an established Manager Server.');
+
+            // Existing Single-POS -> Multi upgrade. Only the exact registered
+            // single terminal may become the first manager_server.
+            $managerCount = $pdo->prepare(
+                "SELECT COUNT(*) FROM license_activations
+                 WHERE license_id = ? AND is_active = 1 AND revoked_at IS NULL
+                   AND device_role = 'manager_server'"
+            );
+            $managerCount->execute([(int) $license['id']]);
+            $noManagerServer = (int) $managerCount->fetchColumn() === 0;
+            $licenseStore = strtolower((string) ($license['store_uuid'] ?? ''));
+            $sameStore = $licenseStore !== '' && hash_equals($licenseStore, $storeUuid)
+                && ($existingStore === '' || hash_equals($existingStore, $storeUuid));
+            if ($noManagerServer
+                && $sameStore
+                && $existing
+                && (int) ($existing['is_active'] ?? 0) === 1
+                && empty($existing['revoked_at'])
+                && $existingRole === 'single_terminal'
+                && $existingUuid !== ''
+                && hash_equals($existingUuid, $deviceUuid)) {
+                return ['ok' => true, 'manager_role' => true, 'legacy_manager_promotion' => true];
+            }
+
+            return self::failure('manager_server_already_established', 'This store already has an established Manager Server or this device is not the registered upgrade device.');
         }
 
         $requesterHwid = trim((string) ($request['requester_hwid'] ?? ''));
