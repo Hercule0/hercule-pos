@@ -38,6 +38,7 @@ $fix496Tests = [
     'device_license_transition_test.php',
     'device_license_transition_contract_test.php',
     'multi_manager_action_auth_test.php',
+    'multi_manager_upgrade_test.php',
 ];
 $fix496Sources = [
     'includes/ManagerDeviceAuth.php',
