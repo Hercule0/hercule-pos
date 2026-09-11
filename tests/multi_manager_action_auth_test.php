@@ -78,7 +78,7 @@ $fingerprint = (string) $pdo->query("SELECT certificate_fingerprint FROM license
 f496_check('server stores only manager capability fingerprint', (bool) preg_match('/^[a-f0-9]{64}$/', $fingerprint) && !hash_equals($fingerprint, $managerToken));
 
 $secondIssue = ManagerDeviceAuth::maybeIssueForActivation($managerRequest, $managerActivation);
-f496_check('manager capability is one-time and is not re-exposed', !isset($secondIssue['manager_auth_token']));
+f496_check('manager capability is one-time and is not re-exposed', !isset($secondIssue['manager_auth_token']) && ($secondIssue['manager_auth_token_issued'] ?? true) === false);
 
 $cashierRequest = [
     'license_key' => $licenseKey,
@@ -151,7 +151,20 @@ $selfAction = ManagerDeviceAuth::authorizeAction([
     'license_key' => $licenseKey,
     'requester_hwid' => 'FIX496-CASHIER',
 ], 'device_release', $cashierUuid, true);
-f496_check('device may still release itself without manager privilege', ($selfAction['ok'] ?? false) === true && ($selfAction['self'] ?? false) === true);
+f496_check('ordinary terminal may still release itself without manager privilege', ($selfAction['ok'] ?? false) === true && ($selfAction['self'] ?? false) === true);
+
+$managerSelfNoToken = ManagerDeviceAuth::authorizeAction([
+    'license_key' => $licenseKey,
+    'requester_hwid' => 'FIX496-MANAGER',
+], 'device_release', $managerUuid, true);
+f496_check('manager cannot self-release with license key and HWID alone', ($managerSelfNoToken['ok'] ?? true) === false && ($managerSelfNoToken['status'] ?? '') === 'manager_auth_required');
+
+$managerSelfWithToken = ManagerDeviceAuth::authorizeAction([
+    'license_key' => $licenseKey,
+    'requester_hwid' => 'FIX496-MANAGER',
+    'manager_auth_token' => $managerToken,
+], 'device_release', $managerUuid, true);
+f496_check('manager capability authorizes manager self-release', ($managerSelfWithToken['ok'] ?? false) === true && ($managerSelfWithToken['self'] ?? false) === true);
 
 $managerNoToken = ManagerDeviceAuth::authorizeAction([
     'license_key' => $licenseKey,
@@ -162,8 +175,33 @@ f496_check('sensitive manager action fails closed when capability missing', ($ma
 $reactivationPolicy = MultiEntitlementPolicy::preflightActivation($managerRequest);
 f496_check('exact registered manager may reactivate without self-promotion bypass', ($reactivationPolicy['ok'] ?? false) === true && ($reactivationPolicy['existing_manager'] ?? false) === true);
 
+// Simulate the exact soft-release state created by release.php: inactive row,
+// globally unique device/store UUIDs cleared, capability fingerprint retained.
+$pdo->prepare(
+    'UPDATE license_activations SET is_active=0, device_uuid=NULL, store_uuid=NULL WHERE license_id=? AND hwid=?'
+)->execute([$licenseId, 'FIX496-MANAGER']);
+
+$releasedWithoutToken = MultiEntitlementPolicy::preflightActivation($managerRequest);
+f496_check('soft-released manager cannot rebind without its capability', ($releasedWithoutToken['ok'] ?? true) === false && ($releasedWithoutToken['status'] ?? '') === 'manager_auth_required');
+
+$releasedRebindRequest = $managerRequest;
+$releasedRebindRequest['manager_auth_token'] = $managerToken;
+$releasedWithToken = MultiEntitlementPolicy::preflightActivation($releasedRebindRequest);
+f496_check('soft-released manager may rebind with its original capability', ($releasedWithToken['ok'] ?? false) === true && ($releasedWithToken['released_manager_rebind'] ?? false) === true);
+$rebound = EntitlementV2::activate($releasedRebindRequest);
+f496_check('capability-authenticated manager rebind restores the same activation row', ($rebound['ok'] ?? false) === true);
+$rebound = ManagerDeviceAuth::maybeIssueForActivation($releasedRebindRequest, $rebound);
+f496_check('manager rebind does not expose a second capability', !isset($rebound['manager_auth_token']) && ($rebound['manager_auth_token_issued'] ?? true) === false);
+
+$tokenAfterRebind = ManagerDeviceAuth::authorizeAction([
+    'license_key' => $licenseKey,
+    'requester_hwid' => 'FIX496-MANAGER',
+    'manager_auth_token' => $managerToken,
+], 'device_replace', $cashierUuid, false);
+f496_check('original capability remains valid after authenticated soft rebind', ($tokenAfterRebind['ok'] ?? false) === true);
+
 if ($failures) {
     fwrite(STDERR, 'Fix496 manager auth failures: ' . implode(', ', $failures) . "\n");
     exit(1);
 }
-echo "PASS Fix496 manager capability auth — self-promotion blocked, single manager_server=true, cross-device actions capability-protected\n";
+echo "PASS Fix496 manager capability auth — self-promotion blocked, single manager_server=true, self-action protected, soft-rebind authenticated, cross-device actions capability-protected\n";
