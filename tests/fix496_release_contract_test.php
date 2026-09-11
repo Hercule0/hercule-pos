@@ -41,6 +41,8 @@ f496c_check('manager capability is fingerprinted with SHA-256', str_contains($ma
 f496c_check('manager server bootstrap requires Multi entitlement', str_contains($managerAuth, 'multi_not_entitled'));
 f496c_check('second manager server is explicitly blocked', str_contains($managerAuth, 'manager_server_already_established'));
 f496c_check('legacy exact main-device promotion path exists', str_contains($managerAuth, 'legacy_manager_promotion'));
+f496c_check('soft-released Manager has capability-authenticated rebind path', str_contains($managerAuth, 'released_manager_rebind'));
+f496c_check('Manager self lifecycle actions pass through capability verification', str_contains($managerAuth, '$isSelf && !$isManager'));
 f496c_check('new manager terminal requires manager authorization', str_contains($managerAuth, 'manager_authorization_required'));
 
 foreach ([
@@ -51,6 +53,8 @@ foreach ([
     f496c_check("{$name} route imports ManagerDeviceAuth", str_contains($source, 'ManagerDeviceAuth.php'));
     f496c_check("{$name} route calls manager action authorization", str_contains($source, 'ManagerDeviceAuth::authorizeAction'));
 }
+f496c_check('replacement Manager receives capability bootstrap', str_contains($replace, 'ManagerDeviceAuth::maybeIssueForActivation'));
+f496c_check('transitioned Manager receives capability bootstrap', str_contains($transition, 'ManagerDeviceAuth::maybeIssueForActivation'));
 
 f496c_check('strict transition rejects missing explicit source activation', str_contains($transitionLogic, 'source_activation_missing'));
 f496c_check('strict transition rejects incomplete inactive source move', str_contains($transitionLogic, 'source_activation_inactive'));
@@ -65,6 +69,8 @@ foreach ([
     'public/api/v2/device/revoke.php',
     'public/api/v2/device/replace.php',
     'fix496-test-evidence.json',
+    'multi_manager_upgrade_test.php',
+    'fix496_release_contract_test.php',
 ] as $needle) {
     f496c_check("G1 final attestation binds {$needle}", str_contains($attestation, $needle));
 }
@@ -79,14 +85,18 @@ foreach ([
 ] as $route) {
     f496c_check("production probe covers {$route}", str_contains($probe, "probe_route \"{$route}\""));
 }
+f496c_check('production probe requires Fix496 evidence digest', str_contains($probe, 'fix496_test_evidence_sha256'));
+f496c_check('production probe requires secure Single-to-Multi scenario', str_contains($probe, 'secure_single_to_multi_upgrade'));
+f496c_check('production Kudu diagnostic compares Fix496 evidence bytes', str_contains($probe, 'fix496-test-evidence.json'));
 
 f496c_check('Fix496 evidence is generated only by the complete regression runner', str_contains($runner, 'FIX496_MULTI_FINAL_GATE_PASS'));
 f496c_check('Fix496 evidence binds source hashes', str_contains($runner, '\'source_files\' => $sourceEvidence'));
 f496c_check('Fix496 evidence includes secure Single-to-Multi upgrade test', str_contains($runner, '\'multi_manager_upgrade_test.php\''));
+f496c_check('Fix496 evidence includes final release contract test', str_contains($runner, '\'fix496_release_contract_test.php\''));
 
 if ($failures) {
     fwrite(STDERR, 'Fix496 release contract failures: ' . implode(', ', $failures) . "\n");
     exit(1);
 }
 
-echo "PASS Fix496 final Multi release contract — manager-auth=true transition-strict=true dual-key-rate-limit=true full-route-probe=true evidence-bound=true\n";
+echo "PASS Fix496 final Multi release contract — manager-auth=true lifecycle-protected=true transition-strict=true dual-key-rate-limit=true full-route-probe=true evidence-bound=true\n";
