@@ -97,6 +97,12 @@ diagnose_kudu_g1() {
     public/api/v2/validate.php \
     public/api/v2/activate.php \
     public/api/v2/g1_attestation.php \
+    public/api/v2/device/transition.php \
+    public/api/v2/device/release.php \
+    public/api/v2/device/revoke.php \
+    public/api/v2/device/replace.php \
+    includes/ManagerDeviceAuth.php \
+    includes/DeviceLicenseTransition.php \
     includes/G1ProductionAttestation.php \
     includes/G1ProductionMysqlProbe.php \
     deployment-source.json \
@@ -113,9 +119,16 @@ diagnose_kudu_g1() {
       expected_size="$(wc -c < "$expected" | tr -d ' ')"
       actual_size="$(wc -c < "$actual" | tr -d ' ')"
       echo "KUDU_COMPARE path=$rel expected_sha=$expected_sha actual_sha=$actual_sha expected_size=$expected_size actual_size=$actual_size"
+      if [[ "$expected_sha" != "$actual_sha" || "$expected_size" != "$actual_size" ]]; then
+        echo "ERROR: Kudu runtime drift detected for $rel." >&2
+        rm -f "$actual"
+        return 1
+      fi
     elif [[ "$status" != "200" ]]; then
       head -c 240 "$actual" >&2 || true
       echo >&2
+      rm -f "$actual"
+      return 1
     fi
     rm -f "$actual"
   done
@@ -164,15 +177,19 @@ probe_g1_attestation() {
     $p=$doc["payload"];
     if((int)($p["schema_version"]??0)!==2||($p["status"]??"")!=="G1_ENTITLEMENT_V2_PRODUCTION_CERTIFIED") { fwrite(STDERR,"Invalid G1 attestation payload\n"); exit(1); }
     if(($p["routes"]["g1_attestation"]["via"]??"")!=="POST validate.php?g1_attestation=1") { fwrite(STDERR,"Invalid G1 attestation route binding\n"); exit(1); }
+    if(($p["runtime"]["manager_action_auth"]??false)!==true||($p["runtime"]["strict_transition_contract"]??false)!==true) { fwrite(STDERR,"Fix496 runtime guarantees missing\n"); exit(1); }
     if(empty($p["deployment"]["g1_test_evidence_sha256"])) { fwrite(STDERR,"G1 test evidence digest missing\n"); exit(1); }
-    foreach(["concurrent_last_seat","inactive_hwid_reactivation","replace_a_to_b_revoke_a","upgrade_1_to_2","downgrade_below_active_blocked","v1_v2_compatibility"] as $scenario) {
+    foreach(["concurrent_last_seat","inactive_hwid_reactivation","replace_a_to_b_revoke_a","upgrade_1_to_2","downgrade_below_active_blocked","v1_v2_compatibility","atomic_license_transition","strict_source_transition_contract","manager_action_auth"] as $scenario) {
       $row=$p["scenarios"][$scenario]??null;
       if(!is_array($row)||($row["status"]??"")!=="PASS"||empty($row["evidence"])) { fwrite(STDERR,"G1 scenario evidence missing: $scenario\n"); exit(1); }
+    }
+    foreach(["transition_v2","release_v2","replace_v2","revoke_v2"] as $route) {
+      if(empty($p["routes"][$route]["signed_response"])) { fwrite(STDERR,"G1 route evidence missing: $route\n"); exit(1); }
     }
     require $argv[2]."/includes/RsaSigner.php";
     $pub=file_get_contents($argv[2]."/keys/license_signing_public.pem");
     if(!RsaSigner::verify($p,(string)($doc["signature"]??""),$pub)) { fwrite(STDERR,"G1 attestation RSA verification failed\n"); exit(1); }
-    echo "PASS G1 production attestation: post-transport=true, test-evidence=true, exact deployment provenance + RSA signature verified\n";
+    echo "PASS G1 production attestation: Fix496 manager-auth + strict-transition + complete Multi route evidence verified\n";
   ' "$body_file" "$ROOT"
   rm -f "$body_file"
   trap - RETURN
@@ -180,6 +197,10 @@ probe_g1_attestation() {
 
 probe_route "/public/api/v2/validate.php"
 probe_route "/public/api/v2/activate.php"
+probe_route "/public/api/v2/device/transition.php"
+probe_route "/public/api/v2/device/release.php"
+probe_route "/public/api/v2/device/revoke.php"
+probe_route "/public/api/v2/device/replace.php"
 probe_g1_attestation
 
-echo "Entitlement v2 production route verification passed."
+echo "Entitlement v2 production route verification passed for complete Multi surface."
