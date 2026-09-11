@@ -28,7 +28,7 @@ $runner = $read('tests/run_regressions.php');
 
 f496c_check('transition rate limit explicitly covers target license key', str_contains($transition, "['target_license_key', 'source_license_key']"));
 f496c_check('transition rate limit explicitly covers source license key', str_contains($transition, 'source_license_key'));
-f496c_check('v2 rate limiter accepts explicit license-key fields', str_contains($common, "array $licenseKeyFields = ['license_key']"));
+f496c_check('v2 rate limiter accepts explicit license-key fields', str_contains($common, 'array $licenseKeyFields = [\'license_key\']'));
 
 foreach (['source_released', 'duplicate', 'transition_id', 'manager_auth_required', 'manager_auth_token_issued', 'manager_auth_token'] as $field) {
     f496c_check("signed v2 payload exposes {$field}", str_contains($common, "'{$field}'"));
@@ -36,9 +36,9 @@ foreach (['source_released', 'duplicate', 'transition_id', 'manager_auth_require
 
 f496c_check('activate performs manager provisioning policy before activation', str_contains($activate, 'MultiEntitlementPolicy::preflightActivation'));
 f496c_check('activate issues manager capability only after successful activation', str_contains($activate, 'ManagerDeviceAuth::maybeIssueForActivation'));
-f496c_check('manager capability raw token is removed defensively before issuance decision', str_contains($managerAuth, "unset($result['manager_auth_token'], $result['manager_auth_token_issued'])"));
-f496c_check('manager capability is fingerprinted with SHA-256', str_contains($managerAuth, "hash('sha256', self::TOKEN_DOMAIN . $token)"));
-f496c_check('manager server bootstrap requires Multi entitlement', str_contains($managerAuth, "multi_not_entitled"));
+f496c_check('manager capability raw token is removed defensively before issuance decision', str_contains($managerAuth, 'unset($result[\'manager_auth_token\'], $result[\'manager_auth_token_issued\'])'));
+f496c_check('manager capability is fingerprinted with SHA-256', str_contains($managerAuth, 'hash(\'sha256\', self::TOKEN_DOMAIN . $token)'));
+f496c_check('manager server bootstrap requires Multi entitlement', str_contains($managerAuth, 'multi_not_entitled'));
 f496c_check('second manager server is explicitly blocked', str_contains($managerAuth, 'manager_server_already_established'));
 f496c_check('legacy exact main-device promotion path exists', str_contains($managerAuth, 'legacy_manager_promotion'));
 f496c_check('new manager terminal requires manager authorization', str_contains($managerAuth, 'manager_authorization_required'));
@@ -81,8 +81,8 @@ foreach ([
 }
 
 f496c_check('Fix496 evidence is generated only by the complete regression runner', str_contains($runner, 'FIX496_MULTI_FINAL_GATE_PASS'));
-f496c_check('Fix496 evidence binds source hashes', str_contains($runner, "'source_files' => $sourceEvidence"));
-f496c_check('Fix496 evidence includes secure Single-to-Multi upgrade test', str_contains($runner, "'multi_manager_upgrade_test.php'"));
+f496c_check('Fix496 evidence binds source hashes', str_contains($runner, '\'source_files\' => $sourceEvidence'));
+f496c_check('Fix496 evidence includes secure Single-to-Multi upgrade test', str_contains($runner, '\'multi_manager_upgrade_test.php\''));
 
 if ($failures) {
     fwrite(STDERR, 'Fix496 release contract failures: ' . implode(', ', $failures) . "\n");
