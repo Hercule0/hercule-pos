@@ -22,6 +22,7 @@ final class MultiEntitlementPolicy
         $licenseKey = trim((string) ($request['license_key'] ?? ''));
         $hwid = trim((string) ($request['hwid'] ?? ''));
         $role = strtolower(trim((string) ($request['device_role'] ?? 'single_terminal')));
+        $managerPolicy = null;
 
         if ($licenseKey === '' || $hwid === '') {
             return ['ok' => true];
@@ -41,7 +42,7 @@ final class MultiEntitlementPolicy
         }
 
         if (!in_array($role, self::TERMINAL_ROLES, true)) {
-            return ['ok' => true];
+            return $managerPolicy ?? ['ok' => true];
         }
 
         $pdo = Database::pdo();
@@ -49,7 +50,7 @@ final class MultiEntitlementPolicy
         $stmt->execute([$licenseKey]);
         $license = $stmt->fetch();
         if (!$license || (int) ($license['multi_cashier'] ?? 0) === 1) {
-            return ['ok' => true];
+            return $managerPolicy ?? ['ok' => true];
         }
 
         // Allow the same existing terminal to validate/reactivate/upgrade its
@@ -68,6 +69,6 @@ final class MultiEntitlementPolicy
             ];
         }
 
-        return ['ok' => true];
+        return $managerPolicy ?? ['ok' => true];
     }
 }
