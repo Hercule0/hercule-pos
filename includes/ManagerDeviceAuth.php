@@ -97,11 +97,21 @@ final class ManagerDeviceAuth
         if (!$requester) return self::failure('requester_not_authorized', 'Requesting device is not active.');
 
         $requesterUuid = strtolower(trim((string) ($requester['device_uuid'] ?? '')));
-        if ($allowSelf && $targetDeviceUuid !== null && $requesterUuid !== '' && hash_equals($requesterUuid, $targetDeviceUuid)) {
+        $requesterRole = strtolower((string) ($requester['device_role'] ?? ''));
+        $isManager = in_array($requesterRole, self::MANAGER_ROLES, true);
+        $isSelf = $allowSelf
+            && $targetDeviceUuid !== null
+            && $requesterUuid !== ''
+            && hash_equals($requesterUuid, $targetDeviceUuid);
+
+        // Ordinary terminals may release/revoke only themselves. Managers must
+        // prove their capability even for self-destructive lifecycle actions so
+        // license_key + HWID alone cannot disable the store authority device.
+        if ($isSelf && !$isManager) {
             return ['ok' => true, 'self' => true, 'requester' => $requester];
         }
 
-        if (!in_array(strtolower((string) ($requester['device_role'] ?? '')), self::MANAGER_ROLES, true)) {
+        if (!$isManager) {
             return self::failure('permission_denied', 'Only an active Manager may perform this action.');
         }
 
@@ -111,16 +121,12 @@ final class ManagerDeviceAuth
         }
 
         $token = trim((string) ($request['manager_auth_token'] ?? ''));
-        if (!preg_match('/^hma1_[a-f0-9]{64}$/', $token)) {
-            return self::failure('manager_auth_required', 'Manager device authentication is required.');
-        }
-        if (!hash_equals($stored, self::fingerprint($token))) {
-            return self::failure('manager_auth_invalid', 'Manager device authentication failed.');
-        }
+        $tokenCheck = self::verifyToken($token, $stored);
+        if ($tokenCheck !== null) return $tokenCheck;
 
         return [
             'ok' => true,
-            'self' => false,
+            'self' => $isSelf,
             'requester' => $requester,
             'action' => $action,
         ];
@@ -131,10 +137,11 @@ final class ManagerDeviceAuth
      *
      * Allowed paths:
      * 1) exact registered Manager reactivation;
-     * 2) first manager_server on an unused/unbound Multi store;
-     * 3) secure promotion of the exact legacy single_terminal to manager_server
+     * 2) capability-authenticated rebind of a softly released Manager;
+     * 3) first manager_server on an unused/unbound Multi store;
+     * 4) secure promotion of the exact legacy single_terminal to manager_server
      *    when Multi is enabled and no Manager Server exists yet;
-     * 4) a new manager_terminal explicitly authorized by an existing Manager
+     * 5) a new manager_terminal explicitly authorized by an existing Manager
      *    capability.
      */
     public static function authorizeManagerProvisioning(string $licenseKey, array $request, string $requestedRole): array
@@ -165,6 +172,8 @@ final class ManagerDeviceAuth
         $existingRole = $existing ? strtolower((string) ($existing['device_role'] ?? '')) : '';
         $existingUuid = $existing ? strtolower((string) ($existing['device_uuid'] ?? '')) : '';
         $existingStore = $existing ? strtolower((string) ($existing['store_uuid'] ?? '')) : '';
+        $licenseStore = strtolower((string) ($license['store_uuid'] ?? ''));
+
         if ($existing
             && empty($existing['revoked_at'])
             && $existingRole === $requestedRole
@@ -172,6 +181,27 @@ final class ManagerDeviceAuth
             && $existingUuid !== ''
             && hash_equals($existingUuid, $deviceUuid)) {
             return ['ok' => true, 'manager_role' => true, 'existing_manager' => true];
+        }
+
+        // Soft release clears the globally unique device/store UUIDs but keeps
+        // the one-way capability fingerprint. Rebinding the same manager HWID
+        // therefore requires possession of the original capability; a copied
+        // license key/HWID pair is insufficient.
+        if ($existing
+            && (int) ($existing['is_active'] ?? 0) === 0
+            && empty($existing['revoked_at'])
+            && $existingRole === $requestedRole
+            && $existingUuid === ''
+            && $licenseStore !== ''
+            && hash_equals($licenseStore, $storeUuid)) {
+            $stored = strtolower(trim((string) ($existing['certificate_fingerprint'] ?? '')));
+            if (!preg_match('/^[a-f0-9]{64}$/', $stored)) {
+                return self::failure('manager_auth_not_bootstrapped', 'Released Manager authentication is not initialized.');
+            }
+            $token = trim((string) ($request['manager_auth_token'] ?? ''));
+            $tokenCheck = self::verifyToken($token, $stored);
+            if ($tokenCheck !== null) return $tokenCheck;
+            return ['ok' => true, 'manager_role' => true, 'released_manager_rebind' => true];
         }
 
         if ($requestedRole === 'manager_server') {
@@ -196,7 +226,6 @@ final class ManagerDeviceAuth
             );
             $managerCount->execute([(int) $license['id']]);
             $noManagerServer = (int) $managerCount->fetchColumn() === 0;
-            $licenseStore = strtolower((string) ($license['store_uuid'] ?? ''));
             $sameStore = $licenseStore !== '' && hash_equals($licenseStore, $storeUuid)
                 && ($existingStore === '' || hash_equals($existingStore, $storeUuid));
             if ($noManagerServer
@@ -224,6 +253,17 @@ final class ManagerDeviceAuth
         if (!($auth['ok'] ?? false)) return $auth;
 
         return ['ok' => true, 'manager_role' => true, 'authorized_by_manager' => true];
+    }
+
+    private static function verifyToken(string $token, string $storedFingerprint): ?array
+    {
+        if (!preg_match('/^hma1_[a-f0-9]{64}$/', $token)) {
+            return self::failure('manager_auth_required', 'Manager device authentication is required.');
+        }
+        if (!hash_equals($storedFingerprint, self::fingerprint($token))) {
+            return self::failure('manager_auth_invalid', 'Manager device authentication failed.');
+        }
+        return null;
     }
 
     private static function fingerprint(string $token): string
