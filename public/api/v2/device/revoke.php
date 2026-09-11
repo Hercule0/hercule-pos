@@ -10,6 +10,10 @@ try {
     if (!($auth['ok'] ?? false)) {
         v2_signed_response($auth);
     }
+    $lifecycle = ManagerDeviceAuth::preflightPermanentRevoke((string) ($input['license_key'] ?? ''), $targetDeviceUuid);
+    if (!($lifecycle['ok'] ?? false)) {
+        v2_signed_response($lifecycle);
+    }
     v2_signed_response(EntitlementV2::revokeDevice($input));
 } catch (Throwable $e) {
     v2_exception_response($e);
