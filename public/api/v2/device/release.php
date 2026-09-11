@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../_common.php';
+require_once __DIR__ . '/../../../../includes/ManagerDeviceAuth.php';
 
 $input = v2_input();
 v2_rate_limit('device_release', $input);
@@ -17,6 +18,11 @@ try {
     }
     if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $targetDeviceUuid)) {
         throw new InvalidArgumentException('Invalid device_uuid.');
+    }
+
+    $auth = ManagerDeviceAuth::authorizeAction($input, 'device_release', $targetDeviceUuid, true);
+    if (!($auth['ok'] ?? false)) {
+        v2_signed_response($auth);
     }
 
     $result = EntitlementV2::withSeatLock($licenseKey, static function () use ($licenseKey, $requesterHwid, $targetDeviceUuid): array {
@@ -60,18 +66,12 @@ try {
                 return ['ok' => false, 'status' => 'permission_denied', 'error' => 'Only a Manager may release another device.'];
             }
 
-            // Permanent revocation and ordinary Unpair are intentionally distinct.
-            // A revoked identity remains blocked; release.php never resurrects it.
             if (!empty($target['revoked_at'])) {
                 $pdo->rollBack();
                 return ['ok' => false, 'status' => 'device_revoked', 'error' => 'This device has been permanently revoked.'];
             }
 
             if ((int) $target['is_active'] === 1) {
-                // Free the seat and the globally unique device UUID. Keep HWID/history so
-                // the same license can later reactivate this device without creating a
-                // second historical row. Clearing device_uuid also lets a device that was
-                // temporarily tested with another license be adopted by the correct Store.
                 $pdo->prepare(
                     'UPDATE license_activations
                      SET is_active = 0, device_uuid = NULL, store_uuid = NULL, last_seen_at = CURRENT_TIMESTAMP
