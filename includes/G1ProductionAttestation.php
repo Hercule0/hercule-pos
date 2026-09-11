@@ -15,6 +15,8 @@ final class G1ProductionAttestation
         'device_license_transition_test.php',
         'device_license_transition_contract_test.php',
         'multi_manager_action_auth_test.php',
+        'multi_manager_upgrade_test.php',
+        'fix496_release_contract_test.php',
     ];
 
     private const FIX496_REQUIRED_SOURCES = [
@@ -142,6 +144,7 @@ final class G1ProductionAttestation
                 'entitlement_schema_ready' => true,
                 'manager_action_auth' => true,
                 'strict_transition_contract' => true,
+                'secure_single_to_multi_upgrade' => true,
                 'fix496_source_bound' => true,
             ],
             'routes' => [
@@ -279,6 +282,8 @@ final class G1ProductionAttestation
             'atomic_license_transition' => $make(['device_license_transition_test.php', 'device_license_transition_contract_test.php']),
             'strict_source_transition_contract' => $make(['device_license_transition_contract_test.php']),
             'manager_action_auth' => $make(['multi_manager_action_auth_test.php']),
+            'secure_single_to_multi_upgrade' => $make(['multi_manager_upgrade_test.php']),
+            'fix496_release_contract' => $make(['fix496_release_contract_test.php']),
         ];
     }
 }
