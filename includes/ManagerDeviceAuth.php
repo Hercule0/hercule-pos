@@ -18,6 +18,10 @@ final class ManagerDeviceAuth
     {
         if (!(bool) ($result['ok'] ?? false)) return $result;
 
+        // Defensive one-time semantics: never trust or re-expose capability
+        // fields that may have been carried in by an upstream/retry result.
+        unset($result['manager_auth_token'], $result['manager_auth_token_issued']);
+
         $role = strtolower(trim((string) ($result['device_role'] ?? $request['device_role'] ?? '')));
         if (!in_array($role, self::MANAGER_ROLES, true)) return $result;
 
@@ -41,6 +45,7 @@ final class ManagerDeviceAuth
 
         $result['manager_auth_required'] = true;
         if (trim((string) ($activation['certificate_fingerprint'] ?? '')) !== '') {
+            $result['manager_auth_token_issued'] = false;
             return $result;
         }
 
