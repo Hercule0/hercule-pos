@@ -280,9 +280,9 @@ final class License
             }
 
             $existing = self::findActivation((int) $license['id'], $hwid);
-            if ($existing) {
+            if ($existing && $existing['is_active']) {
                 $stmt = $pdo->prepare(
-                    'UPDATE license_activations SET is_active = 1, last_seen_at = CURRENT_TIMESTAMP, ip_address = ? WHERE id = ?'
+                    'UPDATE license_activations SET last_seen_at = CURRENT_TIMESTAMP, ip_address = ? WHERE id = ?'
                 );
                 $stmt->execute([$ip, $existing['id']]);
                 self::log((int) $license['id'], $licenseKey, $hwid, 'ok', $ip);
@@ -298,10 +298,17 @@ final class License
                 return ['ok' => false, 'error' => 'This license has reached its device activation limit.'];
             }
 
-            $stmt = $pdo->prepare(
-                'INSERT INTO license_activations (license_id, hwid, ip_address) VALUES (?, ?, ?)'
-            );
-            $stmt->execute([$license['id'], $hwid, $ip]);
+            if ($existing) {
+                $stmt = $pdo->prepare(
+                    'UPDATE license_activations SET is_active = 1, last_seen_at = CURRENT_TIMESTAMP, ip_address = ? WHERE id = ?'
+                );
+                $stmt->execute([$ip, $existing['id']]);
+            } else {
+                $stmt = $pdo->prepare(
+                    'INSERT INTO license_activations (license_id, hwid, ip_address) VALUES (?, ?, ?)'
+                );
+                $stmt->execute([$license['id'], $hwid, $ip]);
+            }
 
             self::log((int) $license['id'], $licenseKey, $hwid, 'ok', $ip);
             $pdo->commit();
