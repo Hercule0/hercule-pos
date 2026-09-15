@@ -11,6 +11,29 @@ final class G1ProductionAttestation
         'entitlement_v2_validate_bootstrap_test.php',
     ];
 
+    private const FIX496_REQUIRED_TESTS = [
+        'device_license_transition_test.php',
+        'device_license_transition_contract_test.php',
+        'multi_manager_action_auth_test.php',
+        'multi_manager_upgrade_test.php',
+        'manager_server_lifecycle_test.php',
+        'fix496_release_contract_test.php',
+    ];
+
+    private const FIX496_REQUIRED_SOURCES = [
+        'includes/ManagerDeviceAuth.php',
+        'includes/DeviceLicenseTransition.php',
+        'includes/MultiEntitlementPolicy.php',
+        'public/api/v2/_common.php',
+        'public/api/v2/activate.php',
+        'public/api/v2/device/transition.php',
+        'public/api/v2/device/release.php',
+        'public/api/v2/device/revoke.php',
+        'public/api/v2/device/replace.php',
+        'includes/G1ProductionAttestation.php',
+        'scripts/check_entitlement_v2_routes.sh',
+    ];
+
     public static function respond(bool $allowPost = false): void
     {
         $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? ''));
@@ -25,7 +48,9 @@ final class G1ProductionAttestation
         $root = dirname(__DIR__);
         $sourceMeta = self::loadJson($root . '/deployment-source.json');
         $evidencePath = $root . '/g1-test-evidence.json';
+        $fix496EvidencePath = $root . '/fix496-test-evidence.json';
         $evidence = self::loadJson($evidencePath);
+        $fix496Evidence = self::loadJson($fix496EvidencePath);
 
         $repository = trim((string) ($sourceMeta['repository'] ?? ''));
         $commitSha = strtolower(trim((string) ($sourceMeta['commit_sha'] ?? '')));
@@ -40,18 +65,24 @@ final class G1ProductionAttestation
         }
 
         self::assertEvidenceMatchesDeployment($evidence, $repository, $commitSha, $runId);
+        $fix496SourceHashes = self::assertFix496EvidenceMatchesDeployment($fix496Evidence, $repository, $commitSha, $runId);
 
         $requiredFiles = [
             'includes/EntitlementV2.php',
             'includes/MultiEntitlementAdmin.php',
             'includes/MultiEntitlementPolicy.php',
+            'includes/ManagerDeviceAuth.php',
+            'includes/DeviceLicenseTransition.php',
             'includes/G1ProductionAttestation.php',
             'public/api/v2/_common.php',
             'public/api/v2/activate.php',
             'public/api/v2/validate.php',
+            'public/api/v2/device/transition.php',
+            'public/api/v2/device/release.php',
             'public/api/v2/device/replace.php',
             'public/api/v2/device/revoke.php',
             'db/migrate_multi_entitlement_v2.php',
+            'scripts/check_entitlement_v2_routes.sh',
         ];
         $files = [];
         foreach ($requiredFiles as $relative) {
@@ -60,6 +91,12 @@ final class G1ProductionAttestation
             $digest = hash_file('sha256', $file);
             if (!is_string($digest) || !preg_match('/^[a-f0-9]{64}$/', $digest)) {
                 json_response(['ok' => false, 'error' => 'Could not hash entitlement source.'], 503);
+            }
+            if (in_array($relative, self::FIX496_REQUIRED_SOURCES, true)) {
+                $expected = $fix496SourceHashes[$relative] ?? '';
+                if (!is_string($expected) || !hash_equals($expected, $digest)) {
+                    json_response(['ok' => false, 'error' => 'Fix496 deployed source does not match certified test evidence.'], 503);
+                }
             }
             $files[] = ['path' => $relative, 'sha256' => $digest];
         }
@@ -101,20 +138,30 @@ final class G1ProductionAttestation
                 'run_id' => $runId,
                 'tests_passed' => true,
                 'g1_test_evidence_sha256' => hash_file('sha256', $evidencePath),
+                'fix496_test_evidence_sha256' => hash_file('sha256', $fix496EvidencePath),
             ],
             'runtime' => [
                 'database_driver' => $driver,
                 'entitlement_schema_ready' => true,
+                'manager_action_auth' => true,
+                'strict_transition_contract' => true,
+                'secure_single_to_multi_upgrade' => true,
+                'manager_server_authority_continuity' => true,
+                'fix496_source_bound' => true,
             ],
             'routes' => [
                 'activate_v2' => ['signed_response' => true, 'schema_version' => 2],
                 'validate_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'transition_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'release_v2' => ['signed_response' => true, 'schema_version' => 2],
+                'replace_v2' => ['signed_response' => true, 'schema_version' => 2, 'manager_capability_required' => true],
+                'revoke_v2' => ['signed_response' => true, 'schema_version' => 2, 'manager_capability_for_cross_device' => true],
                 'g1_attestation' => [
                     'via' => 'POST validate.php?g1_attestation=1',
                     'signed_response' => true,
                 ],
             ],
-            'scenarios' => self::buildScenarioEvidence($evidence),
+            'scenarios' => self::buildScenarioEvidence($evidence, $fix496Evidence),
         ];
 
         try {
@@ -148,13 +195,7 @@ final class G1ProductionAttestation
             json_response(['ok' => false, 'error' => 'G1 test evidence does not match this deployment.'], 503);
         }
 
-        $indexed = [];
-        foreach ($evidence['tests'] as $row) {
-            if (!is_array($row)) continue;
-            $name = basename((string) ($row['name'] ?? ''));
-            if ($name !== '') $indexed[$name] = $row;
-        }
-
+        $indexed = self::indexTests($evidence);
         foreach (self::REQUIRED_TESTS as $name) {
             $row = $indexed[$name] ?? null;
             if (!is_array($row)
@@ -165,10 +206,59 @@ final class G1ProductionAttestation
         }
     }
 
-    private static function buildScenarioEvidence(array $evidence): array
+    private static function assertFix496EvidenceMatchesDeployment(array $evidence, string $repository, string $commitSha, string $runId): array
+    {
+        if ((int) ($evidence['schema_version'] ?? 0) !== 1
+            || (string) ($evidence['status'] ?? '') !== 'FIX496_MULTI_FINAL_GATE_PASS'
+            || trim((string) ($evidence['repository'] ?? '')) !== $repository
+            || strtolower(trim((string) ($evidence['commit_sha'] ?? ''))) !== $commitSha
+            || trim((string) ($evidence['run_id'] ?? '')) !== $runId
+            || ($evidence['all_passed'] ?? false) !== true
+            || !is_array($evidence['tests'] ?? null)
+            || !is_array($evidence['source_files'] ?? null)) {
+            json_response(['ok' => false, 'error' => 'Fix496 test evidence does not match this deployment.'], 503);
+        }
+
+        $tests = self::indexTests($evidence);
+        foreach (self::FIX496_REQUIRED_TESTS as $name) {
+            $row = $tests[$name] ?? null;
+            if (!is_array($row)
+                || ($row['passed'] ?? false) !== true
+                || !preg_match('/^[a-f0-9]{64}$/', (string) ($row['sha256'] ?? ''))) {
+                json_response(['ok' => false, 'error' => 'Fix496 test evidence is incomplete or stale.'], 503);
+            }
+        }
+
+        $sources = [];
+        foreach ($evidence['source_files'] as $row) {
+            if (!is_array($row)) continue;
+            $path = trim((string) ($row['path'] ?? ''));
+            $sha = strtolower(trim((string) ($row['sha256'] ?? '')));
+            if ($path !== '' && preg_match('/^[a-f0-9]{64}$/', $sha)) $sources[$path] = $sha;
+        }
+        foreach (self::FIX496_REQUIRED_SOURCES as $path) {
+            if (!isset($sources[$path])) {
+                json_response(['ok' => false, 'error' => 'Fix496 source evidence is incomplete.'], 503);
+            }
+        }
+        return $sources;
+    }
+
+    private static function indexTests(array $evidence): array
+    {
+        $indexed = [];
+        foreach ($evidence['tests'] ?? [] as $row) {
+            if (!is_array($row)) continue;
+            $name = basename((string) ($row['name'] ?? ''));
+            if ($name !== '') $indexed[$name] = $row;
+        }
+        return $indexed;
+    }
+
+    private static function buildScenarioEvidence(array $evidence, array $fix496Evidence): array
     {
         $testMap = [];
-        foreach ($evidence['tests'] as $row) {
+        foreach (array_merge($evidence['tests'] ?? [], $fix496Evidence['tests'] ?? []) as $row) {
             if (!is_array($row)) continue;
             $name = basename((string) ($row['name'] ?? ''));
             if ($name !== '') {
@@ -191,6 +281,12 @@ final class G1ProductionAttestation
             'upgrade_1_to_2' => $make(['multi_entitlement_admin_test.php']),
             'downgrade_below_active_blocked' => $make(['multi_entitlement_admin_test.php']),
             'v1_v2_compatibility' => $make(['multi_entitlement_v2_test.php', 'entitlement_v2_validate_bootstrap_test.php']),
+            'atomic_license_transition' => $make(['device_license_transition_test.php', 'device_license_transition_contract_test.php']),
+            'strict_source_transition_contract' => $make(['device_license_transition_contract_test.php']),
+            'manager_action_auth' => $make(['multi_manager_action_auth_test.php']),
+            'secure_single_to_multi_upgrade' => $make(['multi_manager_upgrade_test.php']),
+            'manager_server_authority_continuity' => $make(['manager_server_lifecycle_test.php']),
+            'fix496_release_contract' => $make(['fix496_release_contract_test.php']),
         ];
     }
 }
